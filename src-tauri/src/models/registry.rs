@@ -5,51 +5,39 @@ use std::collections::HashMap;
 
 /// Поддерживаемые архитектуры моделей
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(non_camel_case_types)]
 pub enum ArchKind {
-    Llama,    // Llama 1/2/3/4, Mistral, Mixtral, Yi, DeepSeek, SmolLM, CodeLlama, etc.
-    Gemma,    // Gemma 1
-    Gemma2,   // Gemma 2
-    Gemma3,   // Gemma 3
-    Qwen2,    // Qwen 2, Qwen 2.5
-    Qwen2Moe, // Qwen 2 MoE
-    Qwen3,    // Qwen 3
-    Qwen3Moe, // Qwen 3 MoE (30B-A3B)
-    Phi,      // Phi 1, 1.5, 2
-    Phi3,     // Phi-3, Phi-3.5, Phi-4
-    Glm4,     // GLM-4
+    llama,     // Llama 1/2/3, Mistral, Mixtral, Yi, DeepSeek, SmolLM, CodeLlama, etc.
+    qwen2,     // Qwen 2, Qwen 2.5
+    qwen2moe,  // Qwen 2 MoE
+    qwen3,     // Qwen 3
+    qwen3moe,  // Qwen 3 MoE (30B-A3B)
+    deepseek2, // DeepSeek-V2
 }
 
 impl ArchKind {
     /// Возвращает человекочитаемое название
     pub fn display_name(&self) -> &'static str {
         match self {
-            ArchKind::Llama => "Llama",
-            ArchKind::Gemma => "Gemma",
-            ArchKind::Gemma2 => "Gemma 2",
-            ArchKind::Gemma3 => "Gemma 3",
-            ArchKind::Qwen2 => "Qwen 2",
-            ArchKind::Qwen2Moe => "Qwen 2 MoE",
-            ArchKind::Qwen3 => "Qwen 3",
-            ArchKind::Qwen3Moe => "Qwen 3 MoE",
-            ArchKind::Phi => "Phi",
-            ArchKind::Phi3 => "Phi-3",
-            ArchKind::Glm4 => "GLM-4",
+            ArchKind::llama => "llama",
+            ArchKind::qwen2 => "qwen2",
+            ArchKind::qwen2moe => "qwen2moe",
+            ArchKind::qwen3 => "qwen3",
+            ArchKind::qwen3moe => "qwen3moe",
+            ArchKind::deepseek2 => "deepseek2",
         }
     }
 
     /// Проверяет, поддерживается ли GGUF формат
     pub fn supports_gguf(&self) -> bool {
-        matches!(
-            self,
-            ArchKind::Llama
-                | ArchKind::Gemma
-                | ArchKind::Gemma2
-                | ArchKind::Gemma3
-                | ArchKind::Qwen2
-                | ArchKind::Qwen3
-                | ArchKind::Qwen3Moe
-                | ArchKind::Phi3
-        )
+        match self {
+            ArchKind::llama
+            | ArchKind::qwen2
+            | ArchKind::qwen2moe
+            | ArchKind::qwen3
+            | ArchKind::qwen3moe
+            | ArchKind::deepseek2 => true,
+        }
     }
 
     /// Проверяет, поддерживается ли SafeTensors формат
@@ -78,44 +66,22 @@ pub fn detect_arch_from_config(config: &serde_json::Value) -> Option<ArchKind> {
 }
 
 /// Определяет архитектуру из строки
-fn detect_arch_from_string(s: &str) -> Option<ArchKind> {
+pub fn detect_arch_from_string(s: &str) -> Option<ArchKind> {
     let s_lower = s.to_lowercase();
 
     // Порядок важен - более специфичные первыми
-    // Qwen3 MoE: exact matches (safetensors: "qwen3_moe", gguf: "qwen3moe") or pattern matching
-    if s_lower == "qwen3_moe"
-        || s_lower == "qwen3moe"
-        || ((s_lower.contains("qwen3") || s_lower.contains("qwen-3"))
-            && (s_lower.contains("moe") || s_lower.contains("a3b")))
-    {
-        Some(ArchKind::Qwen3Moe)
-    } else if s_lower == "qwen3" || s_lower.contains("qwen3") || s_lower.contains("qwen-3") {
-        Some(ArchKind::Qwen3)
-    } else if s_lower == "qwen2_moe"
-        || s_lower == "qwen2moe"
-        || ((s_lower.contains("qwen2") || s_lower.contains("qwen-2")) && (s_lower.contains("moe")))
-    {
-        Some(ArchKind::Qwen2Moe)
-    } else if s_lower == "qwen2"
-        || s_lower.contains("qwen2")
-        || s_lower.contains("qwen-2")
-        || s_lower.contains("qwen2.5")
-    {
-        Some(ArchKind::Qwen2)
-    } else if s_lower.contains("gemma3") || s_lower.contains("gemma-3") {
-        Some(ArchKind::Gemma3)
-    } else if s_lower.contains("gemma2") || s_lower.contains("gemma-2") {
-        Some(ArchKind::Gemma2)
-    } else if s_lower.contains("gemma") {
-        Some(ArchKind::Gemma)
+    if s_lower == "qwen3moe" || s_lower == "qwen3_moe" {
+        Some(ArchKind::qwen3moe)
+    } else if s_lower == "qwen3" {
+        Some(ArchKind::qwen3)
+    } else if s_lower == "qwen2moe" || s_lower == "qwen2_moe" {
+        Some(ArchKind::qwen2moe)
+    } else if s_lower == "qwen2" {
+        Some(ArchKind::qwen2)
     } else if s_lower.contains("llama") {
-        Some(ArchKind::Llama)
-    } else if s_lower.contains("phi-3") || s_lower.contains("phi3") {
-        Some(ArchKind::Phi3)
-    } else if s_lower.contains("phi") {
-        Some(ArchKind::Phi)
-    } else if s_lower.contains("glm4") || s_lower.contains("glm-4") {
-        Some(ArchKind::Glm4)
+        Some(ArchKind::llama)
+    } else if s_lower == "deepseek2" || s_lower == "deepseek_v2" {
+        Some(ArchKind::deepseek2)
     } else {
         None
     }
@@ -197,17 +163,27 @@ impl ModelFactory {
         _use_flash_attn: bool,
     ) -> Result<Box<dyn ModelBackend + Send>, String> {
         match arch {
-            ArchKind::Qwen3 => {
+            ArchKind::qwen3 => {
                 use super::qwen3::Qwen3Backend;
                 let model = Qwen3Backend::from_gguf(content, file, device)?;
                 Ok(Box::new(model))
             }
-            ArchKind::Qwen2 => {
+            ArchKind::qwen2 => {
                 use super::qwen2::Qwen2Backend;
                 let model = Qwen2Backend::from_gguf(content, file, device)?;
                 Ok(Box::new(model))
             }
-            ArchKind::Qwen3Moe => {
+            ArchKind::qwen2moe => {
+                use super::qwen2_moe::Qwen2MoeBackend;
+                let dtype = if device.is_cuda() || device.is_metal() {
+                    candle::DType::BF16
+                } else {
+                    candle::DType::F32
+                };
+                let model = Qwen2MoeBackend::from_gguf(content, file, device, dtype)?;
+                Ok(Box::new(model))
+            }
+            ArchKind::qwen3moe => {
                 use super::qwen3_moe::Qwen3MoeBackend;
                 // Default to BF16 for MoE GGUF models
                 let dtype = if device.is_cuda() || device.is_metal() {
@@ -220,17 +196,22 @@ impl ModelFactory {
             }
             // Llama-подобные архитектуры (Llama, Mistral, Mixtral, DeepSeek, Yi, SmolLM2)
             // LlamaVariant определяется автоматически из metadata
-            ArchKind::Llama => {
+            ArchKind::llama => {
                 use super::llama::LlamaBackend;
                 let model = LlamaBackend::from_gguf(content, file, device)?;
                 Ok(Box::new(model))
             }
-            // TODO: Phi3, Gemma
-            _ => Err(format!(
-                "Model building for {:?} is not yet implemented. \
-                 Currently supported: Qwen2, Qwen3, Qwen3Moe, Llama (incl. Mistral, Mixtral, DeepSeek, Yi, SmolLM2)",
-                arch
-            )),
+            ArchKind::deepseek2 => {
+                use super::deepseek2::DeepSeek2Backend;
+                let dtype = if device.is_cuda() || device.is_metal() {
+                    candle::DType::BF16
+                } else {
+                    candle::DType::F32
+                };
+                let model = DeepSeek2Backend::from_gguf(content, file, device, dtype)
+                    .map_err(|e| e.to_string())?;
+                Ok(Box::new(model))
+            }
         }
     }
 
@@ -256,41 +237,43 @@ impl ModelFactory {
         let _ = config; // config уже загружен, используем config_path
 
         match arch {
-            ArchKind::Qwen3 => {
+            ArchKind::qwen3 => {
                 use super::qwen3::Qwen3Backend;
                 let model =
                     Qwen3Backend::from_safetensors(&filenames, &config_path, device, dtype)?;
                 Ok(Box::new(model))
             }
-            ArchKind::Qwen2 => {
+            ArchKind::qwen2 => {
                 use super::qwen2::Qwen2Backend;
                 let model =
                     Qwen2Backend::from_safetensors(&filenames, &config_path, device, dtype)?;
                 Ok(Box::new(model))
             }
-            ArchKind::Qwen3Moe => {
+            ArchKind::qwen3moe => {
                 use super::qwen3_moe::Qwen3MoeBackend;
                 let model =
                     Qwen3MoeBackend::from_safetensors(&filenames, &config_path, device, dtype)?;
                 Ok(Box::new(model))
             }
-            ArchKind::Qwen2Moe => {
+            ArchKind::qwen2moe => {
                 use super::qwen2_moe::Qwen2MoeBackend;
                 let model =
                     Qwen2MoeBackend::from_safetensors(&filenames, &config_path, device, dtype)?;
                 Ok(Box::new(model))
             }
-            ArchKind::Llama => {
+            ArchKind::llama => {
                 use super::llama::LlamaBackend;
                 let model =
                     LlamaBackend::from_safetensors(&filenames, &config_path, device, dtype)?;
                 Ok(Box::new(model))
             }
-            _ => Err(format!(
-                "SafeTensors model building for {:?} is not yet implemented. \
-                 Currently supported: Qwen2, Qwen2Moe, Qwen3, Qwen3Moe, Llama (incl. Mistral, Mixtral, etc.)",
-                arch
-            )),
+            ArchKind::deepseek2 => {
+                use super::deepseek2::DeepSeek2Backend;
+                let model =
+                    DeepSeek2Backend::from_safetensors(&filenames, &config_path, device, dtype)
+                        .map_err(|e| e.to_string())?;
+                Ok(Box::new(model))
+            }
         }
     }
 
@@ -327,9 +310,36 @@ mod tests {
     fn test_detect_arch_from_string() {
         assert_eq!(detect_arch_from_string("llama"), Some(ArchKind::Llama));
         assert_eq!(detect_arch_from_string("Qwen3"), Some(ArchKind::Qwen3));
-        assert_eq!(detect_arch_from_string("gemma3"), Some(ArchKind::Gemma3));
+        assert_eq!(
+            detect_arch_from_string("qwen2_moe"),
+            Some(ArchKind::Qwen2Moe)
+        );
         // mistral/mixtral/deepseek имеют architecture="llama" в GGUF
-        assert_eq!(detect_arch_from_string("phi-3"), Some(ArchKind::Phi3));
+        assert_eq!(detect_arch_from_string("glm4v"), Some(ArchKind::Glm4v));
+        assert_eq!(
+            detect_arch_from_string("deepseek2"),
+            Some(ArchKind::DeepSeek2)
+        );
+        assert_eq!(
+            detect_arch_from_string("glm4_moe_lite"),
+            Some(ArchKind::DeepSeek2)
+        );
         assert_eq!(detect_arch_from_string("unknown"), None);
+    }
+
+    #[test]
+    fn test_detect_arch_from_config() {
+        let cfg: serde_json::Value = serde_json::json!({ "model_type": "glm4" });
+        assert_eq!(detect_arch_from_config(&cfg), Some(ArchKind::Glm4));
+        let cfg: serde_json::Value = serde_json::json!({ "model_type": "glm4v" });
+        assert_eq!(detect_arch_from_config(&cfg), Some(ArchKind::Glm4v));
+        let cfg: serde_json::Value = serde_json::json!({ "model_type": "glm4_moe_lite" });
+        assert_eq!(detect_arch_from_config(&cfg), Some(ArchKind::DeepSeek2));
+    }
+
+    #[test]
+    fn test_supports_gguf_flags() {
+        assert!(ArchKind::Glm4.supports_gguf());
+        assert!(ArchKind::Qwen2Moe.supports_gguf());
     }
 }

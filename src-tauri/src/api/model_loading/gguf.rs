@@ -10,7 +10,7 @@ use crate::generate::cancel::CANCEL_LOADING;
 
 use crate::models::registry::{detect_arch, get_model_factory};
 use crate::{log_load, log_template, log_template_error};
-use candle::quantized::gguf_file;
+use candle::quantized::{gguf_file, GgmlDType};
 use std::collections::HashSet;
 use std::fs::File;
 use std::path::PathBuf;
@@ -518,95 +518,63 @@ pub fn load_gguf_model(
 /// Проверяет наличие поддерживаемых типов данных в GGUF файле
 /// Возвращает ошибку, если найдены неподдерживаемые типы данных
 fn check_supported_dtypes(content: &gguf_file::Content) -> Result<(), String> {
-    // Поддерживаемые типы данных в текущей версии Candle (на основе candle-core/src/quantized/mod.rs)
-    let supported_dtypes: HashSet<u32> = [
-        0,  // F32
-        1,  // F16
-        2,  // Q4_0
-        3,  // Q4_1
-        6,  // Q5_0
-        7,  // Q5_1
-        8,  // Q8_0
-        9,  // Q8_1
-        10, // Q2K
-        11, // Q3K
-        12, // Q4K
-        13, // Q5K
-        14, // Q6K
-        15, // Q8K
-        30, // BF16
-    ]
-    .into_iter()
-    .collect();
-
-    // Известные неподдерживаемые типы данных (на основе исходников GGML)
-    let unsupported_dtypes: HashSet<u32> = [
-        16, 17, 18, 19, 20, 21, 22,
-        23, // IQ типы: IQ2_XXS, IQ2_XS, IQ3_XXS, IQ3_S, IQ2_S, IQ4_NL, IQ4_XS, IQ3_M
-        29, // IQ1_M
-        24, 25, 26, 27,
-        28, // Целочисленные типы: I8, I16, I32, I64, F64 (не используются в моделях)
-    ]
-    .into_iter()
-    .collect();
-
     let mut found_unsupported = Vec::new();
-    let mut found_unknown = Vec::new();
-    let mut has_quantized = false;
+    let mut haq_quantized_tensors = false;
 
-    // Проверяем каждый тензор в файле
     for tensor_info in content.tensor_infos.values() {
-        let dtype = tensor_info.ggml_dtype as u32;
-
-        // Если есть хотя бы один квантованный тензор, модель считается "квантованной"
-        if (2..=15).contains(&dtype) || (16..=29).contains(&dtype) {
-            has_quantized = true;
-        }
-
-        if unsupported_dtypes.contains(&dtype) {
-            found_unsupported.push(dtype);
-        } else if !supported_dtypes.contains(&dtype) {
-            found_unknown.push(dtype);
+        match tensor_info.ggml_dtype {
+            GgmlDType::F32
+            | GgmlDType::F16
+            | GgmlDType::BF16
+            | GgmlDType::Q4_0
+            | GgmlDType::Q4_1
+            | GgmlDType::Q5_0
+            | GgmlDType::Q5_1
+            | GgmlDType::Q8_0
+            | GgmlDType::Q8_1
+            | GgmlDType::Q2K
+            | GgmlDType::Q3K
+            | GgmlDType::Q4K
+            | GgmlDType::Q5K
+            | GgmlDType::Q6K
+            | GgmlDType::Q8K => {
+                // Supported
+                if tensor_info.ggml_dtype != GgmlDType::F32 
+                    && tensor_info.ggml_dtype != GgmlDType::F16 
+                    && tensor_info.ggml_dtype != GgmlDType::BF16 {
+                    haq_quantized_tensors = true;
+                }
+            }
+            other => {
+                // Collect unique unsupported types
+                 let dtype_str = format!("{:?}", other);
+                 if !found_unsupported.contains(&dtype_str) {
+                     found_unsupported.push(dtype_str);
+                 }
+            }
         }
     }
 
-    // Если модель вообще не содержит квантованных тензоров (только FP32/FP16/BF16),
-    // она считается "высокоточной" и блокируется для инференса на CUDA.
-    if !has_quantized {
-        let error_msg = "Pure high-precision GGUF models (F32, F16, BF16) are currently disabled. \
-                         These models produce incorrect output on CUDA in the current version of Candle. \
-                         Please use a quantized model instead (Q4_K_M, Q5_K_M, Q8_0, etc.)."
+    // High-precision check
+    if !haq_quantized_tensors {
+         // Allow high precision if explicit override or just warn?
+         // Current logic blocks it. Keeping consistent with previous logic.
+         let error_msg = "Pure high-precision GGUF models (F32, F16, BF16) are currently disabled. \
+                          These models produce incorrect output on CUDA in the current version of Candle. \
+                          Please use a quantized model instead (Q4_K_M, Q5_K_M, Q8_0, etc.)."
             .to_string();
-        log::error!(
+         log::error!(
             "Model loading blocked: Model appears to be high-precision (no quantized tensors found)"
-        );
-        return Err(error_msg);
+         );
+         return Err(error_msg);
     }
 
-    if !found_unsupported.is_empty() || !found_unknown.is_empty() {
-        let mut error_msg = String::new();
-
-        if !found_unsupported.is_empty() {
-            error_msg.push_str(&format!(
-                "Found unsupported quantization types: {:?}. ",
-                found_unsupported
-            ));
-            error_msg.push_str(
-                "These IQ quantization types require a newer version of the inference library. ",
-            );
-            error_msg
-                .push_str("Currently supported: Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, Q2K-Q8K. ");
-        }
-
-        if !found_unknown.is_empty() {
-            error_msg.push_str(&format!("Found unknown data types: {:?}. ", found_unknown));
-            error_msg.push_str("These may be from a newer GGUF format version. ");
-        }
-
-        error_msg.push_str(
-            "Model loading is blocked to prevent incorrect output. Please use a model with supported quantizations (Q4_K_M, Q5_K_M, Q8_0, etc.).",
+    if !found_unsupported.is_empty() {
+        let error_msg = format!(
+            "Model loading blocked. Found unsupported quantization types: {:?}. \
+            Please use a model with supported quantizations (Q4_K_M, Q5_K_M, Q8_0, etc.).",
+            found_unsupported
         );
-
         return Err(error_msg);
     }
 

@@ -6,6 +6,7 @@ use crate::core::tokenizer::{
 };
 
 use crate::models::registry::detect_arch;
+use crate::models::registry::detect_arch_from_config;
 use crate::models::registry::get_model_factory;
 use crate::{log_device, log_device_error, log_load};
 use candle::quantized::gguf_file;
@@ -119,6 +120,75 @@ pub fn set_device(
             guard.tokenizer = Some(tokenizer);
             guard.chat_template = chat_tpl;
             log_load!("model reloaded for {}", label);
+        } else if let Some(files) = guard.safetensors_files.clone() {
+            // For safetensors models, we reload from recorded files/config on device switch.
+            if files.is_empty() {
+                return Err("Cannot reload safetensors: no files recorded".to_string());
+            }
+            let config_json = guard
+                .model_config_json
+                .clone()
+                .ok_or_else(|| "Cannot reload safetensors: config.json is missing".to_string())?;
+            let config: serde_json::Value = serde_json::from_str(&config_json)
+                .map_err(|e| format!("Cannot reload safetensors: invalid config.json: {}", e))?;
+            let arch = detect_arch_from_config(&config)
+                .ok_or_else(|| "Cannot reload safetensors: unsupported architecture".to_string())?;
+
+            let dtype = config
+                .get("torch_dtype")
+                .and_then(|v| v.as_str())
+                .and_then(|s| match s {
+                    "bfloat16" => Some(candle::DType::BF16),
+                    "float16" => Some(candle::DType::F16),
+                    "float32" => Some(candle::DType::F32),
+                    _ => None,
+                })
+                .unwrap_or_else(|| crate::core::precision::select_dtype_default(&guard.device));
+
+            let filenames: Vec<std::path::PathBuf> =
+                files.iter().map(std::path::PathBuf::from).collect();
+
+            let model_backend = get_model_factory()
+                .build_from_safetensors(arch, &filenames, &config, &guard.device, dtype)
+                .map_err(|e| format!("Failed to rebuild safetensors model: {}", e))?;
+
+            let mut tokenizer_opt = None;
+            let mut chat_tpl = None;
+            if let Some(tokenizer_path) = guard.tokenizer_path.clone()
+                && let Ok(bytes) = std::fs::read(&tokenizer_path)
+                && let Ok(mut tk) = tokenizers::Tokenizer::from_bytes(&bytes)
+            {
+                mark_special_chat_tokens(&mut tk);
+                chat_tpl = extract_chat_template(&tk);
+                tokenizer_opt = Some(tk);
+            }
+            if chat_tpl.is_none()
+                && let Some(model_path) = guard.model_path.clone()
+            {
+                let model_dir = std::path::Path::new(&model_path);
+                let model_dir = if model_dir.is_file() {
+                    model_dir.parent().unwrap_or(model_dir)
+                } else {
+                    model_dir
+                };
+                let jinja_path = model_dir.join("chat_template.jinja");
+                if let Ok(content) = std::fs::read_to_string(&jinja_path) {
+                    chat_tpl = Some(content);
+                }
+            }
+
+            let model_id = guard
+                .model_path
+                .clone()
+                .or_else(|| guard.hub_repo_id.clone())
+                .unwrap_or_else(|| "safetensors".to_string());
+            guard.scheduler.load_model(model_backend, model_id);
+            guard.tokenizer = tokenizer_opt;
+            guard.chat_template = chat_tpl;
+            guard.arch = Some(arch);
+            log_load!("safetensors model reloaded for {}", label);
+        } else {
+            return Err("Cannot reload model: unknown format or missing metadata".to_string());
         }
     }
     Ok(())

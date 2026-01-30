@@ -10,7 +10,7 @@ fn test_architecture_detection() {
         "general.architecture".to_string(),
         Value::String("qwen3".to_string()),
     );
-    assert_eq!(detect_arch(&metadata), Some(ArchKind::Qwen3));
+    assert_eq!(detect_arch(&metadata), Some(ArchKind::qwen3));
 
     // Test Qwen3 MoE detection (safetensors style)
     let mut metadata = HashMap::new();
@@ -18,7 +18,7 @@ fn test_architecture_detection() {
         "general.architecture".to_string(),
         Value::String("qwen3_moe".to_string()),
     );
-    assert_eq!(detect_arch(&metadata), Some(ArchKind::Qwen3Moe));
+    assert_eq!(detect_arch(&metadata), Some(ArchKind::qwen3moe));
 
     // Test Qwen3 MoE detection (gguf style)
     let mut metadata = HashMap::new();
@@ -26,7 +26,7 @@ fn test_architecture_detection() {
         "general.architecture".to_string(),
         Value::String("qwen3moe".to_string()),
     );
-    assert_eq!(detect_arch(&metadata), Some(ArchKind::Qwen3Moe));
+    assert_eq!(detect_arch(&metadata), Some(ArchKind::qwen3moe));
 
     // Test Llama detection
     let mut metadata = HashMap::new();
@@ -34,7 +34,7 @@ fn test_architecture_detection() {
         "general.architecture".to_string(),
         Value::String("llama".to_string()),
     );
-    assert_eq!(detect_arch(&metadata), Some(ArchKind::Llama));
+    assert_eq!(detect_arch(&metadata), Some(ArchKind::llama));
 
     // Test unknown architecture
     let mut metadata = HashMap::new();

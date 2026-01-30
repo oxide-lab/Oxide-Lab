@@ -1,26 +1,31 @@
 //! Qwen2-MoE model backend
 //!
 //! Mixture of Experts версия Qwen2.
-//! Поддерживает SafeTensors формат (GGUF пока не реализован в candle-transformers).
+//! Поддерживает SafeTensors и GGUF форматы.
 //!
 //! Ключевые особенности Qwen2-MoE:
 //! - Sparse Mixture of Experts (разреженные эксперты)
 //! - Shared expert (общий эксперт для всех токенов)
 //! - Нет per-head RMSNorm (отличие от Qwen3-MoE)
 
+mod fused_moe;
+mod gguf;
+mod quantized_model;
 mod safetensors;
 
 use candle::{Device, Tensor};
 use candle_transformers::models::qwen2_moe::Model;
+use quantized_model::GGUFQwen2Moe;
 
 use crate::models::ModelBackend;
 use crate::models::api::optimization::{OptimizationConfig, WeightFormat};
 
 /// Внутреннее представление модели
 enum Qwen2MoeInner {
+    /// Квантизированная модель из GGUF
+    Quantized(GGUFQwen2Moe),
     /// Полная модель из SafeTensors
     Full(Model),
-    // GGUF не поддерживается в candle-transformers для qwen2_moe
 }
 
 /// Qwen2-MoE бекенд
@@ -36,6 +41,22 @@ pub struct Qwen2MoeBackend {
 }
 
 impl Qwen2MoeBackend {
+    /// Создаёт квантизированный бекенд (используется из gguf.rs)
+    pub(crate) fn new_quantized(
+        model: GGUFQwen2Moe,
+        device: Device,
+        vocab_size: usize,
+        max_seq_len: usize,
+    ) -> Self {
+        Self {
+            inner: Qwen2MoeInner::Quantized(model),
+            device,
+            vocab_size,
+            max_seq_len,
+            optimization: OptimizationConfig::for_gguf(),
+        }
+    }
+
     /// Создаёт полный бекенд (используется из safetensors.rs)
     pub(crate) fn new(
         model: Model,
@@ -60,7 +81,7 @@ impl Qwen2MoeBackend {
 
     /// Проверяет, квантизирована ли модель (всегда false для Qwen2-MoE)
     pub fn is_quantized(&self) -> bool {
-        false
+        matches!(self.inner, Qwen2MoeInner::Quantized(_))
     }
 
     /// Возвращает конфигурацию оптимизаций
@@ -72,6 +93,8 @@ impl Qwen2MoeBackend {
 impl ModelBackend for Qwen2MoeBackend {
     fn forward(&mut self, input: &Tensor, pos: usize) -> candle::Result<Tensor> {
         match &mut self.inner {
+            // GGUF модель возвращает [batch, vocab_size] - только последний токен
+            Qwen2MoeInner::Quantized(model) => model.forward(input, pos),
             // SafeTensors модель возвращает [batch, 1, vocab_size]
             // Извлекаем последнее измерение для совместимости с генерацией
             Qwen2MoeInner::Full(model) => {
@@ -85,13 +108,14 @@ impl ModelBackend for Qwen2MoeBackend {
 
     fn clear_kv_cache(&mut self) {
         match &mut self.inner {
+            Qwen2MoeInner::Quantized(model) => model.clear_kv_cache(),
             Qwen2MoeInner::Full(model) => model.clear_kv_cache(),
         }
     }
 
     fn model_type(&self) -> &str {
         match self.optimization.weight_format() {
-            WeightFormat::Gguf => "qwen2-moe-gguf", // На случай будущей поддержки
+            WeightFormat::Gguf => "qwen2-moe-gguf",
             WeightFormat::SafeTensors => "qwen2-moe",
         }
     }

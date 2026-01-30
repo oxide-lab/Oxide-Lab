@@ -7,6 +7,7 @@ pub mod common;
 pub mod registry;
 
 // Model backends
+pub mod deepseek2;
 pub mod llama;
 pub mod qwen2;
 pub mod qwen2_moe;

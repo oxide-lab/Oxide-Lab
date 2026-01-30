@@ -8,7 +8,7 @@
 //! - SafeTensors (полные веса, BF16/F16)
 //! - GGUF (квантизированные модели)
 
-mod fused_moe;
+pub mod fused_moe;
 mod gguf;
 pub mod model;
 pub mod quantized_model;

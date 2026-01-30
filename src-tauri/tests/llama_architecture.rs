@@ -13,5 +13,5 @@ fn test_llama_architecture_detection() {
         "general.architecture".to_string(),
         Value::String("llama".to_string()),
     );
-    assert_eq!(detect_arch(&metadata), Some(ArchKind::Llama));
+    assert_eq!(detect_arch(&metadata), Some(ArchKind::llama));
 }

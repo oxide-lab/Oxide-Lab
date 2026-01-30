@@ -1,20 +1,17 @@
-//! Local copy of quantized_qwen3_moe with clear_kv_cache support
-//!
-//! This is a modified version of candle_transformers::models::quantized_qwen3_moe
-//! that adds the clear_kv_cache method which is not exposed in the original.
+//! Local copy of quantized Qwen2-MoE GGUF model with clear_kv_cache support.
 
 use candle::quantized::gguf_file;
 use candle::{DType, Device, Result, Tensor};
 use candle_nn::kv_cache::ConcatKvCache;
 use candle_nn::{Embedding, Linear, Module};
+use candle_transformers::fused_moe::MoeCfg;
 use candle_transformers::models::quantized_qwen3::{Gguf, RotaryEmbedding};
 use candle_transformers::models::with_tracing::QMatMul;
-// Use local FusedMoeGGUF with contiguous() fix
-use super::fused_moe::FusedMoeGGUF;
-use candle_transformers::fused_moe::MoeCfg;
 use candle_transformers::quantized_nn::RmsNorm;
 use candle_transformers::utils::repeat_kv;
 use std::sync::Arc;
+
+use super::fused_moe::FusedMoeGGUF;
 
 #[derive(Debug, Clone)]
 struct Mlp {
@@ -29,6 +26,21 @@ impl Module for Mlp {
         let w3 = self.feed_forward_w3.forward(xs)?;
         self.feed_forward_w2
             .forward(&(candle_nn::ops::silu(&w1)? * w3)?)
+    }
+}
+
+struct SharedExpert {
+    gate_inp: QMatMul,
+    mlp: Mlp,
+}
+
+impl SharedExpert {
+    fn forward(&self, xs: &Tensor) -> Result<Tensor> {
+        let gate_inp = self.gate_inp.forward(xs)?;
+        let gate = candle_nn::ops::silu(&gate_inp)?;
+        let gate = gate.broadcast_div(&gate_inp)?;
+        let ffn = self.mlp.forward(xs)?;
+        ffn * gate
     }
 }
 
@@ -54,8 +66,6 @@ pub struct QuantizedAttention {
     attention_bk: Option<Tensor>,
     attention_bv: Option<Tensor>,
     attention_wo: QMatMul,
-    q_norm: Option<RmsNorm>,
-    k_norm: Option<RmsNorm>,
     n_head: usize,
     n_kv_head: usize,
     head_dim: usize,
@@ -78,6 +88,7 @@ impl QuantizedAttention {
         device: &Device,
         rotary_emb: Arc<RotaryEmbedding>,
     ) -> Result<Self> {
+        let _ = rms_norm_eps;
         let num_kv_groups = num_heads / num_kv_heads;
         let attention_wq = gg.qmatmul(&format!("{prefix}.attn_q.weight"))?;
         let attention_wk = gg.qmatmul(&format!("{prefix}.attn_k.weight"))?;
@@ -106,8 +117,6 @@ impl QuantizedAttention {
         };
 
         let attention_wo = gg.qmatmul(&format!("{prefix}.attn_output.weight"))?;
-        let q_norm = Some(gg.rms_norm(&format!("{prefix}.attn_q_norm.weight"), rms_norm_eps)?);
-        let k_norm = Some(gg.rms_norm(&format!("{prefix}.attn_k_norm.weight"), rms_norm_eps)?);
         let kv_cache = ConcatKvCache::new(2);
         Ok(QuantizedAttention {
             attention_wq,
@@ -117,8 +126,6 @@ impl QuantizedAttention {
             attention_bk,
             attention_bv,
             attention_wo,
-            q_norm,
-            k_norm,
             n_head: num_heads,
             n_kv_head: num_kv_heads,
             head_dim,
@@ -172,22 +179,6 @@ impl QuantizedAttention {
             .transpose(1, 2)?
             .contiguous()?;
 
-        let (q, k) = if let (Some(q_norm), Some(k_norm)) = (&self.q_norm, &self.k_norm) {
-            // Per‑head RMSNorm in qwen3
-            let q_flat = q.flatten(0, 2)?;
-            let k_flat = k.flatten(0, 2)?;
-
-            let q_flat = q_norm.forward(&q_flat)?;
-            let k_flat = k_norm.forward(&k_flat)?;
-
-            let q = q_flat.reshape((1, self.n_head, seq_len, self.head_dim))?;
-            let k = k_flat.reshape((1, self.n_kv_head, seq_len, self.head_dim))?;
-
-            (q, k)
-        } else {
-            (q, k)
-        };
-
         let (q, k, v) = (
             q.to_dtype(self.dtype)?,
             k.to_dtype(self.dtype)?,
@@ -235,6 +226,7 @@ struct LayerWeights {
     attention_norm: RmsNorm,
     mlp: MoeOrMlp,
     ffn_norm: RmsNorm,
+    shared_expert: Option<SharedExpert>,
 }
 
 impl LayerWeights {
@@ -247,7 +239,7 @@ impl LayerWeights {
     }
 }
 
-pub struct GGUFQWenMoE {
+pub struct GGUFQwen2Moe {
     tok_embeddings: Embedding,
     layers: Vec<LayerWeights>,
     norm: RmsNorm,
@@ -256,7 +248,7 @@ pub struct GGUFQWenMoE {
     device: Device,
 }
 
-impl GGUFQWenMoE {
+impl GGUFQwen2Moe {
     pub fn from_gguf<R: std::io::Seek + std::io::Read>(
         ct: gguf_file::Content,
         reader: &mut R,
@@ -290,6 +282,7 @@ impl GGUFQWenMoE {
         let rope_freq_base = md_get(format!("{arch}.rope.freq_base").as_str())
             .and_then(|m| m.to_f32())
             .unwrap_or(10000f32);
+
         let expert_shared_feed_forward_length =
             md_get(format!("{arch}.expert_shared_feed_forward_length").as_str());
         let shared_expert_intermediate_size = match expert_shared_feed_forward_length {
@@ -312,7 +305,7 @@ impl GGUFQWenMoE {
                 as usize,
             hidden_size: head_dim,
             act: candle_nn::Activation::Silu,
-            decoder_sparse_step: None,
+            decoder_sparse_step: Some(1),
         };
 
         let tok_embeddings = gg.tensor("token_embd.weight")?;
@@ -373,6 +366,23 @@ impl GGUFQWenMoE {
                 MoeOrMlp::Mlp(mlp)
             };
 
+            let shared_expert = if shared_expert_intermediate_size.is_some() {
+                let gate_inp = gg.qmatmul(&format!("{prefix}.ffn_gate_inp_shexp.weight"))?;
+                let feed_forward_w1 = gg.qmatmul(&format!("{prefix}.ffn_gate_shexp.weight"))?;
+                let feed_forward_w2 = gg.qmatmul(&format!("{prefix}.ffn_down_shexp.weight"))?;
+                let feed_forward_w3 = gg.qmatmul(&format!("{prefix}.ffn_up_shexp.weight"))?;
+                Some(SharedExpert {
+                    gate_inp,
+                    mlp: Mlp {
+                        feed_forward_w1,
+                        feed_forward_w2,
+                        feed_forward_w3,
+                    },
+                })
+            } else {
+                None
+            };
+
             let attention_norm =
                 gg.rms_norm(&format!("{prefix}.attn_norm.weight"), rms_norm_eps)?;
             let ffn_norm = gg.rms_norm(&format!("{prefix}.ffn_norm.weight"), rms_norm_eps)?;
@@ -393,6 +403,7 @@ impl GGUFQWenMoE {
                 attention_norm,
                 mlp,
                 ffn_norm,
+                shared_expert,
             });
         }
 
@@ -447,13 +458,16 @@ impl GGUFQWenMoE {
             let attn = layer.forward_attn(&x, causal_mask.as_ref(), offset)?;
             let x = (attn + residual)?;
 
-            // MLP
+            // MoE + shared expert
             let residual = &x;
             let x = layer.ffn_norm.forward(&x)?;
-            // FIX: Ensure input to MLP is contiguous
             let x = x.contiguous()?;
-            let x = layer.mlp.forward(&x, causal_mask.is_some())?;
-            let x = (x + residual)?;
+            let mut moe_out = layer.mlp.forward(&x, causal_mask.is_some())?;
+            if let Some(shared) = &layer.shared_expert {
+                let shared_out = shared.forward(&x)?;
+                moe_out = (moe_out + shared_out)?;
+            }
+            let x = (moe_out + residual)?;
             xs = x;
         }
 
