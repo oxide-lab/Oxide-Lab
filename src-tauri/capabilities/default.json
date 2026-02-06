@@ -3,6 +3,9 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://*"]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -17,8 +20,11 @@
     "fs:default",
     "store:default",
     "sql:default",
-    "oxide-hardware:default",
-    "oxide-llamacpp:default",
+    "hardware:default",
+    "llamacpp:default",
+    "llamacpp:allow-get-backends-dir",
+    "llamacpp:allow-install-backend-release",
+    "llamacpp:allow-resolve-installed-backend-executable",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
     "fs:allow-read-file",

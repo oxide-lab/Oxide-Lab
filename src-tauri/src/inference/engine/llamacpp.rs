@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use oxide_llamacpp::args::LlamacppConfig;
 use oxide_llamacpp::commands;
 use oxide_llamacpp::state::SessionInfo as PluginSessionInfo;
+use tauri::Manager;
 
 const START_RETRIES: usize = 5;
 const DEFAULT_START_TIMEOUT_SECS: u64 = 120;
@@ -109,7 +110,7 @@ impl LlamaCppAdapter {
         }
     }
 
-    fn bin_roots() -> Vec<PathBuf> {
+    fn bin_roots(&self) -> Vec<PathBuf> {
         let mut roots = Vec::new();
 
         if let Ok(root_var) = env::var("OXIDE_LLAMA_BIN_ROOT") {
@@ -124,6 +125,17 @@ impl LlamaCppAdapter {
             let p = cwd.join("example").join("bin");
             if p.exists() && p.is_dir() {
                 roots.push(p);
+            }
+        }
+
+        if let Ok(resource_dir) = self.app_handle.path().resource_dir() {
+            let candidate_a = resource_dir.join("example").join("bin");
+            if candidate_a.exists() && candidate_a.is_dir() {
+                roots.push(candidate_a);
+            }
+            let candidate_b = resource_dir.join("bin");
+            if candidate_b.exists() && candidate_b.is_dir() {
+                roots.push(candidate_b);
             }
         }
 
@@ -158,10 +170,10 @@ impl LlamaCppAdapter {
         }
     }
 
-    fn find_bundled_binaries(runtime_cfg: &LlamaRuntimeConfig) -> Vec<PathBuf> {
+    fn find_bundled_binaries(&self, runtime_cfg: &LlamaRuntimeConfig) -> Vec<PathBuf> {
         let mut ranked: Vec<(i32, PathBuf)> = Vec::new();
 
-        for root in Self::bin_roots() {
+        for root in self.bin_roots() {
             for bin in Self::candidate_binary_names() {
                 let direct = root.join(bin);
                 if direct.exists() && direct.is_file() {
@@ -218,7 +230,7 @@ impl LlamaCppAdapter {
         None
     }
 
-    fn resolve_server_binary(runtime_cfg: &LlamaRuntimeConfig) -> Result<String, String> {
+    fn resolve_server_binary(&self, runtime_cfg: &LlamaRuntimeConfig) -> Result<String, String> {
         if let Some(explicit) = runtime_cfg
             .server_path
             .as_ref()
@@ -233,7 +245,7 @@ impl LlamaCppAdapter {
             return Ok(env_path.to_string_lossy().to_string());
         }
 
-        if let Some(path) = Self::find_bundled_binaries(runtime_cfg).into_iter().next() {
+        if let Some(path) = self.find_bundled_binaries(runtime_cfg).into_iter().next() {
             return Ok(path.to_string_lossy().to_string());
         }
 
@@ -241,12 +253,16 @@ impl LlamaCppAdapter {
             return Ok(path.to_string_lossy().to_string());
         }
 
-        Err("llama-server binary not found (runtime config, env, example/bin, PATH)".to_string())
+        Err("llama-server binary not found (runtime config, env, resources, example/bin, PATH)"
+            .to_string())
     }
 
     fn build_config(runtime_cfg: &LlamaRuntimeConfig) -> LlamacppConfig {
         LlamacppConfig {
-            version_backend: "v1.0/standard".to_string(),
+            version_backend: runtime_cfg
+                .selected_backend
+                .clone()
+                .unwrap_or_else(|| "v1.0/standard".to_string()),
             auto_update_engine: false,
             auto_unload: false,
             timeout: DEFAULT_START_TIMEOUT_SECS as i32,
@@ -302,7 +318,7 @@ impl LlamaCppAdapter {
         source: &ResolvedModelSource,
         runtime_cfg: &LlamaRuntimeConfig,
     ) -> Result<PluginSessionInfo, String> {
-        let backend_path = Self::resolve_server_binary(runtime_cfg)?;
+        let backend_path = self.resolve_server_binary(runtime_cfg)?;
         let config = Self::build_config(runtime_cfg);
         let timeout = Duration::from_secs(DEFAULT_START_TIMEOUT_SECS).as_secs();
         let is_embedding = Self::is_embedding(kind);

@@ -37,5 +37,8 @@ permissions = [
     "allow-remove-old-backend-versions",
     "allow-validate-backend-string",
     "allow-should-migrate-backend",
-    "allow-handle-setting-update"
+    "allow-handle-setting-update",
+    "allow-get-backends-dir",
+    "allow-resolve-installed-backend-executable",
+    "allow-install-backend-release"
 ]

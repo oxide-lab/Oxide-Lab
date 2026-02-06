@@ -84,7 +84,17 @@
     "speed": "Speed",
     "inferenceTime": "Inference Time",
     "avgSpeed": "Average Speed",
-    "modelLoad": "Model Load Time"
+    "modelLoad": "Model Load Time",
+    "hardware": {
+      "title": "Hardware",
+      "os": "OS",
+      "cpu": "CPU",
+      "cores": "Cores",
+      "arch": "Architecture",
+      "ram": "RAM",
+      "gpus": "GPUs",
+      "gpuMemory": "Memory"
+    }
   },
   "prefixCache": {
     "title": "Prefix Cache",
@@ -97,5 +107,17 @@
       "misses": "Misses",
       "entries": "Cached entries"
     }
+  },
+  "llamaRuntime": {
+    "title": "Llama.cpp Runtime",
+    "description": "Download and update llama.cpp binaries from UI without reinstalling the app",
+    "current": "Current backend",
+    "path": "Binary path",
+    "updateAvailable": "Update available",
+    "check": "Check updates",
+    "updateNow": "Update now",
+    "installLatest": "Install latest",
+    "installed": "Installed backend: {backend}",
+    "noBackends": "No compatible backends found"
   }
 }

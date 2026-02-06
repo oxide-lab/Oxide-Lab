@@ -34,6 +34,9 @@ Default permissions for the llamacpp plugin
 - `allow-validate-backend-string`
 - `allow-should-migrate-backend`
 - `allow-handle-setting-update`
+- `allow-get-backends-dir`
+- `allow-resolve-installed-backend-executable`
+- `allow-install-backend-release`
 
 ## Permission Table
 
@@ -47,7 +50,7 @@ Default permissions for the llamacpp plugin
 <tr>
 <td>
 
-`oxide-llamacpp:allow-check-backend-for-updates`
+`llamacpp:allow-check-backend-for-updates`
 
 </td>
 <td>
@@ -60,7 +63,7 @@ Enables the check_backend_for_updates command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-check-backend-for-updates`
+`llamacpp:deny-check-backend-for-updates`
 
 </td>
 <td>
@@ -73,7 +76,7 @@ Denies the check_backend_for_updates command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-cleanup-llama-processes`
+`llamacpp:allow-cleanup-llama-processes`
 
 </td>
 <td>
@@ -86,7 +89,7 @@ Enables the cleanup_llama_processes command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-cleanup-llama-processes`
+`llamacpp:deny-cleanup-llama-processes`
 
 </td>
 <td>
@@ -99,7 +102,7 @@ Denies the cleanup_llama_processes command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-determine-supported-backends`
+`llamacpp:allow-determine-supported-backends`
 
 </td>
 <td>
@@ -112,7 +115,7 @@ Enables the determine_supported_backends command without any pre-configured scop
 <tr>
 <td>
 
-`oxide-llamacpp:deny-determine-supported-backends`
+`llamacpp:deny-determine-supported-backends`
 
 </td>
 <td>
@@ -125,7 +128,7 @@ Denies the determine_supported_backends command without any pre-configured scope
 <tr>
 <td>
 
-`oxide-llamacpp:allow-estimate-kv-cache-size`
+`llamacpp:allow-estimate-kv-cache-size`
 
 </td>
 <td>
@@ -138,7 +141,7 @@ Enables the estimate_kv_cache_size command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-estimate-kv-cache-size`
+`llamacpp:deny-estimate-kv-cache-size`
 
 </td>
 <td>
@@ -151,7 +154,7 @@ Denies the estimate_kv_cache_size command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-find-latest-version-for-backend`
+`llamacpp:allow-find-latest-version-for-backend`
 
 </td>
 <td>
@@ -164,7 +167,7 @@ Enables the find_latest_version_for_backend command without any pre-configured s
 <tr>
 <td>
 
-`oxide-llamacpp:deny-find-latest-version-for-backend`
+`llamacpp:deny-find-latest-version-for-backend`
 
 </td>
 <td>
@@ -177,7 +180,7 @@ Denies the find_latest_version_for_backend command without any pre-configured sc
 <tr>
 <td>
 
-`oxide-llamacpp:allow-find-session-by-model`
+`llamacpp:allow-find-session-by-model`
 
 </td>
 <td>
@@ -190,7 +193,7 @@ Enables the find_session_by_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-find-session-by-model`
+`llamacpp:deny-find-session-by-model`
 
 </td>
 <td>
@@ -203,7 +206,7 @@ Denies the find_session_by_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-generate-api-key`
+`llamacpp:allow-generate-api-key`
 
 </td>
 <td>
@@ -216,7 +219,7 @@ Enables the generate_api_key command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-generate-api-key`
+`llamacpp:deny-generate-api-key`
 
 </td>
 <td>
@@ -229,7 +232,7 @@ Denies the generate_api_key command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-all-sessions`
+`llamacpp:allow-get-all-sessions`
 
 </td>
 <td>
@@ -242,7 +245,7 @@ Enables the get_all_sessions command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-all-sessions`
+`llamacpp:deny-get-all-sessions`
 
 </td>
 <td>
@@ -255,7 +258,33 @@ Denies the get_all_sessions command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-devices`
+`llamacpp:allow-get-backends-dir`
+
+</td>
+<td>
+
+Enables the get_backends_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-backends-dir`
+
+</td>
+<td>
+
+Denies the get_backends_dir command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-devices`
 
 </td>
 <td>
@@ -268,7 +297,7 @@ Enables the get_devices command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-devices`
+`llamacpp:deny-get-devices`
 
 </td>
 <td>
@@ -281,7 +310,7 @@ Denies the get_devices command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-loaded-models`
+`llamacpp:allow-get-loaded-models`
 
 </td>
 <td>
@@ -294,7 +323,7 @@ Enables the get_loaded_models command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-loaded-models`
+`llamacpp:deny-get-loaded-models`
 
 </td>
 <td>
@@ -307,7 +336,7 @@ Denies the get_loaded_models command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-local-installed-backends`
+`llamacpp:allow-get-local-installed-backends`
 
 </td>
 <td>
@@ -320,7 +349,7 @@ Enables the get_local_installed_backends command without any pre-configured scop
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-local-installed-backends`
+`llamacpp:deny-get-local-installed-backends`
 
 </td>
 <td>
@@ -333,7 +362,7 @@ Denies the get_local_installed_backends command without any pre-configured scope
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-model-size`
+`llamacpp:allow-get-model-size`
 
 </td>
 <td>
@@ -346,7 +375,7 @@ Enables the get_model_size command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-model-size`
+`llamacpp:deny-get-model-size`
 
 </td>
 <td>
@@ -359,7 +388,7 @@ Denies the get_model_size command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-random-port`
+`llamacpp:allow-get-random-port`
 
 </td>
 <td>
@@ -372,7 +401,7 @@ Enables the get_random_port command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-random-port`
+`llamacpp:deny-get-random-port`
 
 </td>
 <td>
@@ -385,7 +414,7 @@ Denies the get_random_port command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-session-by-model`
+`llamacpp:allow-get-session-by-model`
 
 </td>
 <td>
@@ -398,7 +427,7 @@ Enables the get_session_by_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-session-by-model`
+`llamacpp:deny-get-session-by-model`
 
 </td>
 <td>
@@ -411,7 +440,7 @@ Denies the get_session_by_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-get-supported-features`
+`llamacpp:allow-get-supported-features`
 
 </td>
 <td>
@@ -424,7 +453,7 @@ Enables the get_supported_features command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-get-supported-features`
+`llamacpp:deny-get-supported-features`
 
 </td>
 <td>
@@ -437,7 +466,7 @@ Denies the get_supported_features command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-handle-setting-update`
+`llamacpp:allow-handle-setting-update`
 
 </td>
 <td>
@@ -450,7 +479,7 @@ Enables the handle_setting_update command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-handle-setting-update`
+`llamacpp:deny-handle-setting-update`
 
 </td>
 <td>
@@ -463,7 +492,33 @@ Denies the handle_setting_update command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-is-cuda-installed`
+`llamacpp:allow-install-backend-release`
+
+</td>
+<td>
+
+Enables the install_backend_release command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-install-backend-release`
+
+</td>
+<td>
+
+Denies the install_backend_release command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-is-cuda-installed`
 
 </td>
 <td>
@@ -476,7 +531,7 @@ Enables the is_cuda_installed command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-is-cuda-installed`
+`llamacpp:deny-is-cuda-installed`
 
 </td>
 <td>
@@ -489,7 +544,7 @@ Denies the is_cuda_installed command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-is-model-supported`
+`llamacpp:allow-is-model-supported`
 
 </td>
 <td>
@@ -502,7 +557,7 @@ Enables the is_model_supported command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-is-model-supported`
+`llamacpp:deny-is-model-supported`
 
 </td>
 <td>
@@ -515,7 +570,7 @@ Denies the is_model_supported command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-is-process-running`
+`llamacpp:allow-is-process-running`
 
 </td>
 <td>
@@ -528,7 +583,7 @@ Enables the is_process_running command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-is-process-running`
+`llamacpp:deny-is-process-running`
 
 </td>
 <td>
@@ -541,7 +596,7 @@ Denies the is_process_running command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-list-supported-backends`
+`llamacpp:allow-list-supported-backends`
 
 </td>
 <td>
@@ -554,7 +609,7 @@ Enables the list_supported_backends command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-list-supported-backends`
+`llamacpp:deny-list-supported-backends`
 
 </td>
 <td>
@@ -567,7 +622,7 @@ Denies the list_supported_backends command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-load-llama-model`
+`llamacpp:allow-load-llama-model`
 
 </td>
 <td>
@@ -580,7 +635,7 @@ Enables the load_llama_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-load-llama-model`
+`llamacpp:deny-load-llama-model`
 
 </td>
 <td>
@@ -593,7 +648,7 @@ Denies the load_llama_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-map-old-backend-to-new`
+`llamacpp:allow-map-old-backend-to-new`
 
 </td>
 <td>
@@ -606,7 +661,7 @@ Enables the map_old_backend_to_new command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-map-old-backend-to-new`
+`llamacpp:deny-map-old-backend-to-new`
 
 </td>
 <td>
@@ -619,7 +674,7 @@ Denies the map_old_backend_to_new command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-parse-backend-version`
+`llamacpp:allow-parse-backend-version`
 
 </td>
 <td>
@@ -632,7 +687,7 @@ Enables the parse_backend_version command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-parse-backend-version`
+`llamacpp:deny-parse-backend-version`
 
 </td>
 <td>
@@ -645,7 +700,7 @@ Denies the parse_backend_version command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-plan-model-load`
+`llamacpp:allow-plan-model-load`
 
 </td>
 <td>
@@ -658,7 +713,7 @@ Enables the plan_model_load command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-plan-model-load`
+`llamacpp:deny-plan-model-load`
 
 </td>
 <td>
@@ -671,7 +726,7 @@ Denies the plan_model_load command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-prioritize-backends`
+`llamacpp:allow-prioritize-backends`
 
 </td>
 <td>
@@ -684,7 +739,7 @@ Enables the prioritize_backends command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-prioritize-backends`
+`llamacpp:deny-prioritize-backends`
 
 </td>
 <td>
@@ -697,7 +752,7 @@ Denies the prioritize_backends command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-read-gguf-metadata`
+`llamacpp:allow-read-gguf-metadata`
 
 </td>
 <td>
@@ -710,7 +765,7 @@ Enables the read_gguf_metadata command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-read-gguf-metadata`
+`llamacpp:deny-read-gguf-metadata`
 
 </td>
 <td>
@@ -723,7 +778,7 @@ Denies the read_gguf_metadata command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-remove-old-backend-versions`
+`llamacpp:allow-remove-old-backend-versions`
 
 </td>
 <td>
@@ -736,7 +791,7 @@ Enables the remove_old_backend_versions command without any pre-configured scope
 <tr>
 <td>
 
-`oxide-llamacpp:deny-remove-old-backend-versions`
+`llamacpp:deny-remove-old-backend-versions`
 
 </td>
 <td>
@@ -749,7 +804,33 @@ Denies the remove_old_backend_versions command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-should-migrate-backend`
+`llamacpp:allow-resolve-installed-backend-executable`
+
+</td>
+<td>
+
+Enables the resolve_installed_backend_executable command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-resolve-installed-backend-executable`
+
+</td>
+<td>
+
+Denies the resolve_installed_backend_executable command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-should-migrate-backend`
 
 </td>
 <td>
@@ -762,7 +843,7 @@ Enables the should_migrate_backend command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-should-migrate-backend`
+`llamacpp:deny-should-migrate-backend`
 
 </td>
 <td>
@@ -775,7 +856,7 @@ Denies the should_migrate_backend command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-unload-llama-model`
+`llamacpp:allow-unload-llama-model`
 
 </td>
 <td>
@@ -788,7 +869,7 @@ Enables the unload_llama_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-unload-llama-model`
+`llamacpp:deny-unload-llama-model`
 
 </td>
 <td>
@@ -801,7 +882,7 @@ Denies the unload_llama_model command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:allow-validate-backend-string`
+`llamacpp:allow-validate-backend-string`
 
 </td>
 <td>
@@ -814,7 +895,7 @@ Enables the validate_backend_string command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-llamacpp:deny-validate-backend-string`
+`llamacpp:deny-validate-backend-string`
 
 </td>
 <td>

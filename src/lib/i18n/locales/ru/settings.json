@@ -84,7 +84,17 @@
     "speed": "Скорость",
     "inferenceTime": "Время инференса",
     "avgSpeed": "Средняя скорость",
-    "modelLoad": "Загрузка модели"
+    "modelLoad": "Загрузка модели",
+    "hardware": {
+      "title": "Оборудование",
+      "os": "ОС",
+      "cpu": "CPU",
+      "cores": "Ядра",
+      "arch": "Архитектура",
+      "ram": "ОЗУ",
+      "gpus": "GPU",
+      "gpuMemory": "Память"
+    }
   },
   "prefixCache": {
     "title": "Кэш префиксов",
@@ -97,5 +107,17 @@
       "misses": "Промахи",
       "entries": "Закэшированные записи"
     }
+  },
+  "llamaRuntime": {
+    "title": "Llama.cpp Runtime",
+    "description": "Скачивание и обновление бинарников llama.cpp из UI без переустановки приложения",
+    "current": "Текущий backend",
+    "path": "Путь к бинарнику",
+    "updateAvailable": "Доступно обновление",
+    "check": "Проверить обновления",
+    "updateNow": "Обновить",
+    "installLatest": "Установить последний",
+    "installed": "Установлен backend: {backend}",
+    "noBackends": "Нет совместимых backend"
   }
 }

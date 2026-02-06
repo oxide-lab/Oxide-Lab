@@ -18,7 +18,9 @@
   import Clock from 'phosphor-svelte/lib/Clock';
   import TrendUp from 'phosphor-svelte/lib/TrendUp';
   import Warning from 'phosphor-svelte/lib/Warning';
+  import GpuCard from 'phosphor-svelte/lib/GraphicsCard';
   import { performanceService } from '$lib/services/performance-service';
+  import { hardwareService } from '$lib/services/hardware-service';
   import type {
     PerformanceSummary,
     SystemUsage,
@@ -26,23 +28,36 @@
     InferenceMetrics,
     StartupMetrics,
   } from '$lib/types/performance';
+  import type { HardwareSystemInfo, HardwareSystemUsage } from '$lib/types/hardware';
   import { t } from '$lib/i18n';
 
   // State
   let summary = $state<PerformanceSummary | null>(null);
   let systemUsage = $state<SystemUsage | null>(null);
+  let hardwareInfo = $state<HardwareSystemInfo | null>(null);
+  let hardwareUsage = $state<HardwareSystemUsage | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
   let autoRefresh = $state(true);
   let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
+  function gpuUsageByUuid(uuid: string) {
+    return hardwareUsage?.gpus?.find((gpu) => gpu.uuid === uuid);
+  }
+
+  function formatPercent(value: number) {
+    return `${value.toFixed(1)}%`;
+  }
+
   async function loadSummary() {
     loading = true;
     error = null;
     try {
-      const [summaryData, systemUsageData] = await Promise.allSettled([
+      const [summaryData, systemUsageData, hardwareUsageData, hardwareInfoData] = await Promise.allSettled([
         performanceService.getPerformanceSummary(),
         performanceService.getSystemUsage(),
+        hardwareService.getSystemUsage(),
+        hardwareInfo ? Promise.resolve(hardwareInfo) : hardwareService.getSystemInfo(),
       ]);
 
       if (summaryData.status === 'fulfilled') {
@@ -51,8 +66,19 @@
       if (systemUsageData.status === 'fulfilled') {
         systemUsage = systemUsageData.value;
       }
+      if (hardwareUsageData.status === 'fulfilled') {
+        hardwareUsage = hardwareUsageData.value;
+      }
+      if (hardwareInfoData.status === 'fulfilled') {
+        hardwareInfo = hardwareInfoData.value;
+      }
 
-      if (summaryData.status === 'rejected' && systemUsageData.status === 'rejected') {
+      if (
+        summaryData.status === 'rejected' &&
+        systemUsageData.status === 'rejected' &&
+        hardwareUsageData.status === 'rejected' &&
+        hardwareInfoData.status === 'rejected'
+      ) {
         error = $t('settings.performance.loadError') || 'Failed to load performance data';
       }
     } catch (e) {
@@ -258,6 +284,81 @@
         </Card.Root>
       {/if}
     </div>
+
+    {#if hardwareInfo}
+      <Card.Root>
+        <Card.Content class="pt-4">
+          <div class="space-y-2">
+            <h3 class="font-semibold text-sm">
+              {$t('settings.performance.hardware.title') || 'Hardware'}
+            </h3>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <div class="text-sm">
+                <span class="text-muted-foreground">
+                  {$t('settings.performance.hardware.os') || 'OS'}:
+                </span>
+                <span class="ml-2">{hardwareInfo.os_name} ({hardwareInfo.os_type})</span>
+              </div>
+              <div class="text-sm">
+                <span class="text-muted-foreground">
+                  {$t('settings.performance.hardware.cpu') || 'CPU'}:
+                </span>
+                <span class="ml-2">{hardwareInfo.cpu.name}</span>
+              </div>
+              <div class="text-sm">
+                <span class="text-muted-foreground">
+                  {$t('settings.performance.hardware.cores') || 'Cores'}:
+                </span>
+                <span class="ml-2">{hardwareInfo.cpu.core_count}</span>
+              </div>
+              <div class="text-sm">
+                <span class="text-muted-foreground">
+                  {$t('settings.performance.hardware.arch') || 'Architecture'}:
+                </span>
+                <span class="ml-2">{hardwareInfo.cpu.arch}</span>
+              </div>
+              <div class="text-sm sm:col-span-2">
+                <span class="text-muted-foreground">
+                  {$t('settings.performance.hardware.ram') || 'RAM'}:
+                </span>
+                <span class="ml-2">{performanceService.formatMemory(hardwareInfo.total_memory)}</span>
+              </div>
+            </div>
+          </div>
+        </Card.Content>
+      </Card.Root>
+    {/if}
+
+    {#if hardwareInfo?.gpus?.length}
+      <Card.Root>
+        <Card.Content class="pt-4 space-y-3">
+          <h3 class="font-semibold text-sm flex items-center gap-2">
+            <GpuCard class="size-4" />
+            {$t('settings.performance.hardware.gpus') || 'GPUs'}
+          </h3>
+          {#each hardwareInfo.gpus as gpu}
+            {@const usage = gpuUsageByUuid(gpu.uuid)}
+            {@const usagePercent = usage && usage.total_memory > 0 ? (usage.used_memory / usage.total_memory) * 100 : null}
+            <div class="rounded border p-3 text-sm">
+              <div class="font-medium">{gpu.name}</div>
+              <div class="text-muted-foreground">{gpu.vendor}</div>
+              <div class="mt-1">
+                {#if usage}
+                  {$t('settings.performance.hardware.gpuMemory') || 'Memory'}:
+                  {performanceService.formatMemory(usage.used_memory)} / {performanceService.formatMemory(usage.total_memory)}
+                  {#if usagePercent !== null}
+                    ({formatPercent(usagePercent)})
+                  {/if}
+                {:else}
+                  {$t('settings.performance.hardware.gpuMemory') || 'Memory'}:
+                  {performanceService.formatMemory(gpu.total_memory)}
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </Card.Content>
+      </Card.Root>
+    {/if}
   {:else if !loading}
     <div class="text-center py-8 text-muted-foreground">
       <ChartBar class="size-12 mx-auto mb-3 opacity-30" />

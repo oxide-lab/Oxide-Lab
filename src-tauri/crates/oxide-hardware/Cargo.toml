@@ -1,5 +1,5 @@
 [package]
-name = "oxide-hardware"
+name = "hardware"
 version = "0.6.599"
 authors = ["Oxide Lab Contributors"]
 description = "Tauri plugin for hardware information and GPU monitoring"
@@ -8,7 +8,7 @@ repository = "https://github.com/FerrisMind/Oxide-Lab"
 edition = "2021"
 rust-version = "1.77.2"
 exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
-links = "oxide-hardware"
+links = "hardware"
 
 [dependencies]
 libc = "0.2"
@@ -27,4 +27,3 @@ libloading = "0.8"
 
 [build-dependencies]
 tauri-plugin = { version = "2.3.1", features = ["build"] }
-

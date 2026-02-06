@@ -203,6 +203,17 @@ pub fn run() {
                     eprintln!("Failed to load saved Rayon thread limit: {}", err);
                 }
             }
+            match ModelState::load_llama_runtime(handle) {
+                Ok(Some(cfg)) => {
+                    if let Ok(mut guard) = shared.lock() {
+                        guard.llama_runtime = cfg;
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    eprintln!("Failed to load llama runtime config: {}", err);
+                }
+            }
             spawn_startup_tracker(app.handle().clone(), performance_monitor.clone());
 
             // Start the model scheduler keep-alive task

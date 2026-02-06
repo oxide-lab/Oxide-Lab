@@ -15,10 +15,14 @@
   import ChartBar from 'phosphor-svelte/lib/ChartBar';
   import Lightning from 'phosphor-svelte/lib/Lightning';
   import Warning from 'phosphor-svelte/lib/Warning';
+  import ArrowClockwise from 'phosphor-svelte/lib/ArrowClockwise';
+  import DownloadSimple from 'phosphor-svelte/lib/DownloadSimple';
+  import Cube from 'phosphor-svelte/lib/Cube';
   import { t, locale, setLocale, loadTranslations, type SupportedLocale } from '$lib/i18n';
   import { experimentalFeatures } from '$lib/stores/experimental-features.svelte';
   import { modelSelectorSearchEnabled } from '$lib/stores/ui-preferences';
   import PerformanceMonitor from '$lib/components/PerformanceMonitor.svelte';
+  import { llamaBackendService } from '$lib/services/llama-backend-service';
 
   const hardwareConcurrency = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
   let threadLimit = $state<number | null>(null);
@@ -33,6 +37,14 @@
   let prefixCacheMaxEntries = $state(32);
   let prefixCacheLoading = $state(true);
   let prefixCacheStats = $state({ hits: 0, misses: 0, entries: 0 });
+  let backendLoading = $state(false);
+  let backendInstalling = $state(false);
+  let backendError = $state<string | null>(null);
+  let backendNotice = $state<string | null>(null);
+  let backendCurrent = $state<string | null>(null);
+  let backendServerPath = $state<string | null>(null);
+  let backendUpdateTarget = $state<string | null>(null);
+  let backendAvailable = $state<{ version: string; backend: string }[]>([]);
 
   const languages: { value: SupportedLocale; label: string }[] = [
     { value: 'en', label: 'English' },
@@ -107,6 +119,66 @@
     }
   }
 
+  async function loadBackendOverview(checkUpdates = true) {
+    backendLoading = true;
+    backendError = null;
+    try {
+      const overview = await llamaBackendService.getOverview();
+      backendCurrent = overview.currentBackend;
+      backendServerPath = overview.serverPath;
+      backendAvailable = overview.available;
+      backendUpdateTarget = null;
+
+      if (checkUpdates && overview.currentBackend) {
+        const update = await llamaBackendService.checkForUpdates(overview.currentBackend);
+        backendUpdateTarget = update?.target_backend ?? null;
+      }
+    } catch (err) {
+      backendError = String(err);
+    } finally {
+      backendLoading = false;
+    }
+  }
+
+  async function checkBackendUpdates() {
+    await loadBackendOverview(true);
+  }
+
+  async function installOrUpdateBackend() {
+    const fallbackLatest =
+      backendAvailable.length > 0
+        ? `${backendAvailable[0].version}/${backendAvailable[0].backend}`
+        : null;
+    const target = backendUpdateTarget ?? fallbackLatest;
+    if (!target) {
+      backendError = $t('settings.llamaRuntime.noBackends') || 'No compatible backends found';
+      return;
+    }
+
+    backendInstalling = true;
+    backendError = null;
+    backendNotice = null;
+    try {
+      const installed = await llamaBackendService.installBackend(target);
+      backendNotice =
+        $t('settings.llamaRuntime.installed', { backend: installed.backendString }) ||
+        `Installed backend: ${installed.backendString}`;
+
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('unload_model');
+      } catch {
+        // Ignore when no model is loaded.
+      }
+
+      await loadBackendOverview(true);
+    } catch (err) {
+      backendError = String(err);
+    } finally {
+      backendInstalling = false;
+    }
+  }
+
   async function handlePrefixCacheToggle(enabled: boolean) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -141,6 +213,7 @@
     await Promise.all([
       loadThreadLimit(),
       loadPrefixCacheInfo(),
+      loadBackendOverview(true),
     ]);
   });
 
@@ -270,6 +343,71 @@
     <Card.Root>
       <Card.Header>
         <Card.Title class="flex items-center gap-2">
+          <Cube class="size-5" />
+          {$t('settings.llamaRuntime.title') || 'Llama.cpp Runtime'}
+        </Card.Title>
+        <Card.Description>
+          {$t('settings.llamaRuntime.description') ||
+            'Manage llama.cpp backend binaries without reinstalling the app'}
+        </Card.Description>
+      </Card.Header>
+      <Card.Content class="space-y-3">
+        {#if backendLoading}
+          <div class="flex justify-center py-4"><Spinner class="size-6" /></div>
+        {:else}
+          <div class="text-sm space-y-1">
+            <div>
+              <span class="text-muted-foreground">
+                {$t('settings.llamaRuntime.current') || 'Current backend'}:
+              </span>
+              <span class="ml-2 font-medium">{backendCurrent ?? '—'}</span>
+            </div>
+            <div class="break-all">
+              <span class="text-muted-foreground">
+                {$t('settings.llamaRuntime.path') || 'Binary path'}:
+              </span>
+              <span class="ml-2 font-mono text-xs">{backendServerPath ?? '—'}</span>
+            </div>
+            {#if backendUpdateTarget}
+              <div>
+                <span class="text-muted-foreground">
+                  {$t('settings.llamaRuntime.updateAvailable') || 'Update available'}:
+                </span>
+                <span class="ml-2 text-green-600 dark:text-green-400">{backendUpdateTarget}</span>
+              </div>
+            {/if}
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onclick={checkBackendUpdates} disabled={backendInstalling}>
+              <ArrowClockwise class="size-4 mr-1" />
+              {$t('settings.llamaRuntime.check') || 'Check updates'}
+            </Button>
+            <Button size="sm" onclick={installOrUpdateBackend} disabled={backendInstalling}>
+              {#if backendInstalling}
+                <Spinner class="size-4 mr-1" />
+              {:else}
+                <DownloadSimple class="size-4 mr-1" />
+              {/if}
+              {backendUpdateTarget
+                ? $t('settings.llamaRuntime.updateNow') || 'Update now'
+                : $t('settings.llamaRuntime.installLatest') || 'Install latest'}
+            </Button>
+          </div>
+
+          {#if backendNotice}
+            <p class="text-sm text-green-600 dark:text-green-400">{backendNotice}</p>
+          {/if}
+          {#if backendError}
+            <p class="text-sm text-destructive">{backendError}</p>
+          {/if}
+        {/if}
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="flex items-center gap-2">
           <Flask class="size-5" />
           {$t('settings.experimental.title') || 'Experimental Features'}
         </Card.Title>
@@ -330,7 +468,7 @@
         <div class="space-y-2 text-sm">
           <div class="flex justify-between">
             <span class="text-muted-foreground">{$t('about.version') || 'Version'}</span>
-            <span>0.13.1</span>
+            <span>0.15.0</span>
           </div>
           <div class="flex justify-between">
             <span class="text-muted-foreground">{$t('about.license') || 'License'}</span>

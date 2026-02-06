@@ -84,7 +84,17 @@
     "speed": "Velocidade",
     "inferenceTime": "Tempo de Inferência",
     "avgSpeed": "Velocidade Média",
-    "modelLoad": "Carregamento do Modelo"
+    "modelLoad": "Carregamento do Modelo",
+    "hardware": {
+      "title": "Hardware",
+      "os": "SO",
+      "cpu": "CPU",
+      "cores": "Núcleos",
+      "arch": "Arquitetura",
+      "ram": "RAM",
+      "gpus": "GPUs",
+      "gpuMemory": "Memória"
+    }
   },
   "prefixCache": {
     "title": "Cache de Prefixo",
@@ -97,5 +107,17 @@
       "misses": "Falhas",
       "entries": "Entradas em cache"
     }
+  },
+  "llamaRuntime": {
+    "title": "Runtime Llama.cpp",
+    "description": "Baixe e atualize binários do llama.cpp pela UI sem reinstalar o aplicativo",
+    "current": "Backend atual",
+    "path": "Caminho do binário",
+    "updateAvailable": "Atualização disponível",
+    "check": "Verificar atualizações",
+    "updateNow": "Atualizar agora",
+    "installLatest": "Instalar mais recente",
+    "installed": "Backend instalado: {backend}",
+    "noBackends": "Nenhum backend compatível encontrado"
   }
 }

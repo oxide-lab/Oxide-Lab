@@ -71,6 +71,8 @@ pub enum LlamaEmbeddingsStrategy {
 pub struct LlamaRuntimeConfig {
     #[serde(default)]
     pub server_path: Option<String>,
+    #[serde(default)]
+    pub selected_backend: Option<String>,
     #[serde(default = "default_ngl")]
     pub n_gpu_layers: i32,
     #[serde(default = "default_threads")]
@@ -119,6 +121,7 @@ impl Default for LlamaRuntimeConfig {
     fn default() -> Self {
         Self {
             server_path: None,
+            selected_backend: None,
             n_gpu_layers: default_ngl(),
             threads: default_threads(),
             threads_batch: 0,

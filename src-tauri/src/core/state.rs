@@ -115,6 +115,30 @@ impl ModelState {
             Ok(None)
         }
     }
+
+    pub fn save_llama_runtime(app: &AppHandle, config: &LlamaRuntimeConfig) -> Result<(), String> {
+        let profile_dir = Self::ensure_profile_dir(app)?;
+        let path = profile_dir.join("llama_runtime.json");
+        let file =
+            File::create(&path).map_err(|e| format!("Failed to create llama runtime file: {}", e))?;
+        serde_json::to_writer(file, config)
+            .map_err(|e| format!("Failed to serialize llama runtime config: {}", e))?;
+        Ok(())
+    }
+
+    pub fn load_llama_runtime(app: &AppHandle) -> Result<Option<LlamaRuntimeConfig>, String> {
+        let profile_dir = Self::profile_dir(app)?;
+        let path = profile_dir.join("llama_runtime.json");
+        if path.exists() {
+            let file = File::open(&path)
+                .map_err(|e| format!("Failed to open llama runtime file: {}", e))?;
+            let cfg: LlamaRuntimeConfig = serde_json::from_reader(file)
+                .map_err(|e| format!("Failed to deserialize llama runtime config: {}", e))?;
+            Ok(Some(cfg))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub type SharedState = Arc<Mutex<ModelState>>;

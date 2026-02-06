@@ -1,6 +1,6 @@
 [package]
 name = "oxide-lab"
-version = "0.13.1"
+version = "0.15.0"
 description = "Private AI chat application with local model support"
 authors = ["FerrisMind"]
 license = "Apache-2.0"
@@ -19,8 +19,8 @@ tauri-plugin-opener = "2.0"
 tauri-plugin-dialog = "2.0"
 tauri-plugin-fs = "2.0"
 tauri-plugin-store = "2.0"
-oxide-hardware = { path = "crates/oxide-hardware" }
-oxide-llamacpp = { path = "crates/oxide-llamacpp" }
+oxide-hardware = { package = "hardware", path = "crates/oxide-hardware" }
+oxide-llamacpp = { package = "llamacpp", path = "crates/oxide-llamacpp" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hf-hub = { version = "0.4", default-features = false, features = ["tokio", "ureq", "rustls-tls"] }
@@ -100,5 +100,4 @@ inherits = "release"
 lto = "fat"           # Максимальный LTO
 codegen-units = 1     # Лучшая оптимизация
 strip = true          # Убрать символы
-
 

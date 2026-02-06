@@ -1,6 +1,6 @@
 {
   "name": "Oxide-Lab",
-  "version": "0.13.1",
+  "version": "0.15.0",
   "description": "Private AI chat application with local model support",
   "type": "module",
   "license": "Apache-2.0",

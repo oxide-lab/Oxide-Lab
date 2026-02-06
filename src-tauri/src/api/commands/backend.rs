@@ -37,11 +37,13 @@ pub fn get_llama_runtime_config(
 
 #[tauri::command]
 pub fn set_llama_runtime_config(
+    app: tauri::AppHandle,
     state: tauri::State<'_, SharedState>,
     config: LlamaRuntimeConfig,
 ) -> Result<(), String> {
     let mut guard = state.lock().map_err(|e| e.to_string())?;
-    guard.llama_runtime = config;
+    guard.llama_runtime = config.clone();
+    crate::core::state::ModelState::save_llama_runtime(&app, &config)?;
     Ok(())
 }
 

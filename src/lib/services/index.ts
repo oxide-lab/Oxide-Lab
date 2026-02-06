@@ -16,4 +16,10 @@ export { ModelCardsService } from './model-cards';
 // Performance service
 export { PerformanceService, performanceService } from './performance-service';
 
+// Hardware service
+export { hardwareService } from './hardware-service';
+
+// Llama backend service
+export { llamaBackendService } from './llama-backend-service';
+
 

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-resolve-installed-backend-executable"
+description = "Enables the resolve_installed_backend_executable command without any pre-configured scope."
+commands.allow = ["resolve_installed_backend_executable"]
+
+[[permission]]
+identifier = "deny-resolve-installed-backend-executable"
+description = "Denies the resolve_installed_backend_executable command without any pre-configured scope."
+commands.deny = ["resolve_installed_backend_executable"]

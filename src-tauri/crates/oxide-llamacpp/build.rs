@@ -33,6 +33,9 @@ const COMMANDS: &[&str] = &[
     "validate_backend_string",
     "should_migrate_backend",
     "handle_setting_update",
+    "get_backends_dir",
+    "resolve_installed_backend_executable",
+    "install_backend_release",
 ];
 
 fn main() {

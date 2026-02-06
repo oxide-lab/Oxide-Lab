@@ -19,7 +19,7 @@ Default permissions for the hardware plugin
 <tr>
 <td>
 
-`oxide-hardware:allow-get-system-info`
+`hardware:allow-get-system-info`
 
 </td>
 <td>
@@ -32,7 +32,7 @@ Enables the get_system_info command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-hardware:deny-get-system-info`
+`hardware:deny-get-system-info`
 
 </td>
 <td>
@@ -45,7 +45,7 @@ Denies the get_system_info command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-hardware:allow-get-system-usage`
+`hardware:allow-get-system-usage`
 
 </td>
 <td>
@@ -58,7 +58,7 @@ Enables the get_system_usage command without any pre-configured scope.
 <tr>
 <td>
 
-`oxide-hardware:deny-get-system-usage`
+`hardware:deny-get-system-usage`
 
 </td>
 <td>

@@ -1,10 +1,56 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
+use tauri::{Emitter, Manager, Runtime};
+use tokio::io::AsyncWriteExt;
 
 #[tauri::command]
 pub fn map_old_backend_to_new(old_backend: String) -> String {
+    let normalized = old_backend.to_ascii_lowercase();
+
+    // Handle current release naming scheme (b79xx+ style).
+    if normalized.contains("win-cpu-x64") {
+        return "win-common_cpus-x64".to_string();
+    }
+    if normalized.contains("win-cpu-arm64") {
+        return "win-arm64".to_string();
+    }
+    if normalized.contains("win-vulkan-x64") {
+        return "win-vulkan-common_cpus-x64".to_string();
+    }
+    if normalized.contains("win-cuda-11") {
+        return "win-cuda-11-common_cpus-x64".to_string();
+    }
+    if normalized.contains("win-cuda-12") {
+        return "win-cuda-12-common_cpus-x64".to_string();
+    }
+    if normalized.contains("win-cuda-13") {
+        return "win-cuda-13-common_cpus-x64".to_string();
+    }
+    if normalized == "ubuntu-x64" || normalized == "linux-x64" {
+        return "linux-common_cpus-x64".to_string();
+    }
+    if normalized.contains("ubuntu-vulkan-x64") || normalized.contains("linux-vulkan-x64") {
+        return "linux-vulkan-common_cpus-x64".to_string();
+    }
+    if normalized.contains("ubuntu-cuda-11") || normalized.contains("linux-cuda-11") {
+        return "linux-cuda-11-common_cpus-x64".to_string();
+    }
+    if normalized.contains("ubuntu-cuda-12") || normalized.contains("linux-cuda-12") {
+        return "linux-cuda-12-common_cpus-x64".to_string();
+    }
+    if normalized.contains("ubuntu-cuda-13") || normalized.contains("linux-cuda-13") {
+        return "linux-cuda-13-common_cpus-x64".to_string();
+    }
+    if normalized == "macos-x64" || normalized == "darwin-x64" {
+        return "macos-x64".to_string();
+    }
+    if normalized == "macos-arm64" || normalized == "darwin-arm64" {
+        return "macos-arm64".to_string();
+    }
+
     let is_windows = old_backend.starts_with("win-");
     let is_linux = old_backend.starts_with("linux-");
     let os_prefix = if is_windows {
@@ -272,9 +318,15 @@ pub async fn list_supported_backends(
 
     // Sort newest version first; if versions tie, sort by backend name
     merged.sort_by(|a, b| {
-        let version_cmp = b.version.cmp(&a.version);
+        let version_cmp =
+            parse_backend_version(b.version.clone()).cmp(&parse_backend_version(a.version.clone()));
         if version_cmp == std::cmp::Ordering::Equal {
-            a.backend.cmp(&b.backend)
+            let fallback = b.version.cmp(&a.version);
+            if fallback == std::cmp::Ordering::Equal {
+                a.backend.cmp(&b.backend)
+            } else {
+                fallback
+            }
         } else {
             version_cmp
         }
@@ -494,7 +546,9 @@ pub fn find_latest_version_for_backend(
     }
 
     // Sort by version (newest first)
-    matching_backends.sort_by(|a, b| b.version.cmp(&a.version));
+    matching_backends.sort_by(|a, b| {
+        parse_backend_version(b.version.clone()).cmp(&parse_backend_version(a.version.clone()))
+    });
 
     // Return the full string including the original asset name
     Some(format!(
@@ -875,6 +929,319 @@ pub fn handle_setting_update(
     })
 }
 
+// ============================================================================
+// Backend install/update helpers
+// ============================================================================
+
+#[derive(Clone, Serialize)]
+struct BackendDownloadEvent {
+    phase: String,
+    backend_string: String,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+}
+
+#[derive(Clone, Copy)]
+enum ArchiveFormat {
+    TarGz,
+    Zip,
+}
+
+struct BackendArchiveCandidate {
+    url: String,
+    file_name: String,
+    format: ArchiveFormat,
+}
+
+fn backend_archive_candidates(version: &str, backend: &str) -> Vec<BackendArchiveCandidate> {
+    let base = format!(
+        "https://github.com/ggml-org/llama.cpp/releases/download/{}",
+        version
+    );
+
+    let llama_zip = format!("llama-{}-bin-{}.zip", version, backend);
+    let llama_targz = format!("llama-{}-bin-{}.tar.gz", version, backend);
+    let cudart_zip = format!("cudart-llama-bin-{}.zip", backend);
+    let cudart_targz = format!("cudart-llama-bin-{}.tar.gz", backend);
+
+    let mut files: Vec<(String, ArchiveFormat)> = Vec::new();
+    if backend.contains("cuda") {
+        files.push((cudart_zip, ArchiveFormat::Zip));
+        files.push((cudart_targz, ArchiveFormat::TarGz));
+        files.push((llama_zip, ArchiveFormat::Zip));
+        files.push((llama_targz, ArchiveFormat::TarGz));
+    } else {
+        files.push((llama_zip, ArchiveFormat::Zip));
+        files.push((llama_targz, ArchiveFormat::TarGz));
+        files.push((cudart_zip, ArchiveFormat::Zip));
+        files.push((cudart_targz, ArchiveFormat::TarGz));
+    }
+
+    files
+        .into_iter()
+        .map(|(file_name, format)| BackendArchiveCandidate {
+            url: format!("{}/{}", base, file_name),
+            file_name,
+            format,
+        })
+        .collect()
+}
+
+fn backend_root_dir<R: Runtime>(app_handle: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
+    let root = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("Failed to resolve app local data dir: {}", e))?
+        .join("oxide-lab")
+        .join("llamacpp")
+        .join("backends");
+    Ok(root)
+}
+
+fn backend_install_dir<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    version: &str,
+    backend: &str,
+) -> Result<PathBuf, String> {
+    Ok(backend_root_dir(app_handle)?.join(version).join(backend))
+}
+
+fn backend_exe_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    }
+}
+
+fn resolve_installed_backend_exe(backend_dir: &std::path::Path) -> Option<PathBuf> {
+    let exe = backend_exe_name();
+    let build = backend_dir.join("build").join("bin").join(exe);
+    if build.exists() && build.is_file() {
+        return Some(build);
+    }
+    let root = backend_dir.join(exe);
+    if root.exists() && root.is_file() {
+        return Some(root);
+    }
+    None
+}
+
+async fn download_archive_with_progress<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    backend_string: &str,
+    url: &str,
+    target_path: &std::path::Path,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .user_agent("oxide-lab-backend-updater")
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Download failed ({}): {}", url, e))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Download failed ({}): HTTP {}",
+            url,
+            response.status()
+        ));
+    }
+
+    if let Some(parent) = target_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to create download directory: {}", e))?;
+    }
+
+    let mut file = tokio::fs::File::create(target_path)
+        .await
+        .map_err(|e| format!("Failed to create archive file: {}", e))?;
+
+    let total = response.content_length();
+    let mut downloaded: u64 = 0;
+
+    loop {
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|e| format!("Failed to read download chunk: {}", e))?;
+        let Some(bytes) = chunk else { break };
+        file.write_all(&bytes)
+            .await
+            .map_err(|e| format!("Failed to write archive: {}", e))?;
+        downloaded += bytes.len() as u64;
+
+        let _ = app_handle.emit(
+            "llama-backend-download-progress",
+            BackendDownloadEvent {
+                phase: "downloading".to_string(),
+                backend_string: backend_string.to_string(),
+                downloaded_bytes: downloaded,
+                total_bytes: total,
+            },
+        );
+    }
+
+    file.flush()
+        .await
+        .map_err(|e| format!("Failed to flush archive file: {}", e))?;
+    Ok(())
+}
+
+fn extract_tar_gz(archive_path: &std::path::Path, output_dir: &std::path::Path) -> Result<(), String> {
+    let file = std::fs::File::open(archive_path)
+        .map_err(|e| format!("Failed to open archive: {}", e))?;
+    let gz = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(gz);
+    archive
+        .unpack(output_dir)
+        .map_err(|e| format!("Failed to extract archive: {}", e))?;
+    Ok(())
+}
+
+fn extract_zip(archive_path: &std::path::Path, output_dir: &std::path::Path) -> Result<(), String> {
+    let file = std::fs::File::open(archive_path)
+        .map_err(|e| format!("Failed to open zip archive: {}", e))?;
+    let mut zip =
+        zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {}", e))?;
+
+    for i in 0..zip.len() {
+        let mut entry = zip
+            .by_index(i)
+            .map_err(|e| format!("Failed to read zip entry {}: {}", i, e))?;
+
+        let enclosed = entry
+            .enclosed_name()
+            .ok_or_else(|| format!("Zip entry has invalid path: {}", entry.name()))?
+            .to_path_buf();
+
+        let out_path = output_dir.join(enclosed);
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out_path)
+                .map_err(|e| format!("Failed to create directory {}: {}", out_path.display(), e))?;
+            continue;
+        }
+
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!("Failed to create parent directory {}: {}", parent.display(), e)
+            })?;
+        }
+
+        let mut out_file = std::fs::File::create(&out_path)
+            .map_err(|e| format!("Failed to create file {}: {}", out_path.display(), e))?;
+        io::copy(&mut entry, &mut out_file)
+            .map_err(|e| format!("Failed to extract {}: {}", out_path.display(), e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_backends_dir<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Result<String, String> {
+    Ok(backend_root_dir(&app_handle)?.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn resolve_installed_backend_executable<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    version: String,
+    backend: String,
+) -> Result<Option<String>, String> {
+    let install_dir = backend_install_dir(&app_handle, &version, &backend)?;
+    Ok(resolve_installed_backend_exe(&install_dir).map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn install_backend_release<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    version: String,
+    backend: String,
+) -> Result<String, String> {
+    if version.trim().is_empty() || backend.trim().is_empty() {
+        return Err("version and backend must not be empty".to_string());
+    }
+
+    let install_dir = backend_install_dir(&app_handle, &version, &backend)?;
+    if let Some(path) = resolve_installed_backend_exe(&install_dir) {
+        return Ok(path.to_string_lossy().to_string());
+    }
+
+    fs::create_dir_all(&install_dir)
+        .map_err(|e| format!("Failed to create backend directory: {}", e))?;
+    let backend_string = format!("{}/{}", version, backend);
+
+    let mut last_err = String::new();
+    let mut downloaded_archive: Option<(PathBuf, ArchiveFormat)> = None;
+    for candidate in backend_archive_candidates(&version, &backend) {
+        let archive_path = install_dir.join(&candidate.file_name);
+        match download_archive_with_progress(
+            &app_handle,
+            &backend_string,
+            &candidate.url,
+            &archive_path,
+        )
+        .await
+        {
+            Ok(()) => {
+                last_err.clear();
+                downloaded_archive = Some((archive_path, candidate.format));
+                break;
+            }
+            Err(err) => {
+                last_err = err;
+            }
+        }
+    }
+
+    if !last_err.is_empty() {
+        return Err(format!("Failed to download backend archive: {}", last_err));
+    }
+    let (archive_path, archive_format) =
+        downloaded_archive.ok_or_else(|| "No backend archive candidate succeeded".to_string())?;
+
+    let _ = app_handle.emit(
+        "llama-backend-download-progress",
+        BackendDownloadEvent {
+            phase: "extracting".to_string(),
+            backend_string: backend_string.clone(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+        },
+    );
+
+    match archive_format {
+        ArchiveFormat::TarGz => extract_tar_gz(&archive_path, &install_dir)?,
+        ArchiveFormat::Zip => extract_zip(&archive_path, &install_dir)?,
+    }
+
+    let _ = fs::remove_file(&archive_path);
+
+    if let Some(path) = resolve_installed_backend_exe(&install_dir) {
+        let _ = app_handle.emit(
+            "llama-backend-download-progress",
+            BackendDownloadEvent {
+                phase: "done".to_string(),
+                backend_string,
+                downloaded_bytes: 0,
+                total_bytes: None,
+            },
+        );
+        Ok(path.to_string_lossy().to_string())
+    } else {
+        Err(format!(
+            "Backend installed but executable not found in {}",
+            install_dir.display()
+        ))
+    }
+}
+
 // ---------------------------- Tests ------------------------------------------
 
 #[cfg(test)]
@@ -933,6 +1300,34 @@ mod tests {
         assert_eq!(
             map_old_backend_to_new("linux-arm64".to_string()),
             "linux-arm64" // Does not match specific migration patterns, returns original
+        );
+    }
+
+    #[test]
+    fn test_map_current_release_backend_names() {
+        assert_eq!(
+            map_old_backend_to_new("win-cpu-x64".to_string()),
+            "win-common_cpus-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-12.4-x64".to_string()),
+            "win-cuda-12-common_cpus-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("win-cuda-13.1-x64".to_string()),
+            "win-cuda-13-common_cpus-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("win-vulkan-x64".to_string()),
+            "win-vulkan-common_cpus-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-x64".to_string()),
+            "linux-common_cpus-x64"
+        );
+        assert_eq!(
+            map_old_backend_to_new("ubuntu-vulkan-x64".to_string()),
+            "linux-vulkan-common_cpus-x64"
         );
     }
 
