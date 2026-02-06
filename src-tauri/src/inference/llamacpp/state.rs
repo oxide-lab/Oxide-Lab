@@ -1,56 +1,90 @@
-//! Adapted from Jan's tauri-plugin-llamacpp process/session state (Apache-2.0).
-//! Source reference: example/clients/jan/src-tauri/plugins/tauri-plugin-llamacpp/src/state.rs
-
 use crate::core::types::LlamaSessionKind;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::process::Child;
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionInfo {
-    pub pid: i32,
-    pub port: u16,
-    pub model_id: String,
-    pub model_path: String,
-    pub api_key: String,
-    pub kind: LlamaSessionKind,
-    pub created_at: u64,
-    pub last_health_ok_at: Option<u64>,
-}
-
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct SessionKey {
     pub model_id: String,
     pub kind: LlamaSessionKind,
 }
 
-impl PartialEq for SessionKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.model_id == other.model_id && self.kind == other.kind
-    }
-}
-
-impl Hash for SessionKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.model_id.hash(state);
-        self.kind.hash(state);
-    }
-}
-
-pub struct LlamaSession {
-    pub child: Child,
-    pub info: SessionInfo,
+#[derive(Debug, Clone)]
+pub struct SessionMeta {
+    pub created_at: u64,
+    pub last_health_ok_at: Option<u64>,
 }
 
 #[derive(Clone, Default)]
 pub struct LlamaCppState {
-    pub sessions: Arc<Mutex<HashMap<SessionKey, LlamaSession>>>,
+    pub meta: Arc<Mutex<HashMap<SessionKey, SessionMeta>>>,
+}
+
+fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 impl LlamaCppState {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn ensure_meta(
+        &self,
+        model_id: &str,
+        kind: LlamaSessionKind,
+    ) -> Result<SessionMeta, String> {
+        let mut guard = self.meta.lock().map_err(|e| e.to_string())?;
+        let key = SessionKey {
+            model_id: model_id.to_string(),
+            kind,
+        };
+        let created = now_unix();
+        let entry = guard.entry(key).or_insert_with(|| SessionMeta {
+            created_at: created,
+            last_health_ok_at: None,
+        });
+        Ok(entry.clone())
+    }
+
+    pub fn mark_health_ok(&self, model_id: &str, kind: LlamaSessionKind) -> Result<(), String> {
+        let mut guard = self.meta.lock().map_err(|e| e.to_string())?;
+        let key = SessionKey {
+            model_id: model_id.to_string(),
+            kind,
+        };
+        let created = now_unix();
+        let entry = guard.entry(key).or_insert_with(|| SessionMeta {
+            created_at: created,
+            last_health_ok_at: None,
+        });
+        entry.last_health_ok_at = Some(now_unix());
+        Ok(())
+    }
+
+    pub fn remove_model(&self, model_id: &str) -> Result<(), String> {
+        let mut guard = self.meta.lock().map_err(|e| e.to_string())?;
+        guard.retain(|k, _| k.model_id != model_id);
+        Ok(())
+    }
+
+    pub fn remove_session(&self, model_id: &str, kind: LlamaSessionKind) -> Result<(), String> {
+        let mut guard = self.meta.lock().map_err(|e| e.to_string())?;
+        let key = SessionKey {
+            model_id: model_id.to_string(),
+            kind,
+        };
+        guard.remove(&key);
+        Ok(())
+    }
+
+    pub fn clear(&self) -> Result<(), String> {
+        let mut guard = self.meta.lock().map_err(|e| e.to_string())?;
+        guard.clear();
+        Ok(())
+    }
 }
+

@@ -60,3 +60,4 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["<|im_end|>"],
     force_bos: false,
 };
+

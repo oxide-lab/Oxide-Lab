@@ -12,7 +12,7 @@ declare global {
     interface Window {
         __oxide?: {
             pickModel?: () => Promise<void>;
-            loadModelFromManager?: (args: { path: string; format: 'gguf' | 'local_safetensors' }) => void;
+            loadModelFromManager?: (args: { path: string; format: 'gguf' }) => void;
             reloadSelectedModel?: () => Promise<void>;
             loadGGUF?: () => Promise<void>;
             unloadGGUF?: () => Promise<void>;

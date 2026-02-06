@@ -178,3 +178,4 @@ pub fn smart_truncate(
         }
     }
 }
+

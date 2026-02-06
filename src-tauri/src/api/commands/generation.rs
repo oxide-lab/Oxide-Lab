@@ -28,3 +28,4 @@ pub async fn generate_stream(
 pub fn cancel_generation() -> Result<(), String> {
     crate::generate::cancel_generation_cmd()
 }
+

@@ -7,7 +7,7 @@ pub trait EngineAdapter: Send + Sync {
 
     fn resolve_model_source(&self, req: &LoadRequest) -> Result<ResolvedModelSource, String>;
 
-    fn start_session(
+    async fn start_session(
         &self,
         kind: EngineSessionKind,
         source: &ResolvedModelSource,
@@ -20,7 +20,7 @@ pub trait EngineAdapter: Send + Sync {
         runtime_cfg: &LlamaRuntimeConfig,
     ) -> Result<EngineSessionInfo, String>;
 
-    fn stop_session(
+    async fn stop_session(
         &self,
         model_id: Option<&str>,
         kind: Option<EngineSessionKind>,
@@ -40,3 +40,4 @@ pub trait EngineAdapter: Send + Sync {
         input: serde_json::Value,
     ) -> Result<serde_json::Value, String>;
 }
+

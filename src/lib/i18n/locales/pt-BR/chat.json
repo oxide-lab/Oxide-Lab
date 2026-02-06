@@ -1,100 +1,90 @@
 {
-    "placeholder": {
-        "title": "Modelo não carregado",
-        "description": "Carregue um modelo para começar a conversar"
-    },
-    "notice": {
-        "selectModel": "Selecione um modelo para começar a conversar",
-        "startConversation": "Inicie uma conversa"
-    },
-    "composer": {
-        "placeholder": "Escreva uma mensagem...",
-        "placeholderNotLoaded": "Carregue um modelo para começar a conversar",
-        "hideHistory": "Ocultar histórico de chat",
-        "showHistory": "Mostrar histórico de chat",
-        "loaderSettings": "Configurações do painel de carregamento",
-        "clear": "Limpar",
-        "send": "Enviar",
-        "stop": "Parar",
-        "attach": "Anexar arquivo",
-        "experimental": {
-            "loading": "Recursos experimentais carregando...",
-            "disabled": "Recursos experimentais desativados"
-        },
-        "errors": {
-            "imageNotSupported": "O modelo não suporta imagens",
-            "audioNotSupported": "O modelo não suporta áudio",
-            "videoNotSupported": "O modelo não suporta vídeo",
-            "unsupportedFileType": "Tipo de arquivo não suportado",
-            "fileReadFailed": "Falha ao ler o arquivo",
-            "attachmentError": "Erro no anexo"
-        },
-        "voice": {
-            "startRecording": "Iniciar gravação de voz",
-            "stopRecording": "Parar gravação",
-            "transcribing": "Transcrevendo...",
-            "captureFailed": "Falha ao iniciar gravação de voz",
-            "transcriptionFailed": "Falha ao transcrever a voz",
-            "errorTitle": "Erro de entrada de voz",
-            "error": "Erro de entrada de voz"
-        }
-    },
-    "messages": {
-        "empty": "Nenhuma mensagem. Escreva algo..."
-    },
-    "actions": {
-        "copy": "Copiar",
-        "like": "Curtir",
-        "dislike": "Não curtir",
-        "regenerate": "Regenerar",
-        "edit": "Editar"
-    },
-    "loading": {
-        "stages": {
-            "start": "Inicializando carregamento...",
-            "device": "Selecionando dispositivo...",
-            "open_file": "Abrindo arquivo do modelo...",
-            "read_header": "Lendo metadados GGUF...",
-            "tokenizer": "Inicializando tokenizador...",
-            "detect_arch": "Detectando arquitetura...",
-            "build_model": "Construindo modelo...",
-            "build_model_done": "Modelo criado",
-            "hub_get": "Carregando do HF Hub...",
-            "hub_list": "Lendo lista de pesos...",
-            "hub_cache": "Armazenando pesos em cache...",
-            "scan_weights": "Verificando pesos...",
-            "config": "Lendo config.json...",
-            "finalize": "Finalizando...",
-            "complete": "Pronto",
-            "llama_start": "Iniciando backend llama.cpp...",
-            "llama_ready": "backend llama.cpp pronto",
-            "fallback_candle": "llama.cpp falhou, alternando para Candle...",
-            "model": "Carregando modelo...",
-            "cancelling": "Cancelando carregamento...",
-            "cancel": "Carregamento cancelado",
-            "error": "Erro ao carregar",
-            "unload_start": "Iniciando descarregamento...",
-            "unload_model": "Liberando modelo...",
-            "unload_tokenizer": "Liberando tokenizador...",
-            "unload_complete": "Descarregado",
-            "default": "Estágio: {stage}"
-        },
-        "cancelling": "Cancelando carregamento...",
-        "complete": "Modelo e tokenizador prontos!",
-        "cancelHint": "Clique no botão novamente para cancelar o carregamento",
-        "unloadSuccess": "Modelo e tokenizador descarregados da memória com sucesso"
-    },
-    "thinking": {
-        "loading": "Raciocinando…",
-        "ready": "Pensamentos",
-        "thinking": "Pensando",
-        "thoughtMoment": "Pensou por um momento",
-        "thoughtSeconds": "Pensou por {seconds} segundos"
+  "placeholder": {
+    "title": "Modelo não carregado",
+    "description": "Carregue um modelo para começar a conversar"
+  },
+  "notice": {
+    "selectModel": "Selecione um modelo para começar a conversar",
+    "startConversation": "Inicie uma conversa"
+  },
+  "composer": {
+    "placeholder": "Escreva uma mensagem...",
+    "placeholderNotLoaded": "Carregue um modelo para começar a conversar",
+    "hideHistory": "Ocultar histórico de chat",
+    "showHistory": "Mostrar histórico de chat",
+    "loaderSettings": "Configurações do painel de carregamento",
+    "clear": "Limpar",
+    "send": "Enviar",
+    "stop": "Parar",
+    "attach": "Anexar arquivo",
+    "experimental": {
+      "loading": "Recursos experimentais carregando...",
+      "disabled": "Recursos experimentais desativados"
     },
     "errors": {
-        "loadFailed": "Erro ao carregar modelo",
-        "generationFailed": "Erro de geração",
-        "modelNotLoaded": "Modelo não está carregado",
-        "loadModelFirst": "Carregue o modelo e o tokenizador primeiro"
+      "imageNotSupported": "O modelo não suporta imagens",
+      "audioNotSupported": "O modelo não suporta áudio",
+      "videoNotSupported": "O modelo não suporta vídeo",
+      "unsupportedFileType": "Tipo de arquivo não suportado",
+      "fileReadFailed": "Falha ao ler o arquivo",
+      "attachmentError": "Erro no anexo"
     }
+  },
+  "messages": {
+    "empty": "Nenhuma mensagem. Escreva algo..."
+  },
+  "actions": {
+    "copy": "Copiar",
+    "like": "Curtir",
+    "dislike": "Não curtir",
+    "regenerate": "Regenerar",
+    "edit": "Editar"
+  },
+  "loading": {
+    "stages": {
+      "start": "Inicializando carregamento...",
+      "device": "Selecionando dispositivo...",
+      "open_file": "Abrindo arquivo do modelo...",
+      "read_header": "Lendo metadados GGUF...",
+      "tokenizer": "Inicializando tokenizador...",
+      "detect_arch": "Detectando arquitetura...",
+      "build_model": "Construindo modelo...",
+      "build_model_done": "Modelo criado",
+      "hub_get": "Carregando do HF Hub...",
+      "hub_list": "Lendo lista de pesos...",
+      "hub_cache": "Armazenando pesos em cache...",
+      "scan_weights": "Verificando pesos...",
+      "config": "Lendo config.json...",
+      "finalize": "Finalizando...",
+      "complete": "Pronto",
+      "llama_start": "Iniciando backend llama.cpp...",
+      "llama_ready": "backend llama.cpp pronto",
+      "model": "Carregando modelo...",
+      "cancelling": "Cancelando carregamento...",
+      "cancel": "Carregamento cancelado",
+      "error": "Erro ao carregar",
+      "unload_start": "Iniciando descarregamento...",
+      "unload_model": "Liberando modelo...",
+      "unload_tokenizer": "Liberando tokenizador...",
+      "unload_complete": "Descarregado",
+      "default": "Estágio: {stage}"
+    },
+    "cancelling": "Cancelando carregamento...",
+    "complete": "Modelo e tokenizador prontos!",
+    "cancelHint": "Clique no botão novamente para cancelar o carregamento",
+    "unloadSuccess": "Modelo e tokenizador descarregados da memória com sucesso"
+  },
+  "thinking": {
+    "loading": "Raciocinando…",
+    "ready": "Pensamentos",
+    "thinking": "Pensando",
+    "thoughtMoment": "Pensou por um momento",
+    "thoughtSeconds": "Pensou por {seconds} segundos"
+  },
+  "errors": {
+    "loadFailed": "Erro ao carregar modelo",
+    "generationFailed": "Erro de geração",
+    "modelNotLoaded": "Modelo não está carregado",
+    "loadModelFirst": "Carregue o modelo e o tokenizador primeiro"
+  }
 }

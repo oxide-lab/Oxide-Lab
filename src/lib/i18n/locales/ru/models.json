@@ -1,108 +1,107 @@
 {
-    "title": "Модели",
-    "tabs": {
-        "local": "Мои модели",
-        "remote": "Поиск моделей",
-        "recommendations": "Рекомендации"
+  "title": "Модели",
+  "tabs": {
+    "local": "Мои модели",
+    "remote": "Поиск моделей",
+    "recommendations": "Рекомендации"
+  },
+  "local": {
+    "title": "Локальные модели",
+    "description": "Управление локально загруженными моделями",
+    "folderLabel": "Папка моделей",
+    "folderNotSelected": "Папка не выбрана",
+    "notSelected": "Не выбрано",
+    "noFolder": "Папка не выбрана",
+    "noModels": "Модели не найдены",
+    "search": "Поиск моделей...",
+    "searchPlaceholder": "Название, архитектура, квантование...",
+    "selectFolder": "Выбрать папку",
+    "load": "Загрузить",
+    "menu": {
+      "selectFolder": "Выбрать папку",
+      "rescan": "Пересканировать"
     },
-    "local": {
-        "title": "Локальные модели",
-        "description": "Управление локально загруженными моделями",
-        "folderLabel": "Папка моделей",
-        "folderNotSelected": "Папка не выбрана",
-        "notSelected": "Не выбрано",
-        "noFolder": "Папка не выбрана",
-        "noModels": "Модели не найдены",
-        "search": "Поиск моделей...",
-        "searchPlaceholder": "Название, архитектура, квантование...",
-        "selectFolder": "Выбрать папку",
-        "load": "Загрузить",
-        "candleOnly": "Только совместимые с Candle",
-        "menu": {
-            "selectFolder": "Выбрать папку",
-            "rescan": "Пересканировать"
-        },
-        "table": {
-            "architecture": "Архитектура",
-            "parameters": "Параметры",
-            "publisher": "Издатель",
-            "modelName": "Название модели",
-            "quant": "Квант",
-            "size": "Размер",
-            "format": "Формат"
-        },
-        "details": {
-            "delete": "Удалить",
-            "loadToChat": "Загрузить в чат",
-            "path": "Путь",
-            "size": "Размер",
-            "date": "Дата",
-            "architecture": "Архитектура",
-            "format": "Формат",
-            "detected": "Определено",
-            "context": "Контекст",
-            "validation": "Валидация",
-            "valid": "Корректно",
-            "warning": "Предупреждение",
-            "error": "Ошибка",
-            "deleteConfirm": "Удалить модель \"{name}\"?\nФайл будет перемещён в корзину.",
-            "edit": {
-                "ariaLabel": "Редактировать имя и издателя модели",
-                "publisher": "Издатель",
-                "publisherPlaceholder": "издатель",
-                "name": "Название",
-                "namePlaceholder": "издатель/название",
-                "save": "Сохранить",
-                "cancel": "Отмена"
-            },
-            "metadata": {
-                "title": "Метаданные GGUF",
-                "showAll": "Показать все",
-                "hide": "Скрыть",
-                "formatVersion": "Версия формата",
-                "tensorCount": "Количество тензоров",
-                "alignment": "Выравнивание",
-                "tokenCount": "Количество токенов"
-            }
-        },
-        "errors": {
-            "retry": "Повторить"
-        }
+    "table": {
+      "architecture": "Архитектура",
+      "parameters": "Параметры",
+      "publisher": "Издатель",
+      "modelName": "Название модели",
+      "quant": "Квант",
+      "size": "Размер",
+      "format": "Формат"
     },
-    "remote": {
-        "title": "Скачать модели",
-        "description": "Поиск и загрузка моделей с Hugging Face",
-        "searchHint": "Поиск моделей на Hugging Face",
-        "searchPlaceholder": "Поиск моделей...",
-        "searchPlaceholderFull": "Поиск моделей на Hugging Face...",
-        "search": "Поиск",
-        "searchDescription": "Введите название модели или ключевое слово для поиска",
-        "allFamilies": "Все семейства",
-        "allFormats": "Все форматы",
-        "refresh": "Обновить",
-        "refreshing": "Обновление...",
-        "importConfig": "Импорт конфигурации",
-        "resetConfig": "Сброс конфигурации",
-        "version": "Версия:",
-        "retry": "Повторить",
-        "loading": "Загрузка карточек...",
-        "noResults": "Карточки не найдены. Попробуйте изменить фильтры.",
-        "downloading": "Загрузка...",
-        "searching": "Поиск...",
-        "noDescription": "Описание отсутствует.",
-        "sources": {
-            "gguf": "Источники GGUF:",
-            "safetensors": "Источники safetensors:"
-        },
-        "quantization": "Квантование",
-        "modelsFolder": "Папка моделей:",
-        "folderNotSelected": "Папка не выбрана — перейдите на вкладку \"Мои модели\" и укажите путь.",
-        "selectCard": "Выберите карточку, чтобы увидеть подробности и скачать нужный формат.",
-        "selectFolderAlert": "Выберите папку в разделе \"Мои модели\" для загрузки модели."
+    "details": {
+      "delete": "Удалить",
+      "loadToChat": "Загрузить в чат",
+      "path": "Путь",
+      "size": "Размер",
+      "date": "Дата",
+      "architecture": "Архитектура",
+      "format": "Формат",
+      "detected": "Определено",
+      "context": "Контекст",
+      "validation": "Валидация",
+      "valid": "Корректно",
+      "warning": "Предупреждение",
+      "error": "Ошибка",
+      "deleteConfirm": "Удалить модель \"{name}\"?\nФайл будет перемещён в корзину.",
+      "edit": {
+        "ariaLabel": "Редактировать имя и издателя модели",
+        "publisher": "Издатель",
+        "publisherPlaceholder": "издатель",
+        "name": "Название",
+        "namePlaceholder": "издатель/название",
+        "save": "Сохранить",
+        "cancel": "Отмена"
+      },
+      "metadata": {
+        "title": "Метаданные GGUF",
+        "showAll": "Показать все",
+        "hide": "Скрыть",
+        "formatVersion": "Версия формата",
+        "tensorCount": "Количество тензоров",
+        "alignment": "Выравнивание",
+        "tokenCount": "Количество токенов"
+      }
     },
-    "recommendations": {
-        "title": "Рекомендации",
-        "description": "Рекомендованные модели для вас",
-        "comingSoon": "Рекомендации скоро появятся..."
+    "errors": {
+      "retry": "Повторить"
     }
+  },
+  "remote": {
+    "title": "Скачать модели",
+    "description": "Поиск и загрузка моделей с Hugging Face",
+    "searchHint": "Поиск моделей на Hugging Face",
+    "searchPlaceholder": "Поиск моделей...",
+    "searchPlaceholderFull": "Поиск моделей на Hugging Face...",
+    "search": "Поиск",
+    "searchDescription": "Введите название модели или ключевое слово для поиска",
+    "allFamilies": "Все семейства",
+    "allFormats": "Все форматы",
+    "refresh": "Обновить",
+    "refreshing": "Обновление...",
+    "importConfig": "Импорт конфигурации",
+    "resetConfig": "Сброс конфигурации",
+    "version": "Версия:",
+    "retry": "Повторить",
+    "loading": "Загрузка карточек...",
+    "noResults": "Карточки не найдены. Попробуйте изменить фильтры.",
+    "downloading": "Загрузка...",
+    "searching": "Поиск...",
+    "noDescription": "Описание отсутствует.",
+    "sources": {
+      "gguf": "Источники GGUF:",
+      "safetensors": "Источники safetensors:"
+    },
+    "quantization": "Квантование",
+    "modelsFolder": "Папка моделей:",
+    "folderNotSelected": "Папка не выбрана — перейдите на вкладку \"Мои модели\" и укажите путь.",
+    "selectCard": "Выберите карточку, чтобы увидеть подробности и скачать нужный формат.",
+    "selectFolderAlert": "Выберите папку в разделе \"Мои модели\" для загрузки модели."
+  },
+  "recommendations": {
+    "title": "Рекомендации",
+    "description": "Рекомендованные модели для вас",
+    "comingSoon": "Рекомендации скоро появятся..."
+  }
 }

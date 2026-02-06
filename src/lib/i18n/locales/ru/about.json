@@ -2,7 +2,7 @@
     "title": "О программе",
     "description": "Oxide Lab — настольное приложение для локального инференса LLM на базе современных технологий.",
     "technologies": "Технологии",
-    "techStack": "Tauri 2 + Svelte 5 + Rust + Candle ML",
+    "techStack": "Tauri 2 + Svelte 5 + Rust + llama.cpp process-host",
     "version": "Версия",
     "license": "Лицензия ",
     "actions": {

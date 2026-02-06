@@ -13,7 +13,6 @@
   } from '$lib/components/ai-elements/conversation';
   import Sparkle from 'phosphor-svelte/lib/Sparkle';
   import { t } from '$lib/i18n';
-  import { cn } from '../../utils';
   import { chatState } from '$lib/stores/chat';
   import UserMessage from './UserMessage.svelte';
   import AssistantMessage from './AssistantMessage.svelte';
@@ -70,10 +69,7 @@
       {@const isStreaming = isLastMessage && isAssistant && $chatState.busy}
 
       <div
-        class={cn(
-          'w-full mx-auto px-3 sm:px-4 md:px-6 max-w-2xl lg:max-w-3xl xl:max-w-4xl',
-          isAssistant ? 'items-start' : 'items-end flex flex-col',
-        )}
+        class="w-full mx-auto px-3 sm:px-4 md:px-6 max-w-2xl lg:max-w-3xl xl:max-w-4xl"
       >
         {#if isAssistant}
           <AssistantMessage

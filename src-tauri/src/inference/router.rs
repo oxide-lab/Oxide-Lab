@@ -47,7 +47,7 @@ pub async fn load_model(
         guard.llama_runtime.clone()
     };
 
-    let manager = engine::default_session_manager(llama_state);
+    let manager = engine::default_session_manager(app.clone(), llama_state);
     let source = manager.resolve_model_source(&req)?;
 
     emit_load_progress(
@@ -59,8 +59,10 @@ pub async fn load_model(
         None,
     );
 
-    manager.stop_all_sessions(None)?;
-    let chat_session = manager.start_session(EngineSessionKind::Chat, &source, &runtime_cfg)?;
+    manager.stop_all_sessions(None).await?;
+    let chat_session = manager
+        .start_session(EngineSessionKind::Chat, &source, &runtime_cfg)
+        .await?;
     let chat_session = manager.ensure_health(chat_session, &runtime_cfg).await?;
 
     emit_load_progress(
@@ -114,10 +116,12 @@ pub async fn generate_stream(
     let model_id = active_model_id.ok_or_else(|| "No active model loaded".to_string())?;
     let model_path = model_path.ok_or_else(|| "Active model path is missing".to_string())?;
 
-    let manager = engine::default_session_manager(llama_state);
+    let manager = engine::default_session_manager(app.clone(), llama_state);
     let source = source_from_state(model_id.clone(), model_path, context_length);
 
-    let chat_session = manager.start_session(EngineSessionKind::Chat, &source, &runtime_cfg)?;
+    let chat_session = manager
+        .start_session(EngineSessionKind::Chat, &source, &runtime_cfg)
+        .await?;
     let chat_session = manager.ensure_health(chat_session, &runtime_cfg).await?;
 
     if let Ok(mut guard) = state_arc.lock() {
@@ -144,11 +148,11 @@ pub async fn unload_model(
         guard.active_model_id.clone()
     };
 
-    let manager = engine::default_session_manager(llama_state);
+    let manager = engine::default_session_manager(app.clone(), llama_state);
     if let Some(model_id) = active_model_id.as_deref() {
-        manager.stop_model_sessions(model_id)?;
+        manager.stop_model_sessions(model_id).await?;
     } else {
-        manager.stop_all_sessions(None)?;
+        manager.stop_all_sessions(None).await?;
     }
 
     let mut guard = state_arc.lock().map_err(|e| e.to_string())?;
@@ -165,3 +169,4 @@ pub async fn unload_model(
     emit_load_progress(&app, "unload_complete", 100, Some("complete"), true, None);
     Ok(())
 }
+

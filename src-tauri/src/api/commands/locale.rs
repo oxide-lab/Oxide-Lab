@@ -18,3 +18,4 @@ pub fn set_locale(locale: String) -> Result<(), String> {
     i18n::set_locale(locale_enum);
     Ok(())
 }
+

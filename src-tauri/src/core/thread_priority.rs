@@ -92,3 +92,4 @@ mod tests {
         let _guard = ThreadPriorityGuard::below_normal();
     }
 }
+

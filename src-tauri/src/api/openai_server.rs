@@ -68,9 +68,9 @@ pub struct ApiError {
 }
 
 pub struct OpenAIServerState {
+    pub app_handle: tauri::AppHandle,
     pub model_state: SharedState,
     pub llama_state: LlamaCppState,
-    pub shutdown_tx: broadcast::Sender<()>,
 }
 
 fn now_unix() -> u64 {
@@ -138,8 +138,9 @@ async fn ensure_session(
         guard.llama_runtime.clone()
     };
 
-    let manager = engine::default_session_manager(state.llama_state.clone());
-    let session = manager.start_session(kind, &source, &runtime_cfg)?;
+    let manager =
+        engine::default_session_manager(state.app_handle.clone(), state.llama_state.clone());
+    let session = manager.start_session(kind, &source, &runtime_cfg).await?;
     manager.ensure_health(session, &runtime_cfg).await
 }
 
@@ -215,7 +216,10 @@ async fn proxy_to_llama(
 async fn models_handler(
     State(state): State<Arc<OpenAIServerState>>,
 ) -> Result<Json<ModelList>, (StatusCode, Json<ErrorResponse>)> {
-    let guard = state.model_state.lock().map_err(|_| server_error("Lock failed"))?;
+    let guard = state
+        .model_state
+        .lock()
+        .map_err(|_| server_error("Lock failed"))?;
 
     let mut models = Vec::new();
     if guard.active_backend == ActiveBackend::Llamacpp
@@ -305,6 +309,7 @@ pub fn create_router(state: Arc<OpenAIServerState>) -> Router {
 }
 
 pub async fn start_server(
+    app_handle: tauri::AppHandle,
     model_state: SharedState,
     llama_state: LlamaCppState,
     port: u16,
@@ -312,9 +317,9 @@ pub async fn start_server(
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
     let state = Arc::new(OpenAIServerState {
+        app_handle,
         model_state,
         llama_state,
-        shutdown_tx: shutdown_tx.clone(),
     });
 
     let app = create_router(state);
@@ -339,3 +344,4 @@ pub async fn start_server(
 
     Ok(shutdown_tx)
 }
+

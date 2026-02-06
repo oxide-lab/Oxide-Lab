@@ -28,3 +28,4 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["USER:", "ASSISTANT:"],
     force_bos: false,
 };
+

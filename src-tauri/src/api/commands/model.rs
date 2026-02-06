@@ -53,3 +53,4 @@ pub fn is_model_loaded(state: tauri::State<'_, SharedState>) -> Result<bool, Str
     let guard = state.lock().map_err(|e| e.to_string())?;
     Ok(matches!(guard.active_backend, ActiveBackend::Llamacpp) && guard.active_model_id.is_some())
 }
+

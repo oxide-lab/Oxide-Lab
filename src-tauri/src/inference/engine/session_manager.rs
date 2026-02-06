@@ -26,13 +26,15 @@ impl EngineSessionManager {
         self.adapter()?.resolve_model_source(req)
     }
 
-    pub fn start_session(
+    pub async fn start_session(
         &self,
         kind: EngineSessionKind,
         source: &ResolvedModelSource,
         runtime_cfg: &LlamaRuntimeConfig,
     ) -> Result<EngineSessionInfo, String> {
-        self.adapter()?.start_session(kind, source, runtime_cfg)
+        self.adapter()?
+            .start_session(kind, source, runtime_cfg)
+            .await
     }
 
     pub async fn ensure_health(
@@ -43,12 +45,12 @@ impl EngineSessionManager {
         self.adapter()?.ensure_health(session, runtime_cfg).await
     }
 
-    pub fn stop_model_sessions(&self, model_id: &str) -> Result<(), String> {
-        self.adapter()?.stop_session(Some(model_id), None)
+    pub async fn stop_model_sessions(&self, model_id: &str) -> Result<(), String> {
+        self.adapter()?.stop_session(Some(model_id), None).await
     }
 
-    pub fn stop_all_sessions(&self, model_id: Option<&str>) -> Result<(), String> {
-        self.adapter()?.stop_session(model_id, None)
+    pub async fn stop_all_sessions(&self, model_id: Option<&str>) -> Result<(), String> {
+        self.adapter()?.stop_session(model_id, None).await
     }
 
     pub async fn chat_stream(
@@ -69,3 +71,4 @@ impl EngineSessionManager {
         self.adapter()?.embeddings(session, model, input).await
     }
 }
+

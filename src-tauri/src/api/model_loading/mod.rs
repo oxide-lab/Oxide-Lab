@@ -114,3 +114,4 @@ pub fn emit_load_progress_debug(
     }
     emit_load_progress(app, stage, progress, message, done, error);
 }
+

@@ -41,3 +41,4 @@ pub fn set_precision(
     // No-op - dtype is now from model config
     Ok(())
 }
+

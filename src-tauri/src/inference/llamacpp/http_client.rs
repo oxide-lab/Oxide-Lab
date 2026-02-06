@@ -1,5 +1,6 @@
 use crate::core::types::{ChatMessage, GenerateRequest, StreamMessage, ToolChoice};
 use crate::generate::cancel::CANCEL_GENERATION;
+use crate::inference::engine::EngineSessionInfo;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -7,8 +8,6 @@ use serde_json::json;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tauri::Emitter;
-
-use super::state::SessionInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OpenAIMessage {
@@ -79,7 +78,7 @@ fn to_openai_messages(req: &GenerateRequest) -> Vec<OpenAIMessage> {
     }]
 }
 
-pub async fn health_check(session: &SessionInfo) -> bool {
+pub async fn health_check(session: &EngineSessionInfo) -> bool {
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_millis(600))
         .build()
@@ -97,7 +96,7 @@ pub async fn health_check(session: &SessionInfo) -> bool {
 
 pub async fn stream_chat_completion(
     app: &tauri::AppHandle,
-    session: &SessionInfo,
+    session: &EngineSessionInfo,
     req: GenerateRequest,
 ) -> Result<(), String> {
     CANCEL_GENERATION.store(false, Ordering::SeqCst);
@@ -190,7 +189,7 @@ pub async fn stream_chat_completion(
 }
 
 pub async fn create_embeddings(
-    session: &SessionInfo,
+    session: &EngineSessionInfo,
     model: &str,
     input: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -237,3 +236,4 @@ pub fn preflight_chat_messages(req: &GenerateRequest) -> Result<Vec<ChatMessage>
         content: req.prompt.clone(),
     }])
 }
+

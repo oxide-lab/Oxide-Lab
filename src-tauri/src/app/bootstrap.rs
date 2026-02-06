@@ -54,7 +54,6 @@ fn spawn_startup_tracker(
     });
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Инициализируем i18n
     i18n::init();
@@ -103,6 +102,8 @@ pub fn run() {
     ];
 
     let app = tauri::Builder::default()
+        .plugin(oxide_hardware::init())
+        .plugin(oxide_llamacpp::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -206,9 +207,10 @@ pub fn run() {
 
             // Start the model scheduler keep-alive task
             let scheduler_state = shared.clone();
-            let app_handle = app.handle().clone();
+            let scheduler_llama_state = llama_cpp_state.clone();
+            let scheduler_app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let app = app_handle;
+                let app = scheduler_app_handle;
                 // Проверяем каждую минуту (настраивается)
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
                 // Первый тик происходит немедленно, пропускаем его
@@ -216,14 +218,46 @@ pub fn run() {
 
                 loop {
                     interval.tick().await;
-                    if let Ok(mut guard) = scheduler_state.lock() {
-                        if let Some(unloaded_id) = guard.scheduler.check_expiration()
-                            && let Err(e) = app.emit("model_unloaded", &unloaded_id)
-                        {
-                            log::error!("Failed to emit model_unloaded event: {}", e);
-                        }
+                    let expired_model_id = if let Ok(mut guard) = scheduler_state.lock() {
+                        guard.scheduler.check_expiration()
                     } else {
                         log::error!("Scheduler keep-alive task: failed to lock state");
+                        None
+                    };
+
+                    if let Some(unloaded_id) = expired_model_id {
+                        let manager = crate::inference::engine::default_session_manager(
+                            app.clone(),
+                            scheduler_llama_state.clone(),
+                        );
+                        if let Err(e) = manager.stop_model_sessions(&unloaded_id).await {
+                            log::error!(
+                                "Scheduler keep-alive task: failed to unload llama sessions for {}: {}",
+                                unloaded_id,
+                                e
+                            );
+                        }
+
+                        if let Ok(mut guard) = scheduler_state.lock() {
+                            if guard.active_model_id.as_deref() == Some(unloaded_id.as_str()) {
+                                guard.context_length = 4096;
+                                guard.model_path = None;
+                                guard.hub_repo_id = None;
+                                guard.hub_revision = None;
+                                guard.chat_template = None;
+                                guard.active_backend = crate::core::types::ActiveBackend::None;
+                                guard.active_model_id = None;
+                                guard.active_llama_session = None;
+                            }
+                        } else {
+                            log::error!(
+                                "Scheduler keep-alive task: failed to lock state for cleanup"
+                            );
+                        }
+
+                        if let Err(e) = app.emit("model_unloaded", &unloaded_id) {
+                            log::error!("Failed to emit model_unloaded event: {}", e);
+                        }
                     }
                 }
             });
@@ -231,9 +265,11 @@ pub fn run() {
             // Start OpenAI-compatible API server
             let openai_state = shared.clone();
             let openai_llama_state = llama_cpp_state.clone();
+            let openai_app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 use crate::api::openai_server::OPENAI_PORT;
                 match crate::api::openai_server::start_server(
+                    openai_app_handle,
                     openai_state,
                     openai_llama_state,
                     OPENAI_PORT,
@@ -253,19 +289,6 @@ pub fn run() {
             if let Some(main_window) = app.get_webview_window("main") {
                 main_window.open_devtools();
             }
-
-            // Periodic llama session cleanup.
-            let cleanup_llama_state = llama_cpp_state.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
-                loop {
-                    interval.tick().await;
-                    let _ = crate::inference::llamacpp::process::cleanup_dead_sessions(
-                        &cleanup_llama_state,
-                    );
-                }
-            });
-
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -273,8 +296,12 @@ pub fn run() {
 
     app.run(move |_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } = event {
-            let _ =
-                crate::inference::llamacpp::process::unload_all_sessions(&llama_cpp_state_for_exit);
+            let manager = crate::inference::engine::default_session_manager(
+                _handle.clone(),
+                llama_cpp_state_for_exit.clone(),
+            );
+            let _ = tauri::async_runtime::block_on(async { manager.stop_all_sessions(None).await });
         }
     });
 }
+

@@ -1,100 +1,90 @@
 {
-    "placeholder": {
-        "title": "Model not loaded",
-        "description": "Load a model to start chatting"
-    },
-    "notice": {
-        "selectModel": "Select a model to start chatting",
-        "startConversation": "Start a conversation"
-    },
-    "composer": {
-        "placeholder": "Write a message...",
-        "placeholderNotLoaded": "Load a model to start chatting...",
-        "hideHistory": "Hide chat history",
-        "showHistory": "Show chat history",
-        "loaderSettings": "Loader panel settings",
-        "clear": "Clear",
-        "send": "Send",
-        "stop": "Stop",
-        "attach": "Attach file",
-        "experimental": {
-            "loading": "Experimental features loading...",
-            "disabled": "Experimental features disabled"
-        },
-        "errors": {
-            "imageNotSupported": "Model does not support images",
-            "audioNotSupported": "Model does not support audio",
-            "videoNotSupported": "Model does not support video",
-            "unsupportedFileType": "Unsupported file type",
-            "fileReadFailed": "Failed to read file",
-            "attachmentError": "Attachment error"
-        },
-        "voice": {
-            "startRecording": "Start voice recording",
-            "stopRecording": "Stop recording",
-            "transcribing": "Transcribing...",
-            "captureFailed": "Failed to start voice recording",
-            "transcriptionFailed": "Voice transcription failed",
-            "errorTitle": "Voice input error",
-            "error": "Voice input error"
-        }
-    },
-    "messages": {
-        "empty": "No messages. Write something..."
-    },
-    "actions": {
-        "copy": "Copy",
-        "like": "Like",
-        "dislike": "Dislike",
-        "regenerate": "Regenerate",
-        "edit": "Edit"
-    },
-    "loading": {
-        "stages": {
-            "start": "Initializing load...",
-            "device": "Selecting device...",
-            "open_file": "Opening model file...",
-            "read_header": "Reading GGUF metadata...",
-            "tokenizer": "Initializing tokenizer...",
-            "detect_arch": "Detecting architecture...",
-            "build_model": "Building model...",
-            "build_model_done": "Model created",
-            "hub_get": "Loading from HF Hub...",
-            "hub_list": "Reading weights list...",
-            "hub_cache": "Caching weights...",
-            "scan_weights": "Checking weights...",
-            "config": "Reading config.json...",
-            "finalize": "Finalizing...",
-            "complete": "Ready",
-            "llama_start": "Starting llama.cpp backend...",
-            "llama_ready": "llama.cpp backend ready",
-            "fallback_candle": "llama.cpp failed, switching to Candle...",
-            "model": "Loading model...",
-            "cancelling": "Cancelling load...",
-            "cancel": "Load cancelled",
-            "error": "Error loading",
-            "unload_start": "Starting unload...",
-            "unload_model": "Releasing model...",
-            "unload_tokenizer": "Releasing tokenizer...",
-            "unload_complete": "Unloaded",
-            "default": "Stage: {stage}"
-        },
-        "cancelling": "Cancelling load...",
-        "complete": "Model and tokenizer ready!",
-        "cancelHint": "Click the button again to cancel loading",
-        "unloadSuccess": "Model and tokenizer successfully unloaded from memory"
-    },
-    "thinking": {
-        "loading": "Reasoning…",
-        "ready": "Thoughts",
-        "thinking": "Thinking",
-        "thoughtMoment": "Thought for a moment",
-        "thoughtSeconds": "Thought for {seconds} seconds"
+  "placeholder": {
+    "title": "Model not loaded",
+    "description": "Load a model to start chatting"
+  },
+  "notice": {
+    "selectModel": "Select a model to start chatting",
+    "startConversation": "Start a conversation"
+  },
+  "composer": {
+    "placeholder": "Write a message...",
+    "placeholderNotLoaded": "Load a model to start chatting...",
+    "hideHistory": "Hide chat history",
+    "showHistory": "Show chat history",
+    "loaderSettings": "Loader panel settings",
+    "clear": "Clear",
+    "send": "Send",
+    "stop": "Stop",
+    "attach": "Attach file",
+    "experimental": {
+      "loading": "Experimental features loading...",
+      "disabled": "Experimental features disabled"
     },
     "errors": {
-        "loadFailed": "Model load error",
-        "generationFailed": "Generation error",
-        "modelNotLoaded": "Model is not loaded",
-        "loadModelFirst": "Load model and tokenizer first"
+      "imageNotSupported": "Model does not support images",
+      "audioNotSupported": "Model does not support audio",
+      "videoNotSupported": "Model does not support video",
+      "unsupportedFileType": "Unsupported file type",
+      "fileReadFailed": "Failed to read file",
+      "attachmentError": "Attachment error"
     }
+  },
+  "messages": {
+    "empty": "No messages. Write something..."
+  },
+  "actions": {
+    "copy": "Copy",
+    "like": "Like",
+    "dislike": "Dislike",
+    "regenerate": "Regenerate",
+    "edit": "Edit"
+  },
+  "loading": {
+    "stages": {
+      "start": "Initializing load...",
+      "device": "Selecting device...",
+      "open_file": "Opening model file...",
+      "read_header": "Reading GGUF metadata...",
+      "tokenizer": "Initializing tokenizer...",
+      "detect_arch": "Detecting architecture...",
+      "build_model": "Building model...",
+      "build_model_done": "Model created",
+      "hub_get": "Loading from HF Hub...",
+      "hub_list": "Reading weights list...",
+      "hub_cache": "Caching weights...",
+      "scan_weights": "Checking weights...",
+      "config": "Reading config.json...",
+      "finalize": "Finalizing...",
+      "complete": "Ready",
+      "llama_start": "Starting llama.cpp backend...",
+      "llama_ready": "llama.cpp backend ready",
+      "model": "Loading model...",
+      "cancelling": "Cancelling load...",
+      "cancel": "Load cancelled",
+      "error": "Error loading",
+      "unload_start": "Starting unload...",
+      "unload_model": "Releasing model...",
+      "unload_tokenizer": "Releasing tokenizer...",
+      "unload_complete": "Unloaded",
+      "default": "Stage: {stage}"
+    },
+    "cancelling": "Cancelling load...",
+    "complete": "Model and tokenizer ready!",
+    "cancelHint": "Click the button again to cancel loading",
+    "unloadSuccess": "Model and tokenizer successfully unloaded from memory"
+  },
+  "thinking": {
+    "loading": "Reasoning…",
+    "ready": "Thoughts",
+    "thinking": "Thinking",
+    "thoughtMoment": "Thought for a moment",
+    "thoughtSeconds": "Thought for {seconds} seconds"
+  },
+  "errors": {
+    "loadFailed": "Model load error",
+    "generationFailed": "Generation error",
+    "modelNotLoaded": "Model is not loaded",
+    "loadModelFirst": "Load model and tokenizer first"
+  }
 }

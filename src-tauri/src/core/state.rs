@@ -56,8 +56,8 @@ impl ModelState {
     pub fn save_precision(&self, app: &AppHandle) -> Result<(), String> {
         let profile_dir = Self::ensure_profile_dir(app)?;
         let path = profile_dir.join("precision.json");
-        let file = File::create(&path)
-            .map_err(|e| format!("Failed to create precision file: {}", e))?;
+        let file =
+            File::create(&path).map_err(|e| format!("Failed to create precision file: {}", e))?;
         serde_json::to_writer(file, &self.precision_policy)
             .map_err(|e| format!("Failed to serialize precision: {}", e))?;
         Ok(())
@@ -67,8 +67,8 @@ impl ModelState {
         let profile_dir = Self::profile_dir(app)?;
         let path = profile_dir.join("precision.json");
         if path.exists() {
-            let file = File::open(&path)
-                .map_err(|e| format!("Failed to open precision file: {}", e))?;
+            let file =
+                File::open(&path).map_err(|e| format!("Failed to open precision file: {}", e))?;
             let _policy: PrecisionPolicy = serde_json::from_reader(file)
                 .map_err(|e| format!("Failed to deserialize precision: {}", e))?;
             Ok(Precision::default())
@@ -118,3 +118,4 @@ impl ModelState {
 }
 
 pub type SharedState = Arc<Mutex<ModelState>>;
+

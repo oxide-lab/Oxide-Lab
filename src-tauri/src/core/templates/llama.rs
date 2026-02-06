@@ -6,3 +6,4 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["</s>"],
     force_bos: false,
 };
+

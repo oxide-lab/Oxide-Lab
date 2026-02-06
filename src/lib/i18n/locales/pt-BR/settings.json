@@ -1,127 +1,101 @@
 {
-    "title": "Configurações",
-    "precision": {
-        "title": "Política de Precisão",
-        "description": "Configure a precisão do modelo para desempenho ideal",
-        "default": "Padrão",
-        "balanced": "Equilibrado",
-        "memoryEfficient": "Eficiente em Memória",
-        "lowerRam": "Menos RAM",
-        "maximumPrecision": "Precisão Máxima",
-        "bestQuality": "Melhor qualidade",
-        "warning": "Nota: o parâmetro de precisão afeta apenas modelos não quantizados (float32/float16)."
-    },
-    "threads": {
-        "title": "Limite de Threads",
-        "description": "Configure o número de threads da CPU para inferência",
-        "maxThreads": "Máx. Threads",
-        "available": "Disponível",
-        "useSystem": "Usar padrão do sistema",
-        "automatic": "Automático",
-        "manual": "Manual"
-    },
-    "language": {
-        "title": "Idioma",
-        "description": "Selecione o idioma da interface"
-    },
-    "experimental": {
-        "title": "Recursos Experimentais",
-        "description": "Habilite recursos experimentais (podem ser instáveis)",
-        "enable": "Habilitar recursos experimentais",
-        "warning": "Recursos experimentais podem ser instáveis e conter bugs. Use por sua conta e risco."
-    },
-    "precisionPolicy": {
-        "title": "Política de Precisão",
-        "description": "Selecione a política de precisão para carregar e executar modelos.",
-        "warning": "Nota: o parâmetro de precisão afeta apenas modelos não quantizados (float32/float16).",
-        "loading": "Carregando configurações...",
-        "options": {
-            "default": {
-                "title": "Padrão",
-                "specs": "CPU: F32, GPU: BF16",
-                "description": "Equilíbrio ideal entre desempenho e precisão"
-            },
-            "memoryEfficient": {
-                "title": "Eficiente em Memória",
-                "specs": "CPU: F32, GPU: F16",
-                "description": "Menos uso de memória, precisão ligeiramente menor"
-            },
-            "maximumPrecision": {
-                "title": "Precisão Máxima",
-                "specs": "CPU: F32, GPU: F32",
-                "description": "Maior precisão, mais uso de memória"
-            }
-        }
-    },
-    "threadLimit": {
-        "title": "Limite Manual de Threads da CPU",
-        "description": "Se você precisar limitar o número de threads que o candle pode usar através do rayon.",
-        "loading": "Carregando limite...",
-        "maxThreads": "Máx. threads: {count}",
-        "useSystem": "Usar valor do sistema ({count} threads)",
-        "currentMode": "Modo atual: {mode} ({count} threads)",
-        "modes": {
-            "automatic": "automático",
-            "manual": "manual"
-        }
-    },
-    "modelSelector": {
-        "title": "Dropdown de Modelos",
-        "description": "Configure a busca no dropdown de modelos.",
-        "enableSearch": "Habilitar busca de modelos",
-        "enabledDescription": "A busca ajudará a encontrar rapidamente os modelos que você precisa.",
-        "disabledDescription": "Busca oculta — a lista mostra todos os modelos."
-    },
-    "performance": {
-        "title": "Monitoramento de Desempenho",
-        "description": "Rastreamento do desempenho da aplicação.",
-        "monitor": "Monitor de Desempenho",
-        "realtime": "Tempo real",
-        "loadError": "Falha ao carregar dados",
-        "noData": "Sem dados de desempenho",
-        "cpuUsage": "Uso de CPU",
-        "memory": "Memória",
-        "speed": "Velocidade",
-        "inferenceTime": "Tempo de Inferência",
-        "avgSpeed": "Velocidade Média",
-        "modelLoad": "Carregamento do Modelo"
-    },
-    "stt": {
-        "title": "Entrada de Voz (Whisper)",
-        "description": "Configure o modelo Whisper para entrada de voz.",
-        "loading": "Carregando configurações de voz...",
-        "sources": {
-            "bundled": "Usar modelo tiny incluído",
-            "custom": "Usar pasta de modelo personalizada"
-        },
-        "customPathEmpty": "Pasta do modelo não selecionada",
-        "chooseFolder": "Escolher pasta",
-        "download": {
-            "title": "Baixar modelo Whisper",
-            "repoId": "Repo id",
-            "revision": "Revisão",
-            "modelFile": "Arquivo do modelo",
-            "tokenizerFile": "Arquivo do tokenizer",
-            "configFile": "Arquivo de configuração",
-            "button": "Baixar e usar",
-            "loading": "Baixando...",
-            "success": "Modelo baixado e selecionado",
-            "error": "Falha ao baixar modelo"
-        },
-        "errors": {
-            "customDirRequired": "Selecione uma pasta de modelo primeiro"
-        }
-    },
-    "prefixCache": {
-        "title": "Cache de Prefixo",
-        "description": "Reutilizar cache KV para conversas multi-turno mais rápidas",
-        "enable": "Habilitar cache de prefixo",
-        "maxEntries": "Máx. entradas no cache",
-        "clear": "Limpar cache",
-        "stats": {
-            "hits": "Acertos",
-            "misses": "Falhas",
-            "entries": "Entradas em cache"
-        }
+  "title": "Configurações",
+  "precision": {
+    "title": "Política de Precisão",
+    "description": "Configure a precisão do modelo para desempenho ideal",
+    "default": "Padrão",
+    "balanced": "Equilibrado",
+    "memoryEfficient": "Eficiente em Memória",
+    "lowerRam": "Menos RAM",
+    "maximumPrecision": "Precisão Máxima",
+    "bestQuality": "Melhor qualidade",
+    "warning": "Nota: o parâmetro de precisão afeta apenas modelos não quantizados (float32/float16)."
+  },
+  "threads": {
+    "title": "Limite de Threads",
+    "description": "Configure o número de threads da CPU para inferência",
+    "maxThreads": "Máx. Threads",
+    "available": "Disponível",
+    "useSystem": "Usar padrão do sistema",
+    "automatic": "Automático",
+    "manual": "Manual"
+  },
+  "language": {
+    "title": "Idioma",
+    "description": "Selecione o idioma da interface"
+  },
+  "experimental": {
+    "title": "Recursos Experimentais",
+    "description": "Habilite recursos experimentais (podem ser instáveis)",
+    "enable": "Habilitar recursos experimentais",
+    "warning": "Recursos experimentais podem ser instáveis e conter bugs. Use por sua conta e risco."
+  },
+  "precisionPolicy": {
+    "title": "Política de Precisão",
+    "description": "Selecione a política de precisão para carregar e executar modelos.",
+    "warning": "Nota: o parâmetro de precisão afeta apenas modelos não quantizados (float32/float16).",
+    "loading": "Carregando configurações...",
+    "options": {
+      "default": {
+        "title": "Padrão",
+        "specs": "CPU: F32, GPU: BF16",
+        "description": "Equilíbrio ideal entre desempenho e precisão"
+      },
+      "memoryEfficient": {
+        "title": "Eficiente em Memória",
+        "specs": "CPU: F32, GPU: F16",
+        "description": "Menos uso de memória, precisão ligeiramente menor"
+      },
+      "maximumPrecision": {
+        "title": "Precisão Máxima",
+        "specs": "CPU: F32, GPU: F32",
+        "description": "Maior precisão, mais uso de memória"
+      }
     }
+  },
+  "threadLimit": {
+    "title": "Limite Manual de Threads da CPU",
+    "description": "Se precisar limitar o número de threads do runtime via rayon, ative o limite manual.",
+    "loading": "Carregando limite...",
+    "maxThreads": "Máx. threads: {count}",
+    "useSystem": "Usar valor do sistema ({count} threads)",
+    "currentMode": "Modo atual: {mode} ({count} threads)",
+    "modes": {
+      "automatic": "automático",
+      "manual": "manual"
+    }
+  },
+  "modelSelector": {
+    "title": "Dropdown de Modelos",
+    "description": "Configure a busca no dropdown de modelos.",
+    "enableSearch": "Habilitar busca de modelos",
+    "enabledDescription": "A busca ajudará a encontrar rapidamente os modelos que você precisa.",
+    "disabledDescription": "Busca oculta — a lista mostra todos os modelos."
+  },
+  "performance": {
+    "title": "Monitoramento de Desempenho",
+    "description": "Rastreamento do desempenho da aplicação.",
+    "monitor": "Monitor de Desempenho",
+    "realtime": "Tempo real",
+    "loadError": "Falha ao carregar dados",
+    "noData": "Sem dados de desempenho",
+    "cpuUsage": "Uso de CPU",
+    "memory": "Memória",
+    "speed": "Velocidade",
+    "inferenceTime": "Tempo de Inferência",
+    "avgSpeed": "Velocidade Média",
+    "modelLoad": "Carregamento do Modelo"
+  },
+  "prefixCache": {
+    "title": "Cache de Prefixo",
+    "description": "Reutilizar cache KV para conversas multi-turno mais rápidas",
+    "enable": "Habilitar cache de prefixo",
+    "maxEntries": "Máx. entradas no cache",
+    "clear": "Limpar cache",
+    "stats": {
+      "hits": "Acertos",
+      "misses": "Falhas",
+      "entries": "Entradas em cache"
+    }
+  }
 }

@@ -1,127 +1,101 @@
 {
-    "title": "Settings",
-    "precision": {
-        "title": "Precision Policy",
-        "description": "Configure model precision for optimal performance",
-        "default": "Default",
-        "balanced": "Balanced",
-        "memoryEfficient": "Memory Efficient",
-        "lowerRam": "Lower RAM",
-        "maximumPrecision": "Maximum Precision",
-        "bestQuality": "Best quality",
-        "warning": "Note: the precision parameter only affects non-quantized models (float32/float16). For quantized models (4-bit/8-bit), the weight precision is fixed."
-    },
-    "threads": {
-        "title": "Thread Limit",
-        "description": "Configure the number of CPU threads for inference",
-        "maxThreads": "Max Threads",
-        "available": "Available",
-        "useSystem": "Use system default",
-        "automatic": "Automatic",
-        "manual": "Manual"
-    },
-    "language": {
-        "title": "Language",
-        "description": "Select interface language"
-    },
-    "experimental": {
-        "title": "Experimental Features",
-        "description": "Enable experimental features (may be unstable)",
-        "enable": "Enable experimental features",
-        "warning": "Experimental features may be unstable and contain bugs. Use at your own risk."
-    },
-    "precisionPolicy": {
-        "title": "Precision Policy",
-        "description": "Select the precision policy for loading and executing models. This affects memory usage and performance.",
-        "warning": "Note: the precision parameter only affects non-quantized models (float32/float16). For quantized models (4-bit/8-bit), the weight precision is fixed, the setting only affects intermediate computations.",
-        "loading": "Loading settings...",
-        "options": {
-            "default": {
-                "title": "Standard",
-                "specs": "CPU: F32, GPU: BF16",
-                "description": "Optimal balance between performance and precision"
-            },
-            "memoryEfficient": {
-                "title": "Memory Efficient",
-                "specs": "CPU: F32, GPU: F16",
-                "description": "Less memory usage, slightly lower precision"
-            },
-            "maximumPrecision": {
-                "title": "Maximum Precision",
-                "specs": "CPU: F32, GPU: F32",
-                "description": "Highest precision, more memory usage"
-            }
-        }
-    },
-    "threadLimit": {
-        "title": "Manual CPU Thread Limit",
-        "description": "If you need to limit the number of threads that candle can use through rayon, enable manual limit.",
-        "loading": "Loading preset limit...",
-        "maxThreads": "Max threads: {count}",
-        "useSystem": "Use system value ({count} threads)",
-        "currentMode": "Current mode: {mode} ({count} threads)",
-        "modes": {
-            "automatic": "automatic",
-            "manual": "manual"
-        }
-    },
-    "modelSelector": {
-        "title": "Model Dropdown",
-        "description": "Configure search within the main model dropdown.",
-        "enableSearch": "Enable model search",
-        "enabledDescription": "Search will help you quickly find the models you need.",
-        "disabledDescription": "Search is hidden — the list shows all models as is."
-    },
-    "performance": {
-        "title": "Performance Monitoring",
-        "description": "Tracking application performance, including startup time, memory usage, and model speed.",
-        "monitor": "Performance Monitor",
-        "realtime": "Real-time",
-        "loadError": "Failed to load performance data",
-        "noData": "No performance data available",
-        "cpuUsage": "CPU Usage",
-        "memory": "Memory",
-        "speed": "Speed",
-        "inferenceTime": "Inference Time",
-        "avgSpeed": "Average Speed",
-        "modelLoad": "Model Load Time"
-    },
-    "stt": {
-        "title": "Voice Input (Whisper)",
-        "description": "Configure the Whisper model used for voice input.",
-        "loading": "Loading voice settings...",
-        "sources": {
-            "bundled": "Use bundled tiny model",
-            "custom": "Use custom model folder"
-        },
-        "customPathEmpty": "Custom model folder not selected",
-        "chooseFolder": "Choose folder",
-        "download": {
-            "title": "Download Whisper model",
-            "repoId": "Repo id",
-            "revision": "Revision",
-            "modelFile": "Model file",
-            "tokenizerFile": "Tokenizer file",
-            "configFile": "Config file",
-            "button": "Download and use",
-            "loading": "Downloading...",
-            "success": "Model downloaded and selected",
-            "error": "Failed to download model"
-        },
-        "errors": {
-            "customDirRequired": "Select a custom model folder first"
-        }
-    },
-    "prefixCache": {
-        "title": "Prefix Cache",
-        "description": "Reuse KV cache for faster multi-turn conversations",
-        "enable": "Enable prefix caching",
-        "maxEntries": "Max cache entries",
-        "clear": "Clear cache",
-        "stats": {
-            "hits": "Hits",
-            "misses": "Misses",
-            "entries": "Cached entries"
-        }
+  "title": "Settings",
+  "precision": {
+    "title": "Precision Policy",
+    "description": "Configure model precision for optimal performance",
+    "default": "Default",
+    "balanced": "Balanced",
+    "memoryEfficient": "Memory Efficient",
+    "lowerRam": "Lower RAM",
+    "maximumPrecision": "Maximum Precision",
+    "bestQuality": "Best quality",
+    "warning": "Note: the precision parameter only affects non-quantized models (float32/float16). For quantized models (4-bit/8-bit), the weight precision is fixed."
+  },
+  "threads": {
+    "title": "Thread Limit",
+    "description": "Configure the number of CPU threads for inference",
+    "maxThreads": "Max Threads",
+    "available": "Available",
+    "useSystem": "Use system default",
+    "automatic": "Automatic",
+    "manual": "Manual"
+  },
+  "language": {
+    "title": "Language",
+    "description": "Select interface language"
+  },
+  "experimental": {
+    "title": "Experimental Features",
+    "description": "Enable experimental features (may be unstable)",
+    "enable": "Enable experimental features",
+    "warning": "Experimental features may be unstable and contain bugs. Use at your own risk."
+  },
+  "precisionPolicy": {
+    "title": "Precision Policy",
+    "description": "Select the precision policy for loading and executing models. This affects memory usage and performance.",
+    "warning": "Note: the precision parameter only affects non-quantized models (float32/float16). For quantized models (4-bit/8-bit), the weight precision is fixed, the setting only affects intermediate computations.",
+    "loading": "Loading settings...",
+    "options": {
+      "default": {
+        "title": "Standard",
+        "specs": "CPU: F32, GPU: BF16",
+        "description": "Optimal balance between performance and precision"
+      },
+      "memoryEfficient": {
+        "title": "Memory Efficient",
+        "specs": "CPU: F32, GPU: F16",
+        "description": "Less memory usage, slightly lower precision"
+      },
+      "maximumPrecision": {
+        "title": "Maximum Precision",
+        "specs": "CPU: F32, GPU: F32",
+        "description": "Highest precision, more memory usage"
+      }
     }
+  },
+  "threadLimit": {
+    "title": "Manual CPU Thread Limit",
+    "description": "If you need to limit the number of runtime threads through rayon, enable manual limit.",
+    "loading": "Loading preset limit...",
+    "maxThreads": "Max threads: {count}",
+    "useSystem": "Use system value ({count} threads)",
+    "currentMode": "Current mode: {mode} ({count} threads)",
+    "modes": {
+      "automatic": "automatic",
+      "manual": "manual"
+    }
+  },
+  "modelSelector": {
+    "title": "Model Dropdown",
+    "description": "Configure search within the main model dropdown.",
+    "enableSearch": "Enable model search",
+    "enabledDescription": "Search will help you quickly find the models you need.",
+    "disabledDescription": "Search is hidden — the list shows all models as is."
+  },
+  "performance": {
+    "title": "Performance Monitoring",
+    "description": "Tracking application performance, including startup time, memory usage, and model speed.",
+    "monitor": "Performance Monitor",
+    "realtime": "Real-time",
+    "loadError": "Failed to load performance data",
+    "noData": "No performance data available",
+    "cpuUsage": "CPU Usage",
+    "memory": "Memory",
+    "speed": "Speed",
+    "inferenceTime": "Inference Time",
+    "avgSpeed": "Average Speed",
+    "modelLoad": "Model Load Time"
+  },
+  "prefixCache": {
+    "title": "Prefix Cache",
+    "description": "Reuse KV cache for faster multi-turn conversations",
+    "enable": "Enable prefix caching",
+    "maxEntries": "Max cache entries",
+    "clear": "Clear cache",
+    "stats": {
+      "hits": "Hits",
+      "misses": "Misses",
+      "entries": "Cached entries"
+    }
+  }
 }

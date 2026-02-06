@@ -37,3 +37,4 @@ pub fn set_rayon_thread_limit(
     guard.rayon_thread_limit = limit;
     ModelState::save_thread_limit(&app, limit).map_err(|e| e.to_string())
 }
+

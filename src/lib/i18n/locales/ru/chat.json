@@ -1,100 +1,90 @@
 {
-    "placeholder": {
-        "title": "Модель не загружена",
-        "description": "Загрузите модель, чтобы начать общение"
-    },
-    "notice": {
-        "selectModel": "Выберите модель для начала чата",
-        "startConversation": "Начните разговор"
-    },
-    "composer": {
-        "placeholder": "Напишите сообщение...",
-        "placeholderNotLoaded": "Загрузите модель, чтобы начать чат",
-        "hideHistory": "Скрыть историю чатов",
-        "showHistory": "Показать историю чатов",
-        "loaderSettings": "Настройки панели загрузки",
-        "clear": "Очистить",
-        "send": "Отправить",
-        "stop": "Остановить",
-        "attach": "Прикрепить файл",
-        "experimental": {
-            "loading": "Экспериментальные функции загружаются...",
-            "disabled": "Экспериментальные функции выключены"
-        },
-        "errors": {
-            "imageNotSupported": "Модель не поддерживает изображения",
-            "audioNotSupported": "Модель не поддерживает аудио",
-            "videoNotSupported": "Модель не поддерживает видео",
-            "unsupportedFileType": "Неподдерживаемый тип файла",
-            "fileReadFailed": "Не удалось прочитать файл",
-            "attachmentError": "Ошибка вложения"
-        },
-        "voice": {
-            "startRecording": "Начать запись голоса",
-            "stopRecording": "Остановить запись",
-            "transcribing": "Распознавание...",
-            "captureFailed": "Не удалось начать запись голоса",
-            "transcriptionFailed": "Не удалось распознать речь",
-            "errorTitle": "Ошибка голосового ввода",
-            "error": "Ошибка голосового ввода"
-        }
-    },
-    "messages": {
-        "empty": "Нет сообщений. Напишите что-нибудь…"
-    },
-    "actions": {
-        "copy": "Копировать",
-        "like": "Нравится",
-        "dislike": "Не нравится",
-        "regenerate": "Перегенерировать",
-        "edit": "Редактировать"
-    },
-    "loading": {
-        "stages": {
-            "start": "Инициализация загрузки...",
-            "device": "Выбор устройства...",
-            "open_file": "Открытие файла модели...",
-            "read_header": "Чтение метаданных GGUF...",
-            "tokenizer": "Инициализация токенизатора...",
-            "detect_arch": "Определение архитектуры...",
-            "build_model": "Создание модели...",
-            "build_model_done": "Модель создана",
-            "hub_get": "Загрузка из HF Hub...",
-            "hub_list": "Чтение списка весов...",
-            "hub_cache": "Кэширование весов...",
-            "scan_weights": "Проверка весов...",
-            "config": "Чтение config.json...",
-            "finalize": "Завершение...",
-            "complete": "Готово",
-            "llama_start": "Запуск backend llama.cpp...",
-            "llama_ready": "backend llama.cpp готов",
-            "fallback_candle": "llama.cpp не запустился, переключаемся на Candle...",
-            "model": "Загрузка модели...",
-            "cancelling": "Отмена загрузки...",
-            "cancel": "Загрузка отменена",
-            "error": "Ошибка при загрузке",
-            "unload_start": "Начало выгрузки...",
-            "unload_model": "Освобождение модели...",
-            "unload_tokenizer": "Освобождение токенизатора...",
-            "unload_complete": "Выгружено",
-            "default": "Этап: {stage}"
-        },
-        "cancelling": "Отмена загрузки...",
-        "complete": "Модель и токенизатор готовы к работе!",
-        "cancelHint": "Нажмите кнопку еще раз для отмены загрузки",
-        "unloadSuccess": "Модель и токенизатор успешно выгружены из памяти"
-    },
-    "thinking": {
-        "loading": "Рассуждения…",
-        "ready": "Размышления",
-        "thinking": "Думаю",
-        "thoughtMoment": "Подумал мгновение",
-        "thoughtSeconds": "Думал {seconds} сек."
+  "placeholder": {
+    "title": "Модель не загружена",
+    "description": "Загрузите модель, чтобы начать общение"
+  },
+  "notice": {
+    "selectModel": "Выберите модель для начала чата",
+    "startConversation": "Начните разговор"
+  },
+  "composer": {
+    "placeholder": "Напишите сообщение...",
+    "placeholderNotLoaded": "Загрузите модель, чтобы начать чат",
+    "hideHistory": "Скрыть историю чатов",
+    "showHistory": "Показать историю чатов",
+    "loaderSettings": "Настройки панели загрузки",
+    "clear": "Очистить",
+    "send": "Отправить",
+    "stop": "Остановить",
+    "attach": "Прикрепить файл",
+    "experimental": {
+      "loading": "Экспериментальные функции загружаются...",
+      "disabled": "Экспериментальные функции выключены"
     },
     "errors": {
-        "loadFailed": "Ошибка загрузки модели",
-        "generationFailed": "Ошибка генерации",
-        "modelNotLoaded": "Модель не загружена",
-        "loadModelFirst": "Сначала загрузите модель и токенизатор"
+      "imageNotSupported": "Модель не поддерживает изображения",
+      "audioNotSupported": "Модель не поддерживает аудио",
+      "videoNotSupported": "Модель не поддерживает видео",
+      "unsupportedFileType": "Неподдерживаемый тип файла",
+      "fileReadFailed": "Не удалось прочитать файл",
+      "attachmentError": "Ошибка вложения"
     }
+  },
+  "messages": {
+    "empty": "Нет сообщений. Напишите что-нибудь…"
+  },
+  "actions": {
+    "copy": "Копировать",
+    "like": "Нравится",
+    "dislike": "Не нравится",
+    "regenerate": "Перегенерировать",
+    "edit": "Редактировать"
+  },
+  "loading": {
+    "stages": {
+      "start": "Инициализация загрузки...",
+      "device": "Выбор устройства...",
+      "open_file": "Открытие файла модели...",
+      "read_header": "Чтение метаданных GGUF...",
+      "tokenizer": "Инициализация токенизатора...",
+      "detect_arch": "Определение архитектуры...",
+      "build_model": "Создание модели...",
+      "build_model_done": "Модель создана",
+      "hub_get": "Загрузка из HF Hub...",
+      "hub_list": "Чтение списка весов...",
+      "hub_cache": "Кэширование весов...",
+      "scan_weights": "Проверка весов...",
+      "config": "Чтение config.json...",
+      "finalize": "Завершение...",
+      "complete": "Готово",
+      "llama_start": "Запуск backend llama.cpp...",
+      "llama_ready": "backend llama.cpp готов",
+      "model": "Загрузка модели...",
+      "cancelling": "Отмена загрузки...",
+      "cancel": "Загрузка отменена",
+      "error": "Ошибка при загрузке",
+      "unload_start": "Начало выгрузки...",
+      "unload_model": "Освобождение модели...",
+      "unload_tokenizer": "Освобождение токенизатора...",
+      "unload_complete": "Выгружено",
+      "default": "Этап: {stage}"
+    },
+    "cancelling": "Отмена загрузки...",
+    "complete": "Модель и токенизатор готовы к работе!",
+    "cancelHint": "Нажмите кнопку еще раз для отмены загрузки",
+    "unloadSuccess": "Модель и токенизатор успешно выгружены из памяти"
+  },
+  "thinking": {
+    "loading": "Рассуждения…",
+    "ready": "Размышления",
+    "thinking": "Думаю",
+    "thoughtMoment": "Подумал мгновение",
+    "thoughtSeconds": "Думал {seconds} сек."
+  },
+  "errors": {
+    "loadFailed": "Ошибка загрузки модели",
+    "generationFailed": "Ошибка генерации",
+    "modelNotLoaded": "Модель не загружена",
+    "loadModelFirst": "Сначала загрузите модель и токенизатор"
+  }
 }

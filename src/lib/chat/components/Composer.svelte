@@ -220,7 +220,7 @@
           {/if}
         </PromptInputTools>
 
-        <PromptInputTools class="flex items-center gap-2">
+        <PromptInputTools class="flex items-center gap-2 [&_button:first-child]:rounded-bl-full">
           <!-- Send/Stop button -->
           <Button
             variant="default"

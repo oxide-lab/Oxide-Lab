@@ -9,3 +9,4 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["<start_of_turn>", "<end_of_turn>"],
     force_bos: false,
 };
+

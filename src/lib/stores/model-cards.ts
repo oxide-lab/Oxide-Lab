@@ -11,7 +11,7 @@ import { ModelCardsService } from '$lib/services/model-cards';
 type FilterState = {
     searchText: string;
     family: string;
-    format: 'gguf' | 'safetensors' | '';
+    format: 'gguf' | '';
 };
 
 // Core stores

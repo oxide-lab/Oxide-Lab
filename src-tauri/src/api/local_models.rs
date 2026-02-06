@@ -3,11 +3,15 @@
 use crate::api::model_manager::manifest::{
     DownloadManifest, infer_quantization_from_label, load_manifest, save_manifest,
 };
+use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::borrow::Borrow;
 use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -29,7 +33,6 @@ pub struct ValidationStatus {
 #[serde(rename_all = "lowercase")]
 pub enum ModelFormat {
     Gguf,
-    Safetensors,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,7 +115,6 @@ pub struct ModelInfo {
     pub source_repo_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_quantization: Option<String>,
-    pub candle_compatible: bool,
     pub validation_status: ValidationStatus,
     pub created_at: DateTime<Utc>,
     pub metadata: GGUFMetadata,
@@ -221,10 +223,33 @@ fn as_u64(v: Option<&gguf::GGUFMetadataValue>) -> Option<u64> {
     }
 }
 
+fn read_gguf_file(path: &Path) -> Result<gguf::GGUFFile, String> {
+    const READ_BUFFER_SIZE: usize = 1_000_000;
+
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let mut reader = BufReader::with_capacity(READ_BUFFER_SIZE, file);
+    let mut buffer = BytesMut::with_capacity(READ_BUFFER_SIZE);
+
+    loop {
+        let chunk = reader.fill_buf().map_err(|e| e.to_string())?;
+        if chunk.is_empty() {
+            return Err(format!("Failed to parse GGUF metadata: {}", path.display()));
+        }
+
+        let len = chunk.len();
+        buffer.put(chunk);
+        reader.consume(len);
+
+        match gguf::GGUFFile::read(buffer.borrow()) {
+            Ok(Some(parsed)) => return Ok(parsed),
+            Ok(None) => buffer.reserve(READ_BUFFER_SIZE),
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 fn parse_gguf_metadata_impl(path: &Path) -> Result<GGUFMetadata, String> {
-    let bytes = fs::read(path).map_err(|e| e.to_string())?;
-    let parsed = gguf::GGUFFile::read(&bytes)?
-        .ok_or_else(|| "GGUF file appears truncated or incomplete".to_string())?;
+    let parsed = read_gguf_file(path)?;
     let architecture = as_string(metadata_value(&parsed, "general.architecture"));
     let tokenizer_model = as_string(metadata_value(&parsed, "tokenizer.ggml.model"));
 
@@ -298,7 +323,10 @@ fn validation_for(metadata: &GGUFMetadata) -> ValidationStatus {
 fn build_model_info(path: &Path) -> Result<ModelInfo, String> {
     let metadata = parse_gguf_metadata_impl(path)?;
     let stat = fs::metadata(path).map_err(|e| e.to_string())?;
-    let created = stat.created().or_else(|_| stat.modified()).unwrap_or(std::time::SystemTime::now());
+    let created = stat
+        .created()
+        .or_else(|_| stat.modified())
+        .unwrap_or(std::time::SystemTime::now());
 
     let name = path
         .file_name()
@@ -327,7 +355,6 @@ fn build_model_info(path: &Path) -> Result<ModelInfo, String> {
         source_repo_id: manifest.as_ref().map(|m| m.repo_id.clone()),
         source_repo_name: manifest.as_ref().map(|m| m.repo_name.clone()),
         source_quantization: manifest.as_ref().and_then(|m| m.quantization.clone()),
-        candle_compatible: true,
         validation_status: validation_for(&metadata),
         created_at: DateTime::<Utc>::from(created),
         metadata,
@@ -354,14 +381,8 @@ fn collect_gguf_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String>
     Ok(())
 }
 
-#[tauri::command]
-pub fn parse_gguf_metadata(file_path: String) -> Result<GGUFMetadata, String> {
-    parse_gguf_metadata_impl(Path::new(&file_path))
-}
-
-#[tauri::command]
-pub fn scan_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
-    let root = Path::new(&folder_path);
+fn scan_models_folder_impl(folder_path: &str) -> Result<Vec<ModelInfo>, String> {
+    let root = Path::new(folder_path);
     if !root.exists() || !root.is_dir() {
         return Err(format!("Invalid models folder: {}", folder_path));
     }
@@ -382,8 +403,22 @@ pub fn scan_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String>
 }
 
 #[tauri::command]
-pub fn scan_local_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
-    scan_models_folder(folder_path)
+pub async fn parse_gguf_metadata(file_path: String) -> Result<GGUFMetadata, String> {
+    tauri::async_runtime::spawn_blocking(move || parse_gguf_metadata_impl(Path::new(&file_path)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn scan_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || scan_models_folder_impl(&folder_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn scan_local_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
+    scan_models_folder(folder_path).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -420,7 +455,11 @@ pub async fn search_huggingface_gguf(
     query: String,
     filters: Option<ModelFilters>,
 ) -> Result<Vec<HFModelInfo>, String> {
-    let limit = filters.as_ref().and_then(|f| f.limit).unwrap_or(20).clamp(1, 100);
+    let limit = filters
+        .as_ref()
+        .and_then(|f| f.limit)
+        .unwrap_or(20)
+        .clamp(1, 100);
     let url = format!(
         "https://huggingface.co/api/models?search={}&limit={}&full=true",
         urlencoding::encode(&query),
@@ -459,7 +498,12 @@ pub async fn search_huggingface_gguf(
             continue;
         }
 
-        let name = entry.id.split('/').next_back().unwrap_or(&entry.id).to_string();
+        let name = entry
+            .id
+            .split('/')
+            .next_back()
+            .unwrap_or(&entry.id)
+            .to_string();
 
         out.push(HFModelInfo {
             repo_id: entry.id.clone(),
@@ -555,11 +599,7 @@ pub fn update_model_manifest(
 
     let repo_name = repo_name
         .or_else(|| existing.as_ref().map(|m| m.repo_name.clone()))
-        .or_else(|| {
-            target
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-        })
+        .or_else(|| target.file_name().map(|s| s.to_string_lossy().to_string()))
         .unwrap_or_else(|| "local-model".to_string());
 
     let publisher = publisher
@@ -583,3 +623,4 @@ pub fn update_model_manifest(
 
     save_manifest(&target, &manifest)
 }
+

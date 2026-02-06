@@ -2,7 +2,7 @@
     "title": "About",
     "description": "Oxide Lab is a desktop application for local LLM inference based on modern technologies.",
     "technologies": "Technologies",
-    "techStack": "Tauri 2 + Svelte 5 + Rust + Candle ML",
+    "techStack": "Tauri 2 + Svelte 5 + Rust + llama.cpp process-host",
     "version": "Version",
     "license": " License",
     "actions": {

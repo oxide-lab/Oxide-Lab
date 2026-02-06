@@ -80,3 +80,4 @@ mod tests {
         assert!(pool.current_num_threads() > 0);
     }
 }
+

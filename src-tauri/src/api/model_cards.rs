@@ -4,7 +4,7 @@ use crate::api::model_manager::manifest::{
 };
 use crate::log_load;
 use chrono::Utc;
-use hf_hub::api::tokio::{Api, ApiBuilder};
+use hf_hub::api::tokio::ApiBuilder;
 use hf_hub::{Repo, RepoType};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -14,13 +14,12 @@ use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use tauri::{AppHandle, async_runtime};
 
-/// Проверяет, поддерживается ли данное квантование в текущей версии Candle.
-/// Список основан на candle-core/src/quantized/mod.rs
+/// Проверяет, поддерживается ли данное квантование в текущем runtime.
 fn is_quantization_supported(quant: &str) -> bool {
     let normalized = quant.to_ascii_uppercase();
     matches!(
         normalized.as_str(),
-        // Поддерживаемые типы из Candle
+        // Поддерживаемые типы для GGUF-пайплайна.
         "F32" | "F16" | "BF16" |
         "Q4_0" | "Q4_1" | "Q5_0" | "Q5_1" | "Q8_0" | "Q8_1" |
         "Q2_K" | "Q3_K" | "Q4_K" | "Q5_K" | "Q6_K" | "Q8_K" |
@@ -102,6 +101,9 @@ pub async fn download_model_card_format(
             ModelCardFormat::variants()
         )
     })?;
+    if card_format != ModelCardFormat::Gguf {
+        return Err("Unsupported format: only gguf is available in this build".to_string());
+    }
 
     ensure_model_cards_loaded()?;
     let card = {
@@ -127,12 +129,9 @@ pub async fn download_model_card_format(
         .build()
         .map_err(|e| format!("Не удалось инициализировать hf-hub: {e}"))?;
 
-    let files = match card_format {
-        ModelCardFormat::Gguf => card
-            .files_for_format(ModelCardFormat::Gguf, quantization.as_deref())
-            .map_err(|e| format!("Карточка некорректна: {e}"))?,
-        ModelCardFormat::Safetensors => collect_safetensors_files(&api, &card).await?,
-    };
+    let files = card
+        .files_for_format(ModelCardFormat::Gguf, quantization.as_deref())
+        .map_err(|e| format!("Карточка некорректна: {e}"))?;
 
     if files.is_empty() {
         return Err("Нет файлов для загрузки".to_string());
@@ -140,12 +139,10 @@ pub async fn download_model_card_format(
 
     let (format_repo_id, _) = card.repo_for_format(card_format);
     let (publisher, repo_name) = split_repo_parts(&format_repo_id);
-    let manifest_quantization = match card_format {
-        ModelCardFormat::Gguf => quantization
-            .clone()
-            .or_else(|| files.iter().find_map(|file| file.quantization.clone())),
-        ModelCardFormat::Safetensors => infer_quantization_from_label(&repo_name),
-    };
+    let manifest_quantization = quantization
+        .clone()
+        .or_else(|| files.iter().find_map(|file| file.quantization.clone()))
+        .or_else(|| infer_quantization_from_label(&repo_name));
     let manifest = DownloadManifest {
         version: 1,
         repo_id: format_repo_id.clone(),
@@ -401,7 +398,7 @@ impl ModelCard {
         let mut options = Vec::new();
         for file in &gguf.files {
             if let Some(quant) = file.quantization.as_ref() {
-                // Проверяем, поддерживается ли квантование в Candle
+                // Пропускаем квантования, которые не поддержаны текущим runtime.
                 if !is_quantization_supported(quant) {
                     log::debug!("Skipping unsupported quantization: {}", quant);
                     continue;
@@ -512,7 +509,7 @@ impl ModelCard {
 
     fn tokenizer_repo(&self) -> (String, Option<String>) {
         if let Some(sources) = &self.sources
-            && let Some(repo) = &sources.safetensors
+            && let Some(repo) = &sources.gguf
         {
             return (repo.repo_id.clone(), repo.revision.clone());
         }
@@ -597,75 +594,6 @@ struct ModelCardSafetensors {
     config_file: String,
 }
 
-async fn collect_safetensors_files(
-    api: &Api,
-    card: &ModelCard,
-) -> Result<Vec<ModelCardFile>, String> {
-    let saf = card
-        .safetensors
-        .as_ref()
-        .ok_or("Safetensors-блок не заполнен")?;
-    let weight_files = if saf.weight_files.is_empty() {
-        fetch_safetensors_weight_files(api, card).await?
-    } else {
-        saf.weight_files.clone()
-    };
-    let mut files = Vec::with_capacity(weight_files.len() + 2);
-    for filename in weight_files {
-        files.push(ModelCardFile {
-            filename,
-            purpose: Some("weight".to_string()),
-            quantization: None,
-        });
-    }
-    files.push(ModelCardFile {
-        filename: saf.tokenizer_file.clone(),
-        purpose: Some("tokenizer".to_string()),
-        quantization: None,
-    });
-    files.push(ModelCardFile {
-        filename: saf.config_file.clone(),
-        purpose: Some("config".to_string()),
-        quantization: None,
-    });
-    Ok(files)
-}
-
-async fn fetch_safetensors_weight_files(
-    api: &Api,
-    card: &ModelCard,
-) -> Result<Vec<String>, String> {
-    let (repo_id, repo_revision) = card.repo_for_format(ModelCardFormat::Safetensors);
-    let revision = repo_revision.unwrap_or_else(|| "main".to_string());
-    let repo = api.repo(Repo::with_revision(
-        repo_id.clone(),
-        RepoType::Model,
-        revision,
-    ));
-    let info = repo
-        .info()
-        .await
-        .map_err(|e| format!("Не удалось получить список файлов safetensors: {e}"))?;
-    let mut weight_files: Vec<String> = info
-        .siblings
-        .into_iter()
-        .map(|s| s.rfilename)
-        .filter(|name| is_safetensors_weight(name))
-        .collect();
-    weight_files.sort();
-    weight_files.dedup();
-    if weight_files.is_empty() {
-        Err("Не удалось найти `.safetensors`-файлы в репозитории".to_string())
-    } else {
-        Ok(weight_files)
-    }
-}
-
-fn is_safetensors_weight(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.ends_with(".safetensors") && !lower.ends_with(".safetensors.index.json")
-}
-
 #[derive(Debug, Serialize)]
 pub struct ModelCardSummary {
     pub id: String,
@@ -692,9 +620,9 @@ impl ModelCardSummary {
             family: card.family.clone(),
             tags: card.tags.clone(),
             hf_repo_id: card.hf_repo_id.clone(),
-            supported_formats: card.supported_formats.clone(),
+            supported_formats: vec!["gguf".to_string()],
             has_gguf: card.gguf.is_some(),
-            has_safetensors: card.safetensors.is_some(),
+            has_safetensors: false,
             sources: card.sources.clone(),
             gguf_quantizations: card.gguf_quantization_options(),
         }
@@ -743,3 +671,4 @@ impl ModelCardFormat {
         }
     }
 }
+

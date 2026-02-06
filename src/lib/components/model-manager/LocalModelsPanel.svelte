@@ -2,7 +2,7 @@
   /**
    * Local Models Panel
    *
-   * Full-featured panel for managing locally stored GGUF/safetensors models.
+   * Full-featured panel for managing locally stored GGUF models.
    * Features: table view, detail sidebar, inline editing, GGUF metadata viewer.
    */
   import { get } from 'svelte/store';
@@ -68,7 +68,7 @@
     e.stopPropagation();
     editingModelPath = model.path;
     editPublisher = model.metadata?.author ?? model.source_repo_id?.split('/')[0] ?? 'local';
-    editName = model.format === 'safetensors' ? (model.source_repo_name ?? model.name) : model.name;
+    editName = model.name;
   }
 
   function cancelEditing() {
@@ -90,11 +90,7 @@
             ...entry.metadata,
             author: editPublisher || entry.metadata?.author,
           };
-          if (entry.format === 'safetensors') {
-            updated.source_repo_name = editName || entry.source_repo_name;
-          } else {
-            updated.name = editName || entry.name;
-          }
+          updated.name = editName || entry.name;
           return updated;
         }),
       );
@@ -339,9 +335,7 @@
                           <PencilSimple class="size-3.5" />
                         </button>
                         <span>
-                          {#if model.format === 'safetensors'}
-                            {model.metadata?.author ?? '—'}
-                          {:else if model.source_repo_id}
+                          {#if model.source_repo_id}
                             {model.source_repo_id.split('/')[0]}
                           {:else}
                             {model.metadata?.author ?? '—'}
@@ -360,21 +354,11 @@
                           <PencilSimple class="size-3.5" />
                         </button>
                         <strong class="truncate max-w-[200px]" title={model.name}>
-                          {#if model.format === 'safetensors'}
-                            {model.source_repo_name ?? '—'}
-                          {:else}
-                            {model.name}
-                          {/if}
+                          {model.name}
                         </strong>
                       </div>
                     </td>
-                    <td class="px-3 py-2">
-                      {#if model.format === 'safetensors'}
-                        {model.source_quantization ?? '—'}
-                      {:else}
-                        {model.quantization ?? '—'}
-                      {/if}
-                    </td>
+                    <td class="px-3 py-2">{model.quantization ?? '—'}</td>
                     <td class="px-3 py-2">{LocalModelsService.formatFileSize(model.file_size)}</td>
                     <td class="px-3 py-2">
                       <Badge variant="outline" class="uppercase text-[10px]">{model.format}</Badge>
@@ -485,14 +469,14 @@
             <!-- Validation Status -->
             <div class="space-y-2">
               <h4 class="text-sm font-medium">{$t('models.local.details.validation')}</h4>
-              <Badge variant={validationVariants[$selectedModel.validation_status.level]}>
+              <Badge variant={validationVariants[$selectedModel.validation_status?.level ?? 'warning']}>
                 {$t(
-                  `models.local.details.${$selectedModel.validation_status.level === 'ok' ? 'valid' : $selectedModel.validation_status.level}`,
+                  `models.local.details.${($selectedModel.validation_status?.level ?? 'warning') === 'ok' ? 'valid' : ($selectedModel.validation_status?.level ?? 'warning')}`,
                 )}
               </Badge>
-              {#if $selectedModel.validation_status.messages.length}
+              {#if ($selectedModel.validation_status?.messages?.length ?? 0) > 0}
                 <ul class="text-xs text-muted-foreground list-disc pl-4 space-y-1">
-                  {#each $selectedModel.validation_status.messages as message}
+                  {#each $selectedModel.validation_status?.messages ?? [] as message}
                     <li>{message}</li>
                   {/each}
                 </ul>

@@ -116,3 +116,4 @@ pub fn gather_text_from_attachments(attachments: &[Attachment]) -> Result<String
     }
     Ok(out)
 }
+

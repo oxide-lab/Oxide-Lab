@@ -13,3 +13,4 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["<|end|>", "<|system|>", "<|user|>", "<|assistant|>"],
     force_bos: false,
 };
+

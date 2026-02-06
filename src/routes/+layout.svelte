@@ -84,6 +84,12 @@
     Boolean($pending && $pending !== $current),
   );
 
+  // Load local models on demand to keep startup responsive.
+  $effect(() => {
+    if (!isModelPickerOpen || !$folderPath || $models.length > 0) return;
+    void scanFolder($folderPath).catch((err) => console.warn('Failed to scan local models', err));
+  });
+
   // Redirect experimental pages when features disabled
   $effect(() => {
     if (experimentalFeatures.initialized && !experimentalFeatures.enabled) {
@@ -236,11 +242,6 @@
     // Initialize backend connections (download manager, model cards, performance listeners)
     const { initializeBackend } = await import('$lib/services/backend');
     void initializeBackend().catch((err) => console.warn('Backend initialization failed:', err));
-
-    // Scan local models if folder is set
-    if ($folderPath) {
-      void scanFolder($folderPath).catch((err) => console.warn('Failed to scan local models', err));
-    }
 
     // Setup window state
     isMaximized = await appWindow.isMaximized();
@@ -470,7 +471,7 @@
               'Local AI inference application'}
           </p>
           <p>
-            <strong>{$t('about.technologies') || 'Technologies'}:</strong> Tauri, Svelte, Candle
+            <strong>{$t('about.technologies') || 'Technologies'}:</strong> Tauri, Svelte, llama.cpp process-host
           </p>
           <p><strong>{$t('about.version') || 'Version'}:</strong> {appVersion}</p>
         </div>

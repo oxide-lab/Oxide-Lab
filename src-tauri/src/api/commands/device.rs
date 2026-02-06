@@ -15,8 +15,7 @@ fn has_cuda_binary_bundle() -> bool {
     entries.flatten().any(|entry| {
         let p = entry.path();
         p.is_dir()
-            && p
-                .file_name()
+            && p.file_name()
                 .and_then(|s| s.to_str())
                 .map(|s| s.to_ascii_lowercase().contains("cuda"))
                 .unwrap_or(false)
@@ -49,7 +48,12 @@ pub fn get_device_info(state: tauri::State<'_, SharedState>) -> Result<DeviceInf
     let guard = state.lock().map_err(|e| e.to_string())?;
     let current = device_label(&guard.device_pref).to_string();
     let cuda_build = has_cuda_binary_bundle();
-    let cuda_available = cuda_available();
+    let system_info = oxide_hardware::commands::get_system_info();
+    let cuda_available = system_info
+        .gpus
+        .iter()
+        .any(|gpu| matches!(gpu.vendor, oxide_hardware::Vendor::NVIDIA))
+        || cuda_available();
     let (avx, neon, simd128, f16c) = simd_caps();
 
     Ok(DeviceInfoDto {
@@ -73,7 +77,12 @@ pub struct ProbeCudaDto {
 #[tauri::command]
 pub fn probe_cuda() -> Result<ProbeCudaDto, String> {
     let cuda_build = has_cuda_binary_bundle();
-    let ok = cuda_available();
+    let system_info = oxide_hardware::commands::get_system_info();
+    let ok = system_info
+        .gpus
+        .iter()
+        .any(|gpu| matches!(gpu.vendor, oxide_hardware::Vendor::NVIDIA))
+        || cuda_available();
     Ok(ProbeCudaDto {
         cuda_build,
         ok,
@@ -84,3 +93,4 @@ pub fn probe_cuda() -> Result<ProbeCudaDto, String> {
         },
     })
 }
+

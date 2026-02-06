@@ -397,8 +397,9 @@
     pendingModelPath = args.path;
     pendingFormat = args.format;
 
-    // If already loaded or loading, just update pending state
-    if (isLoaded || isLoadingModel) {
+    // If already loaded or loading, just update pending state.
+    // Use shared store state because local runes state may lag in edge cases.
+    if ($chatState.isLoaded || $chatState.isLoadingModel || isLoaded || isLoadingModel) {
       return;
     }
 

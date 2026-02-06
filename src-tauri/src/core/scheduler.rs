@@ -99,3 +99,4 @@ impl ModelScheduler {
         self.active_model.as_ref().map(|e| e.model_id.clone())
     }
 }
+

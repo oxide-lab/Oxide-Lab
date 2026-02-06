@@ -77,3 +77,4 @@ pub fn render_prompt(
         }
     }
 }
+

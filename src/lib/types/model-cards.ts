@@ -11,7 +11,6 @@ type ModelCardRepo = {
 
 export type ModelCardSources = {
     gguf?: ModelCardRepo;
-    safetensors?: ModelCardRepo;
 };
 
 export interface ModelCardSummary {
@@ -23,7 +22,6 @@ export interface ModelCardSummary {
     hf_repo_id: string;
     supported_formats: string[];
     has_gguf: boolean;
-    has_safetensors: boolean;
     sources?: ModelCardSources;
     gguf_quantizations?: string[];
 }
@@ -35,7 +33,7 @@ export interface ModelCardsResponse {
 
 export interface ModelCardDownloadResult {
     card_id: string;
-    format: 'gguf' | 'safetensors';
+    format: 'gguf';
     destination_dir: string;
     downloaded_files: string[];
     total_bytes: number;

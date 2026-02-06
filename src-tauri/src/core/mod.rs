@@ -16,3 +16,4 @@ pub mod thread_priority;
 pub mod types;
 
 pub use rayon_pool::INFERENCE_POOL;
+

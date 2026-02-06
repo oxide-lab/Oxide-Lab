@@ -621,3 +621,4 @@ mod tests {
         assert_eq!(trailing_whitespace_len(""), 0);
     }
 }
+

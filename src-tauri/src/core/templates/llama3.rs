@@ -120,3 +120,4 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     ],
     force_bos: false,
 };
+

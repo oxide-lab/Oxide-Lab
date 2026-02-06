@@ -14,11 +14,13 @@ crate-type = ["cdylib", "rlib"]
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.0", features = ["devtools"] }
+tauri = { version = "2.0", features = ["devtools", "protocol-asset"] }
 tauri-plugin-opener = "2.0"
 tauri-plugin-dialog = "2.0"
 tauri-plugin-fs = "2.0"
 tauri-plugin-store = "2.0"
+oxide-hardware = { path = "crates/oxide-hardware" }
+oxide-llamacpp = { path = "crates/oxide-llamacpp" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hf-hub = { version = "0.4", default-features = false, features = ["tokio", "ureq", "rustls-tls"] }
@@ -84,7 +86,7 @@ debug = "line-tables-only"       # Минимальная отладочная �
 incremental = true               # Инкрементальная компиляция
 
 [profile.dev-fast.package."*"]
-opt-level = 2                    # Оптимизация зависимостей (candle и др.)
+opt-level = 2                    # Оптимизация зависимостей
 
 # Release: баланс между оптимизацией и временем сборки
 [profile.release]
@@ -98,3 +100,5 @@ inherits = "release"
 lto = "fat"           # Максимальный LTO
 codegen-units = 1     # Лучшая оптимизация
 strip = true          # Убрать символы
+
+

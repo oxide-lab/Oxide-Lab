@@ -1,99 +1,98 @@
 {
-    "title": "Modelos",
-    "tabs": {
-        "local": "Meus Modelos",
-        "remote": "Buscar Modelos"
+  "title": "Modelos",
+  "tabs": {
+    "local": "Meus Modelos",
+    "remote": "Buscar Modelos"
+  },
+  "local": {
+    "title": "Modelos Locais",
+    "description": "Gerencie seus modelos baixados localmente",
+    "folderLabel": "Pasta de modelos",
+    "folderNotSelected": "Pasta não selecionada",
+    "notSelected": "Não selecionado",
+    "noFolder": "Nenhuma pasta selecionada",
+    "noModels": "Nenhum modelo encontrado",
+    "search": "Buscar modelos...",
+    "searchPlaceholder": "Nome, arquitetura, quantização...",
+    "selectFolder": "Selecionar Pasta",
+    "load": "Carregar",
+    "menu": {
+      "selectFolder": "Selecionar pasta",
+      "rescan": "Reescanear"
     },
-    "local": {
-        "title": "Modelos Locais",
-        "description": "Gerencie seus modelos baixados localmente",
-        "folderLabel": "Pasta de modelos",
-        "folderNotSelected": "Pasta não selecionada",
-        "notSelected": "Não selecionado",
-        "noFolder": "Nenhuma pasta selecionada",
-        "noModels": "Nenhum modelo encontrado",
-        "search": "Buscar modelos...",
-        "searchPlaceholder": "Nome, arquitetura, quantização...",
-        "selectFolder": "Selecionar Pasta",
-        "load": "Carregar",
-        "candleOnly": "Apenas compatível com Candle",
-        "menu": {
-            "selectFolder": "Selecionar pasta",
-            "rescan": "Reescanear"
-        },
-        "table": {
-            "architecture": "Arquitetura",
-            "parameters": "Parâmetros",
-            "publisher": "Publicador",
-            "modelName": "Nome do modelo",
-            "quant": "Quant",
-            "size": "Tamanho",
-            "format": "Formato"
-        },
-        "details": {
-            "delete": "Excluir",
-            "loadToChat": "Carregar no chat",
-            "path": "Caminho",
-            "size": "Tamanho",
-            "date": "Data",
-            "architecture": "Arquitetura",
-            "format": "Formato",
-            "detected": "Detectado",
-            "context": "Contexto",
-            "validation": "Validação",
-            "valid": "Válido",
-            "warning": "Aviso",
-            "error": "Erro",
-            "deleteConfirm": "Excluir modelo \"{name}\"?\nO arquivo será movido para a lixeira.",
-            "edit": {
-                "ariaLabel": "Editar nome e publicador do modelo",
-                "publisher": "Publicador",
-                "publisherPlaceholder": "publicador",
-                "name": "Nome",
-                "namePlaceholder": "publicador/nome",
-                "save": "Salvar",
-                "cancel": "Cancelar"
-            },
-            "metadata": {
-                "title": "Metadados GGUF",
-                "showAll": "Mostrar tudo",
-                "hide": "Ocultar",
-                "formatVersion": "Versão do formato",
-                "tensorCount": "Contagem de tensores",
-                "alignment": "Alinhamento",
-                "tokenCount": "Contagem de tokens"
-            }
-        },
-        "errors": {
-            "retry": "Tentar novamente"
-        }
+    "table": {
+      "architecture": "Arquitetura",
+      "parameters": "Parâmetros",
+      "publisher": "Publicador",
+      "modelName": "Nome do modelo",
+      "quant": "Quant",
+      "size": "Tamanho",
+      "format": "Formato"
     },
-    "remote": {
-        "title": "Baixar Modelos",
-        "description": "Navegue e baixe modelos do Hugging Face",
-        "searchHint": "Busque modelos no Hugging Face",
-        "searchPlaceholder": "Buscar modelos...",
-        "searchPlaceholderFull": "Buscar modelos no Hugging Face...",
-        "allFamilies": "Todas as famílias",
-        "allFormats": "Todos os formatos",
-        "refresh": "Atualizar",
-        "refreshing": "Atualizando...",
-        "importConfig": "Importar configuração",
-        "resetConfig": "Redefinir configuração",
-        "version": "Versão:",
-        "retry": "Tentar novamente",
-        "loading": "Carregando cards...",
-        "noResults": "Nenhum card encontrado. Tente alterar os filtros.",
-        "downloading": "Baixando...",
-        "noDescription": "Nenhuma descrição disponível.",
-        "sources": {
-            "gguf": "Fontes GGUF:",
-            "safetensors": "Fontes safetensors:"
-        },
-        "quantization": "Quantização",
-        "modelsFolder": "Pasta de modelos:",
-        "folderNotSelected": "Pasta não selecionada — vá para a aba \"Meus Modelos\" e especifique o caminho.",
-        "selectCard": "Selecione um card para ver detalhes e baixar o formato desejado.",
-        "selectFolderAlert": "Selecione uma pasta na seção \"Meus Modelos\" para baixar um modelo."
+    "details": {
+      "delete": "Excluir",
+      "loadToChat": "Carregar no chat",
+      "path": "Caminho",
+      "size": "Tamanho",
+      "date": "Data",
+      "architecture": "Arquitetura",
+      "format": "Formato",
+      "detected": "Detectado",
+      "context": "Contexto",
+      "validation": "Validação",
+      "valid": "Válido",
+      "warning": "Aviso",
+      "error": "Erro",
+      "deleteConfirm": "Excluir modelo \"{name}\"?\nO arquivo será movido para a lixeira.",
+      "edit": {
+        "ariaLabel": "Editar nome e publicador do modelo",
+        "publisher": "Publicador",
+        "publisherPlaceholder": "publicador",
+        "name": "Nome",
+        "namePlaceholder": "publicador/nome",
+        "save": "Salvar",
+        "cancel": "Cancelar"
+      },
+      "metadata": {
+        "title": "Metadados GGUF",
+        "showAll": "Mostrar tudo",
+        "hide": "Ocultar",
+        "formatVersion": "Versão do formato",
+        "tensorCount": "Contagem de tensores",
+        "alignment": "Alinhamento",
+        "tokenCount": "Contagem de tokens"
+      }
+    },
+    "errors": {
+      "retry": "Tentar novamente"
     }
+  },
+  "remote": {
+    "title": "Baixar Modelos",
+    "description": "Navegue e baixe modelos do Hugging Face",
+    "searchHint": "Busque modelos no Hugging Face",
+    "searchPlaceholder": "Buscar modelos...",
+    "searchPlaceholderFull": "Buscar modelos no Hugging Face...",
+    "allFamilies": "Todas as famílias",
+    "allFormats": "Todos os formatos",
+    "refresh": "Atualizar",
+    "refreshing": "Atualizando...",
+    "importConfig": "Importar configuração",
+    "resetConfig": "Redefinir configuração",
+    "version": "Versão:",
+    "retry": "Tentar novamente",
+    "loading": "Carregando cards...",
+    "noResults": "Nenhum card encontrado. Tente alterar os filtros.",
+    "downloading": "Baixando...",
+    "noDescription": "Nenhuma descrição disponível.",
+    "sources": {
+      "gguf": "Fontes GGUF:",
+      "safetensors": "Fontes safetensors:"
+    },
+    "quantization": "Quantização",
+    "modelsFolder": "Pasta de modelos:",
+    "folderNotSelected": "Pasta não selecionada — vá para a aba \"Meus Modelos\" e especifique o caminho.",
+    "selectCard": "Selecione um card para ver detalhes e baixar o formato desejado.",
+    "selectFolderAlert": "Selecione uma pasta na seção \"Meus Modelos\" para baixar um modelo."
+  }
 }

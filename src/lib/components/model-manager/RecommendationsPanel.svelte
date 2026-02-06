@@ -65,7 +65,7 @@
   // Helpers
   // ─────────────────────────────────────────────────────────────
 
-  function getDownloadId(card: ModelCardSummary, format: 'gguf' | 'safetensors') {
+  function getDownloadId(card: ModelCardSummary, format: 'gguf') {
     return `model-card::${card.id}::${format}`;
   }
 
@@ -77,7 +77,7 @@
     selectedQuantizations = { ...selectedQuantizations, [cardId]: quant };
   }
 
-  function isDownloading(card: ModelCardSummary, format: 'gguf' | 'safetensors') {
+  function isDownloading(card: ModelCardSummary, format: 'gguf') {
     const key = getDownloadId(card, format);
     if (downloadQueued[key]) {
       return true;
@@ -88,9 +88,7 @@
     return false;
   }
 
-  function updateFilter(
-    filter: Partial<{ searchText: string; family: string; format: 'gguf' | 'safetensors' | '' }>,
-  ) {
+  function updateFilter(filter: Partial<{ searchText: string; family: string; format: 'gguf' | '' }>) {
     modelCardFilters.update((prev) => ({ ...prev, ...filter }));
   }
 
@@ -98,7 +96,7 @@
   // Actions
   // ─────────────────────────────────────────────────────────────
 
-  async function handleDownload(card: ModelCardSummary, format: 'gguf' | 'safetensors') {
+  async function handleDownload(card: ModelCardSummary, format: 'gguf') {
     if (!$folderPath) {
       alert($t('models.remote.selectFolderAlert'));
       return;
@@ -106,7 +104,7 @@
     const downloadId = getDownloadId(card, format);
     downloadErrors = { ...downloadErrors, [downloadId]: '' };
     try {
-      const quantization = format === 'gguf' ? selectedQuantizations[card.id] : undefined;
+      const quantization = selectedQuantizations[card.id];
       downloadQueued = { ...downloadQueued, [downloadId]: true };
       await ModelCardsService.downloadModelCardFormat(card.id, format, $folderPath, quantization);
     } catch (error) {
@@ -237,7 +235,7 @@
     <Select.Root
       type="single"
       value={$modelCardFilters.format || ''}
-      onValueChange={(v) => updateFilter({ format: (v ?? '') as 'gguf' | 'safetensors' | '' })}
+      onValueChange={(v) => updateFilter({ format: (v ?? '') as 'gguf' | '' })}
     >
       <Select.Trigger class="w-[140px]">
         {$modelCardFilters.format?.toUpperCase() || $t('models.remote.allFormats')}
@@ -245,7 +243,6 @@
       <Select.Content>
         <Select.Item value="">{$t('models.remote.allFormats')}</Select.Item>
         <Select.Item value="gguf">GGUF</Select.Item>
-        <Select.Item value="safetensors">safetensors</Select.Item>
       </Select.Content>
     </Select.Root>
 
@@ -334,7 +331,7 @@
                         {/each}
                       </div>
                     </div>
-                    {#if isDownloading(card, 'gguf') || isDownloading(card, 'safetensors')}
+                    {#if isDownloading(card, 'gguf')}
                       <Badge variant="secondary" class="text-xs flex-shrink-0">
                         <Spinner class="size-3 mr-1" />
                         {$t('models.remote.downloading')}
@@ -391,12 +388,6 @@
                     <div>
                       {$t('models.remote.sources.gguf')}
                       {selectedCard.sources.gguf.repo_id}
-                    </div>
-                  {/if}
-                  {#if selectedCard.sources.safetensors}
-                    <div>
-                      {$t('models.remote.sources.safetensors')}
-                      {selectedCard.sources.safetensors.repo_id}
                     </div>
                   {/if}
                 </div>
@@ -462,28 +453,6 @@
                   </div>
                 {/if}
 
-                {#if selectedCard.has_safetensors}
-                  <div class="space-y-1">
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onclick={() => handleDownload(selectedCard!, 'safetensors')}
-                      disabled={isDownloading(selectedCard!, 'safetensors')}
-                    >
-                      {#if isDownloading(selectedCard, 'safetensors')}
-                        <Spinner class="size-4 mr-2" />
-                      {:else}
-                        <DownloadSimple class="size-4 mr-2" />
-                      {/if}
-                      safetensors
-                    </Button>
-                    {#if downloadErrors[getDownloadId(selectedCard!, 'safetensors')]}
-                      <p class="text-xs text-destructive">
-                        {downloadErrors[getDownloadId(selectedCard!, 'safetensors')]}
-                      </p>
-                    {/if}
-                  </div>
-                {/if}
               </div>
 
               <!-- Destination Folder -->

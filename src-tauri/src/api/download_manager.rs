@@ -917,3 +917,4 @@ pub async fn clear_download_history(app: AppHandle) -> Result<(), String> {
     MANAGER.emit_update(&app).await;
     Ok(())
 }
+

@@ -56,7 +56,7 @@ export interface GGUFMetadata {
 /**
  * Normalized information about a locally available GGUF model.
  */
-export type ModelFormat = 'gguf' | 'safetensors';
+export type ModelFormat = 'gguf';
 
 export interface ModelInfo {
     path: string;
@@ -75,7 +75,6 @@ export interface ModelInfo {
     source_repo_id?: string;
     source_repo_name?: string;
     source_quantization?: string;
-    candle_compatible: boolean;
     validation_status: ValidationStatus;
     created_at: string;
     metadata: GGUFMetadata;

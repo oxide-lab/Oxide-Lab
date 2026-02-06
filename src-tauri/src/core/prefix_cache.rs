@@ -345,3 +345,4 @@ mod tests {
         assert_eq!(cache.stats().entries, 0);
     }
 }
+

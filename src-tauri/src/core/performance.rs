@@ -165,40 +165,27 @@ impl PerformanceMonitor {
 
     /// Получить текущее использование системных ресурсов
     pub async fn get_system_usage(&self) -> SystemUsage {
-        let mut system = self.system.write().await;
+        // Use the hardware plugin as a single source of system telemetry (Jan-like flow).
+        let hw_usage = oxide_hardware::commands::get_system_usage();
 
-        // Обновляем информацию о системе
-        system.refresh_all();
+        let memory_usage_mb = hw_usage.used_memory as f64;
+        let total_gpu_memory: u64 = hw_usage.gpus.iter().map(|g| g.total_memory).sum();
+        let used_gpu_memory: u64 = hw_usage.gpus.iter().map(|g| g.used_memory).sum();
 
-        // Для корректного измерения CPU: обновляем CPU usage
-        system.refresh_cpu_usage();
+        let gpu_memory_mb = if hw_usage.gpus.is_empty() {
+            None
+        } else {
+            Some(used_gpu_memory as f64)
+        };
 
-        // Получаем среднее использование CPU по всем ядрам
-        let total_cpu_usage: f32 = system.cpus().iter().map(|cpu| cpu.cpu_usage()).sum();
-        let cpu_count = system.cpus().len() as f32;
-        let mut cpu_usage_percent = total_cpu_usage / cpu_count;
-
-        // Валидация CPU usage (sysinfo может возвращать некорректные значения)
-        if !(0.0..=100.0).contains(&cpu_usage_percent) {
-            cpu_usage_percent = 0.0; // Устанавливаем в 0, если значение некорректное
-        }
-
-        // Получаем использование памяти
-        let memory_usage_mb = system.used_memory() as f64 / 1024.0 / 1024.0;
-
-        // GPU информация (sysinfo не поддерживает GPU напрямую)
-        // Для реального GPU мониторинга потребуется nvml-wrapper или аналог
-        let gpu_usage_percent = None;
-        let gpu_memory_mb = None;
-
-        // Логируем для отладки
-        // println!(
-        //     "CPU usage: {:.2}%, Memory: {:.2} MB, CPUs: {}",
-        //     cpu_usage_percent, memory_usage_mb, cpu_count
-        // );
+        let gpu_usage_percent = if total_gpu_memory > 0 {
+            Some(((used_gpu_memory as f64 / total_gpu_memory as f64) * 100.0) as f32)
+        } else {
+            None
+        };
 
         SystemUsage {
-            cpu_usage_percent,
+            cpu_usage_percent: hw_usage.cpu,
             memory_usage_mb,
             gpu_usage_percent,
             gpu_memory_mb,
@@ -499,3 +486,4 @@ macro_rules! measure_performance {
         result
     }};
 }
+

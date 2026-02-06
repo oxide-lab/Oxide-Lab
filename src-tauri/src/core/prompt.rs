@@ -223,10 +223,6 @@ impl Default for PromptBuilder {
 #[cfg(test)]
 mod tests {
     use super::{normalize_and_validate, normalize_chat_template};
-    use crate::core::tokenizer::find_chat_template_in_metadata;
-    use candle::quantized::gguf_file;
-    use std::fs::File;
-    use std::path::Path;
 
     #[test]
     fn rewrites_py_string_methods_to_filters() {
@@ -353,47 +349,5 @@ mod tests {
             normalized_tpl
         );
     }
-
-    #[test]
-    fn normalize_real_qwen_template_from_gguf() {
-        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("workspace root");
-        let gguf_path =
-            workspace_root.join("models/gguf/Qwen3-0.6B-unsloth-GGUF/Qwen3-0.6B-Q5_K_M.gguf");
-        assert!(gguf_path.exists(), "GGUF file not found at {:?}", gguf_path);
-
-        let mut file = File::open(gguf_path).expect("open gguf");
-        let content = gguf_file::Content::read(&mut file).expect("read gguf");
-        let tpl =
-            find_chat_template_in_metadata(&content.metadata).expect("chat_template in metadata");
-
-        let normalized = normalize_and_validate(&tpl);
-        assert!(
-            normalized.is_ok(),
-            "normalize real template failed: {}",
-            normalized.err().unwrap()
-        );
-    }
-
-    #[test]
-    fn normalize_real_gemma_template_from_gguf() {
-        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("workspace root");
-        let gguf_path = workspace_root.join("models/gguf/gemma3-4b-it/gemma-3-4b-it-Q4_K_M.gguf");
-        assert!(gguf_path.exists(), "GGUF file not found at {:?}", gguf_path);
-
-        let mut file = File::open(gguf_path).expect("open gguf");
-        let content = gguf_file::Content::read(&mut file).expect("read gguf");
-        let tpl =
-            find_chat_template_in_metadata(&content.metadata).expect("chat_template in metadata");
-
-        let normalized = normalize_and_validate(&tpl);
-        assert!(
-            normalized.is_ok(),
-            "normalize real template failed: {}",
-            normalized.err().unwrap()
-        );
-    }
 }
+

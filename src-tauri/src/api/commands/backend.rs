@@ -44,3 +44,4 @@ pub fn set_llama_runtime_config(
     guard.llama_runtime = config;
     Ok(())
 }
+

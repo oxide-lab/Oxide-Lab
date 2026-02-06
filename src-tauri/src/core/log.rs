@@ -343,3 +343,4 @@ mod tests {
         log_arch!("Test architecture message");
     }
 }
+

@@ -30,7 +30,7 @@ export class ModelCardsService {
 
     static async downloadModelCardFormat(
         cardId: string,
-        format: 'gguf' | 'safetensors',
+        format: 'gguf',
         modelsRoot: string,
         quantization?: string,
     ): Promise<ModelCardDownloadResult> {
