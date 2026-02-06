@@ -329,10 +329,6 @@ export class LocalModelsService {
                 return false;
             }
 
-            if (options.candleOnly && !model.candle_compatible) {
-                return false;
-            }
-
             if (options.validation && options.validation !== 'all') {
                 if (model.validation_status.level !== options.validation) {
                     return false;

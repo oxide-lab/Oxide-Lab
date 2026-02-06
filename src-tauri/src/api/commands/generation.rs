@@ -1,12 +1,12 @@
 use crate::core::state::SharedState;
 use crate::core::types::GenerateRequest;
-use crate::generate;
 use crate::log_template;
 
 #[tauri::command]
 pub async fn generate_stream(
     app: tauri::AppHandle,
     state: tauri::State<'_, SharedState>,
+    llama_state: tauri::State<'_, crate::inference::llamacpp::state::LlamaCppState>,
     req: GenerateRequest,
 ) -> Result<(), String> {
     if let Ok(guard) = state.lock() {
@@ -15,10 +15,16 @@ pub async fn generate_stream(
             guard.chat_template.as_ref().map(|_| true).unwrap_or(false)
         );
     }
-    generate::generate_stream_cmd(app, state, req).await
+    crate::inference::router::generate_stream(
+        app,
+        state.inner().clone(),
+        llama_state.inner().clone(),
+        req,
+    )
+    .await
 }
 
 #[tauri::command]
 pub fn cancel_generation() -> Result<(), String> {
-    generate::cancel_generation_cmd()
+    crate::generate::cancel_generation_cmd()
 }

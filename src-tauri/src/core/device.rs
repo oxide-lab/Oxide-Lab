@@ -1,63 +1,53 @@
 use crate::core::types::DevicePreference;
-use crate::{log_device, log_device_error};
-use candle::Device;
-use candle::utils::{cuda_is_available, metal_is_available};
 
-pub fn select_device(pref: Option<DevicePreference>) -> Device {
+fn has_cuda_runtime() -> bool {
+    std::env::var("CUDA_PATH").is_ok() || std::env::var("CUDA_VISIBLE_DEVICES").is_ok()
+}
+
+#[cfg(target_os = "macos")]
+fn has_metal_runtime() -> bool {
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+fn has_metal_runtime() -> bool {
+    false
+}
+
+pub fn select_device(pref: Option<DevicePreference>) -> DevicePreference {
     match pref.unwrap_or(DevicePreference::Auto) {
         DevicePreference::Auto => {
-            // Авто-выбор устройства CUDA → Metal → CPU, как в примерах Candle
-            // Проверяем CUDA только если фича включена при компиляции
-            if cuda_is_available() {
-                match Device::new_cuda(0) {
-                    Ok(device) => {
-                        log_device!("auto-selected CUDA");
-                        return device;
-                    }
-                    Err(e) => {
-                        log_device_error!("CUDA init failed: {}, falling back to next option", e);
-                    }
-                }
+            if has_cuda_runtime() {
+                DevicePreference::Cuda { index: 0 }
+            } else if has_metal_runtime() {
+                DevicePreference::Metal
+            } else {
+                DevicePreference::Cpu
             }
-
-            // Проверяем Metal только если фича включена при компиляции
-            if metal_is_available() {
-                match Device::new_metal(0) {
-                    Ok(device) => {
-                        log_device!("auto-selected Metal");
-                        return device;
-                    }
-                    Err(e) => {
-                        log_device_error!("Metal init failed: {}, falling back to CPU", e);
-                    }
-                }
-            }
-
-            log_device!("auto-selected CPU");
-            Device::Cpu
         }
-        DevicePreference::Cpu => Device::Cpu,
-        DevicePreference::Cuda { index } => match Device::new_cuda(index) {
-            Ok(device) => device,
-            Err(e) => {
-                log_device_error!("CUDA init failed: {}, falling back to CPU", e);
-                Device::Cpu
-            }
-        },
-        DevicePreference::Metal => match Device::new_metal(0) {
-            Ok(device) => device,
-            Err(e) => {
-                log_device_error!("Metal init failed: {}, falling back to CPU", e);
-                Device::Cpu
-            }
-        },
+        explicit => explicit,
     }
 }
 
-pub fn device_label(d: &Device) -> &'static str {
+pub fn device_label(d: &DevicePreference) -> &'static str {
     match d {
-        Device::Cpu => "CPU",
-        Device::Cuda(_) => "CUDA",
-        Device::Metal(_) => "Metal",
+        DevicePreference::Auto => "AUTO",
+        DevicePreference::Cpu => "CPU",
+        DevicePreference::Cuda { .. } => "CUDA",
+        DevicePreference::Metal => "Metal",
     }
+}
+
+pub fn cuda_available() -> bool {
+    has_cuda_runtime()
+}
+
+pub fn simd_caps() -> (bool, bool, bool, bool) {
+    let arch = std::env::consts::ARCH;
+    let avx = arch.eq_ignore_ascii_case("x86_64") || arch.eq_ignore_ascii_case("x86");
+    let neon = arch.eq_ignore_ascii_case("aarch64") || arch.eq_ignore_ascii_case("arm");
+    // WebAssembly SIMD is irrelevant in native desktop app; expose false.
+    let simd128 = false;
+    let f16c = avx;
+    (avx, neon, simd128, f16c)
 }

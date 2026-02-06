@@ -14,4 +14,3 @@ export type PrecisionPolicy =
 export * from './local-models.js';
 export * from './model-cards.js';
 export * from './performance.js';
-export * from './stt.js';

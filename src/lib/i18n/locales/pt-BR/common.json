@@ -84,5 +84,51 @@
             "megabytesPerSec": "MB/s",
             "gigabytesPerSec": "GB/s"
         }
+    },
+    "loader": {
+        "backend": {
+            "title": "Backend de inferência",
+            "active": "Ativo: {backend}",
+            "auto": "Auto",
+            "llamacpp": "Llama.cpp",
+            "candle": "Candle"
+        },
+        "runtime": {
+            "title": "Configurações de runtime",
+            "engine": "Engine",
+            "save": "Salvar runtime",
+            "serverPath": "Caminho do servidor (opcional)",
+            "serverPathHint": "Deixe vazio para detectar automaticamente via config/env/example/bin/PATH.",
+            "gpuLayers": "Camadas na GPU (-ngl)",
+            "contextSize": "Tamanho do contexto (--ctx-size)",
+            "threads": "Threads de CPU (--threads)",
+            "threadsBatch": "Threads de batch (--threads-batch)",
+            "batchSize": "Tamanho do batch (--batch-size)",
+            "ubatchSize": "Tamanho do micro-batch (--ubatch-size)",
+            "maxTokens": "Máximo de tokens gerados (--n-predict)",
+            "flashAttn": "Flash Attention (--flash-attn)",
+            "candleHint": "Para o backend Candle, as configurações compartilhadas de chat são usadas aqui (contexto/amostragem). Overrides dedicados de runtime ainda não estão habilitados."
+        },
+        "device": "Dispositivo",
+        "contextLength": "Tamanho do contexto",
+        "cpuFeatures": "Recursos da CPU",
+        "advancedOptions": "Opções avançadas",
+        "sampling": {
+            "title": "Parâmetros de amostragem",
+            "useCustom": "Usar parâmetros personalizados",
+            "temperature": "Temperatura",
+            "topK": "Top-K",
+            "topP": "Top-P",
+            "minP": "Min-P",
+            "repeatPenalty": "Penalidade de repetição"
+        },
+        "splitPrompt": "Dividir prompt",
+        "verbosePrompt": "Prompt detalhado",
+        "chromeTracing": "Chrome tracing",
+        "loading": "Carregando modelo...",
+        "unloading": "Descarregando modelo...",
+        "cancelling": "Cancelando...",
+        "loaded": "Carregado",
+        "gpuNotAvailable": "GPU indisponível (CUDA não detectado)"
     }
 }

@@ -1,36 +1,15 @@
-//! Model manager API for local GGUF files and Hugging Face integration.
-//!
-//! This module provides:
-//! * Comprehensive GGUF metadata parsing (including tokenizer metadata and validation)
-//! * Recursive scanning of local folders with Candle compatibility checks
-//! * Hugging Face Hub search focused on GGUF artifacts with filtering
-//! * Download helper with progress events bridged to the Svelte frontend
+//! Local model management with GGUF metadata parsing via `gguf` crate.
 
 use crate::api::model_manager::manifest::{
     DownloadManifest, infer_quantization_from_label, load_manifest, save_manifest,
 };
-use crate::core::weights::local_list_safetensors;
-use crate::models::registry::{ArchKind, detect_arch, detect_arch_from_config};
-use candle::quantized::gguf_file::{self, Content, Value as GgufValue, VersionedMagic};
 use chrono::{DateTime, Utc};
-use hf_hub::api::tokio::{ApiBuilder, Progress as HubProgress};
-use once_cell::sync::{Lazy, OnceCell};
-use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
-use tauri::{AppHandle, Emitter, async_runtime};
-use tokio::sync::RwLock;
 
-/// Validation severity level for GGUF files.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ValidationLevel {
@@ -39,7 +18,6 @@ pub enum ValidationLevel {
     Error,
 }
 
-/// Validation outcome that frontend can render.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationStatus {
     pub level: ValidationLevel,
@@ -47,7 +25,6 @@ pub struct ValidationStatus {
     pub messages: Vec<String>,
 }
 
-/// Format of the local model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelFormat {
@@ -55,14 +32,12 @@ pub enum ModelFormat {
     Safetensors,
 }
 
-/// Key-value representation for additional GGUF metadata that is not mapped explicitly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GGUFKeyValue {
     pub key: String,
     pub value: JsonValue,
 }
 
-/// Parsed GGUF metadata payload sent to the UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GGUFMetadata {
     pub format_version: u32,
@@ -107,7 +82,6 @@ pub struct GGUFMetadata {
     pub custom_metadata: Vec<GGUFKeyValue>,
 }
 
-/// Local model description returned to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     pub name: String,
@@ -138,16 +112,12 @@ pub struct ModelInfo {
     pub source_repo_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_quantization: Option<String>,
-    /// Indicates that Candle can instantiate the detected architecture and that
-    /// validation did not fail. Use this flag together with `validation_status`
-    /// to determine whether the registry can support the model.
     pub candle_compatible: bool,
     pub validation_status: ValidationStatus,
     pub created_at: DateTime<Utc>,
     pub metadata: GGUFMetadata,
 }
 
-/// Remote GGUF file descriptor from Hugging Face.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteGGUFFile {
     pub filename: String,
@@ -159,7 +129,6 @@ pub struct RemoteGGUFFile {
     pub download_url: String,
 }
 
-/// Remote model listing entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HFModelInfo {
     pub repo_id: String,
@@ -190,25 +159,6 @@ pub struct HFModelInfo {
     pub context_length: Option<u64>,
 }
 
-/// Sorting options for remote search.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ModelSortField {
-    Downloads,
-    Likes,
-    Updated,
-    FileSize,
-}
-
-/// Sort order for remote search.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SortOrder {
-    Asc,
-    Desc,
-}
-
-/// Filters accepted by the Hugging Face search command.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelFilters {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -222,16 +172,15 @@ pub struct ModelFilters {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_downloads: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_by: Option<ModelSortField>,
+    pub sort_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_order: Option<SortOrder>,
+    pub sort_order: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u32>,
 }
 
-/// Download outcome returned to the frontend after copying the cached artifact.
 #[derive(Debug, Clone, Serialize)]
 pub struct DownloadedFileInfo {
     pub repo_id: String,
@@ -240,1126 +189,359 @@ pub struct DownloadedFileInfo {
     pub size: u64,
 }
 
-/// Download stage for progress events.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DownloadStage {
-    Started,
-    InProgress,
-    Finished,
+pub fn build_http_client() -> Result<Client, String> {
+    Client::builder()
+        .user_agent("oxide-lab/0.13")
+        .build()
+        .map_err(|e| e.to_string())
 }
 
-/// Event payload used to report download progress to the frontend.
-#[derive(Debug, Clone, Serialize)]
-pub struct DownloadProgressPayload {
-    pub download_id: String,
-    pub filename: String,
-    pub current: u64,
-    pub total: u64,
-    pub stage: DownloadStage,
+fn metadata_value<'a>(file: &'a gguf::GGUFFile, key: &str) -> Option<&'a gguf::GGUFMetadataValue> {
+    file.header
+        .metadata
+        .iter()
+        .find(|entry| entry.key == key)
+        .map(|entry| &entry.value)
 }
 
-static README_CACHE: Lazy<RwLock<HashMap<String, String>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
-
-const README_FALLBACK_MESSAGE: &str =
-    "README.md не найден или недоступен для этой модели на Hugging Face.";
-
-/// Wrapper around Hugging Face download progress reporting that emits Tauri events.
-#[derive(Clone)]
-struct HubProgressEmitter {
-    app: AppHandle,
-    download_id: String,
-    filename: String,
-    current: Arc<AtomicU64>,
-    total: Arc<AtomicU64>,
-}
-
-impl HubProgressEmitter {
-    fn new(app: AppHandle, download_id: String, filename: String) -> Self {
-        Self {
-            app,
-            download_id,
-            filename,
-            current: Arc::new(AtomicU64::new(0)),
-            total: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    fn emit(&self, stage: DownloadStage) {
-        let payload = DownloadProgressPayload {
-            download_id: self.download_id.clone(),
-            filename: self.filename.clone(),
-            current: self.current.load(Ordering::Relaxed),
-            total: self.total.load(Ordering::Relaxed),
-            stage,
-        };
-        let _ = self.app.emit("model-download-progress", &payload);
+fn as_string(v: Option<&gguf::GGUFMetadataValue>) -> Option<String> {
+    match v {
+        Some(gguf::GGUFMetadataValue::String(s)) => Some(s.clone()),
+        _ => None,
     }
 }
 
-impl HubProgress for HubProgressEmitter {
-    async fn init(&mut self, size: usize, _filename: &str) {
-        self.total.store(size as u64, Ordering::Relaxed);
-        self.current.store(0, Ordering::Relaxed);
-        self.emit(DownloadStage::Started);
-    }
-
-    async fn update(&mut self, size: usize) {
-        self.current.fetch_add(size as u64, Ordering::Relaxed);
-        self.emit(DownloadStage::InProgress);
-    }
-
-    async fn finish(&mut self) {
-        let total = self.total.load(Ordering::Relaxed);
-        self.current.store(total, Ordering::Relaxed);
-        self.emit(DownloadStage::Finished);
+fn as_u64(v: Option<&gguf::GGUFMetadataValue>) -> Option<u64> {
+    match v {
+        Some(gguf::GGUFMetadataValue::Uint64(x)) => Some(*x),
+        Some(gguf::GGUFMetadataValue::Uint32(x)) => Some(*x as u64),
+        Some(gguf::GGUFMetadataValue::Int64(x)) if *x >= 0 => Some(*x as u64),
+        Some(gguf::GGUFMetadataValue::Int32(x)) if *x >= 0 => Some(*x as u64),
+        _ => None,
     }
 }
 
-/// Command: parse a GGUF metadata section from a file.
-#[tauri::command]
-pub async fn parse_gguf_metadata(file_path: String) -> Result<GGUFMetadata, String> {
-    let path = PathBuf::from(&file_path);
-    async_runtime::spawn_blocking(move || {
-        let envelope = read_gguf_metadata(&path, true)?;
-        Ok(envelope.metadata)
+fn parse_gguf_metadata_impl(path: &Path) -> Result<GGUFMetadata, String> {
+    let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    let parsed = gguf::GGUFFile::read(&bytes)?
+        .ok_or_else(|| "GGUF file appears truncated or incomplete".to_string())?;
+    let architecture = as_string(metadata_value(&parsed, "general.architecture"));
+    let tokenizer_model = as_string(metadata_value(&parsed, "tokenizer.ggml.model"));
+
+    let custom_metadata = parsed
+        .header
+        .metadata
+        .iter()
+        .take(128)
+        .map(|kv| GGUFKeyValue {
+            key: kv.key.clone(),
+            value: serde_json::to_value(&kv.value).unwrap_or(JsonValue::Null),
+        })
+        .collect::<Vec<_>>();
+
+    Ok(GGUFMetadata {
+        format_version: parsed.header.version,
+        architecture,
+        name: as_string(metadata_value(&parsed, "general.name")),
+        version: as_string(metadata_value(&parsed, "general.version")),
+        author: as_string(metadata_value(&parsed, "general.author")),
+        alignment: as_u64(metadata_value(&parsed, "general.alignment")).unwrap_or(0),
+        tensor_count: parsed.tensors.len(),
+        metadata_kv_count: parsed.header.metadata.len(),
+        parameter_count: as_u64(metadata_value(&parsed, "general.parameter_count")),
+        size_label: as_string(metadata_value(&parsed, "general.size_label")),
+        context_length: as_u64(metadata_value(&parsed, "llama.context_length"))
+            .or_else(|| as_u64(metadata_value(&parsed, "qwen.context_length"))),
+        embedding_length: as_u64(metadata_value(&parsed, "llama.embedding_length"))
+            .or_else(|| as_u64(metadata_value(&parsed, "qwen.embedding_length"))),
+        block_count: as_u64(metadata_value(&parsed, "llama.block_count"))
+            .or_else(|| as_u64(metadata_value(&parsed, "qwen.block_count"))),
+        attention_head_count: as_u64(metadata_value(&parsed, "llama.attention.head_count"))
+            .or_else(|| as_u64(metadata_value(&parsed, "qwen.attention.head_count"))),
+        kv_head_count: as_u64(metadata_value(&parsed, "llama.attention.head_count_kv"))
+            .or_else(|| as_u64(metadata_value(&parsed, "qwen.attention.head_count_kv"))),
+        rope_dimension: as_u64(metadata_value(&parsed, "llama.rope.dimension_count"))
+            .or_else(|| as_u64(metadata_value(&parsed, "qwen.rope.dimension_count"))),
+        tokenizer_model,
+        bos_token_id: as_u64(metadata_value(&parsed, "tokenizer.ggml.bos_token_id"))
+            .map(|v| v as u32),
+        eos_token_id: as_u64(metadata_value(&parsed, "tokenizer.ggml.eos_token_id"))
+            .map(|v| v as u32),
+        tokenizer_tokens: None,
+        tokenizer_scores: None,
+        custom_metadata,
     })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
-/// Command: scan a folder recursively for GGUF models.
-#[tauri::command]
-pub async fn scan_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
-    let path = PathBuf::from(&folder_path);
-    async_runtime::spawn_blocking(move || scan_directory(&path))
-        .await
-        .map_err(|e| e.to_string())?
-}
+fn validation_for(metadata: &GGUFMetadata) -> ValidationStatus {
+    let mut warnings = Vec::new();
+    if metadata.architecture.is_none() {
+        warnings.push("Missing general.architecture metadata".to_string());
+    }
+    if metadata.tokenizer_model.is_none() {
+        warnings.push("Missing tokenizer.ggml.model metadata".to_string());
+    }
 
-/// Backwards-compatible alias for legacy frontend code.
-#[tauri::command]
-pub async fn scan_local_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
-    scan_models_folder(folder_path).await
-}
-
-/// Command: delete a local model file.
-#[tauri::command]
-pub async fn delete_local_model(model_path: String) -> Result<(), String> {
-    let path = PathBuf::from(model_path);
-    async_runtime::spawn_blocking(move || {
-        if !path.exists() {
-            return Err(format!("File does not exist: {}", path.display()));
+    if warnings.is_empty() {
+        ValidationStatus {
+            level: ValidationLevel::Ok,
+            messages: vec![],
         }
-        if path.is_file() {
-            fs::remove_file(&path).map_err(|e| format!("Failed to delete file: {e}"))
-        } else if path.is_dir() {
-            fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete directory: {e}"))
-        } else {
-            Err(format!(
-                "Path is not a file or directory: {}",
-                path.display()
-            ))
+    } else {
+        ValidationStatus {
+            level: ValidationLevel::Warning,
+            messages: warnings,
         }
+    }
+}
+
+fn build_model_info(path: &Path) -> Result<ModelInfo, String> {
+    let metadata = parse_gguf_metadata_impl(path)?;
+    let stat = fs::metadata(path).map_err(|e| e.to_string())?;
+    let created = stat.created().or_else(|_| stat.modified()).unwrap_or(std::time::SystemTime::now());
+
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "model.gguf".to_string());
+
+    let quantization = infer_quantization_from_label(&name);
+    let detected_architecture = metadata.architecture.clone();
+
+    let manifest = load_manifest(path);
+
+    Ok(ModelInfo {
+        name,
+        path: path.to_path_buf(),
+        file_size: stat.len(),
+        format: ModelFormat::Gguf,
+        architecture: metadata.architecture.clone(),
+        detected_architecture,
+        model_name: metadata.name.clone(),
+        version: metadata.version.clone(),
+        context_length: metadata.context_length,
+        parameter_count: metadata.parameter_count.map(|v| v.to_string()),
+        quantization: quantization.clone(),
+        tokenizer_type: metadata.tokenizer_model.clone(),
+        vocab_size: None,
+        source_repo_id: manifest.as_ref().map(|m| m.repo_id.clone()),
+        source_repo_name: manifest.as_ref().map(|m| m.repo_name.clone()),
+        source_quantization: manifest.as_ref().and_then(|m| m.quantization.clone()),
+        candle_compatible: true,
+        validation_status: validation_for(&metadata),
+        created_at: DateTime::<Utc>::from(created),
+        metadata,
     })
-    .await
-    .map_err(|e| e.to_string())?
 }
 
-/// Command: search Hugging Face Hub for GGUF models.
+fn collect_gguf_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = fs::read_dir(root).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            let _ = collect_gguf_files(&p, out);
+            continue;
+        }
+        let is_gguf = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.eq_ignore_ascii_case("gguf"))
+            .unwrap_or(false);
+        if is_gguf {
+            out.push(p);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn parse_gguf_metadata(file_path: String) -> Result<GGUFMetadata, String> {
+    parse_gguf_metadata_impl(Path::new(&file_path))
+}
+
+#[tauri::command]
+pub fn scan_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
+    let root = Path::new(&folder_path);
+    if !root.exists() || !root.is_dir() {
+        return Err(format!("Invalid models folder: {}", folder_path));
+    }
+
+    let mut files = Vec::new();
+    collect_gguf_files(root, &mut files)?;
+
+    let mut models = Vec::new();
+    for p in files {
+        match build_model_info(&p) {
+            Ok(info) => models.push(info),
+            Err(e) => log::warn!("Skipping GGUF model {}: {}", p.display(), e),
+        }
+    }
+
+    models.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(models)
+}
+
+#[tauri::command]
+pub fn scan_local_models_folder(folder_path: String) -> Result<Vec<ModelInfo>, String> {
+    scan_models_folder(folder_path)
+}
+
+#[derive(Debug, Deserialize)]
+struct HfModelApiEntry {
+    id: String,
+    #[serde(default)]
+    downloads: u64,
+    #[serde(default)]
+    likes: u64,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    siblings: Vec<HfSibling>,
+    #[serde(default)]
+    #[serde(rename = "cardData")]
+    card_data: Option<serde_json::Value>,
+    #[serde(default)]
+    #[serde(rename = "lastModified")]
+    last_modified: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "createdAt")]
+    created_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HfSibling {
+    rfilename: String,
+    #[serde(default)]
+    size: Option<u64>,
+}
+
 #[tauri::command]
 pub async fn search_huggingface_gguf(
     query: String,
-    filters: ModelFilters,
+    filters: Option<ModelFilters>,
 ) -> Result<Vec<HFModelInfo>, String> {
-    let client = build_http_client()?;
-    let limit = filters.limit.unwrap_or(20).clamp(1, 100);
-    let offset = filters.offset.unwrap_or(0);
-
-    let mut params: Vec<(&str, String)> = vec![
-        ("limit", limit.to_string()),
-        ("full", "true".to_string()),
-        ("config", "true".to_string()),
-        ("sort", "downloads".to_string()),
-        ("filter", "gguf".to_string()),
-    ];
-
-    if offset > 0 {
-        params.push(("offset", offset.to_string()));
-    }
-    if !query.trim().is_empty() {
-        params.push(("search", query.trim().to_string()));
-    }
-
-    let response = client
-        .get("https://huggingface.co/api/models")
-        .query(&params)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to query Hugging Face: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Hugging Face request failed: {e}"))?;
-
-    let items: Vec<HFSearchModel> = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to decode Hugging Face response: {e}"))?;
-
-    let mut results = Vec::new();
-    for item in items {
-        if item.private.unwrap_or(false) {
-            continue;
-        }
-        let detail = fetch_model_detail(&client, &item.id).await?;
-        if let Some(info) = convert_detail_to_info(detail, &filters)? {
-            results.push(info);
-        }
-    }
-
-    apply_search_sorting(
-        &mut results,
-        filters.sort_by.as_ref(),
-        filters.sort_order.as_ref(),
+    let limit = filters.as_ref().and_then(|f| f.limit).unwrap_or(20).clamp(1, 100);
+    let url = format!(
+        "https://huggingface.co/api/models?search={}&limit={}&full=true",
+        urlencoding::encode(&query),
+        limit
     );
 
-    if results.len() > limit as usize {
-        results.truncate(limit as usize);
+    let client = build_http_client()?;
+    let entries: Vec<HfModelApiEntry> = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for entry in entries {
+        let gguf_files: Vec<RemoteGGUFFile> = entry
+            .siblings
+            .iter()
+            .filter(|f| f.rfilename.to_ascii_lowercase().ends_with(".gguf"))
+            .map(|f| RemoteGGUFFile {
+                filename: f.rfilename.clone(),
+                size: f.size.unwrap_or(0),
+                sha256: None,
+                quantization: infer_quantization_from_label(&f.rfilename),
+                download_url: format!(
+                    "https://huggingface.co/{}/resolve/main/{}",
+                    entry.id, f.rfilename
+                ),
+            })
+            .collect();
+
+        if gguf_files.is_empty() {
+            continue;
+        }
+
+        let name = entry.id.split('/').next_back().unwrap_or(&entry.id).to_string();
+
+        out.push(HFModelInfo {
+            repo_id: entry.id.clone(),
+            name,
+            author: entry.id.split('/').next().map(|s| s.to_string()),
+            description: entry
+                .card_data
+                .as_ref()
+                .and_then(|d| d.get("description"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            license: entry
+                .card_data
+                .as_ref()
+                .and_then(|d| d.get("license"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            downloads: entry.downloads,
+            likes: entry.likes,
+            tags: entry.tags.clone(),
+            architectures: vec![],
+            quantizations: gguf_files
+                .iter()
+                .filter_map(|f| f.quantization.clone())
+                .collect(),
+            gguf_files,
+            last_modified: entry.last_modified,
+            created_at: entry.created_at,
+            parameter_count: None,
+            context_length: None,
+        });
     }
 
-    Ok(results)
+    Ok(out)
 }
 
-/// Command: download a GGUF file using hf-hub and emit progress events.
 #[tauri::command]
 pub async fn download_hf_model_file(
-    app: AppHandle,
     repo_id: String,
     filename: String,
     destination_dir: String,
 ) -> Result<DownloadedFileInfo, String> {
-    use crate::api::model_manager::manifest::{DownloadManifest, infer_quantization_from_label};
+    let api = hf_hub::api::sync::Api::new().map_err(|e| e.to_string())?;
+    let repo = hf_hub::Repo::new(repo_id.clone(), hf_hub::RepoType::Model);
+    let src = api
+        .repo(repo)
+        .get(&filename)
+        .map_err(|e| format!("hf_hub get {} failed: {}", filename, e))?;
 
-    let download_id = format!("{}::{}", repo_id, filename);
-    let api = ApiBuilder::new()
-        .with_progress(false)
-        .build()
-        .map_err(|e| format!("Failed to initialize hf-hub API: {e}"))?;
+    let dest_dir = PathBuf::from(destination_dir);
+    fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+    let dest = dest_dir.join(&filename);
+    fs::copy(&src, &dest).map_err(|e| e.to_string())?;
 
-    let repo = api.model(repo_id.clone());
-    let progress = HubProgressEmitter::new(app.clone(), download_id.clone(), filename.clone());
-
-    let pointer_path = repo
-        .download_with_progress(&filename, progress.clone())
-        .await
-        .map_err(|e| format!("Download failed: {e}"))?;
-
-    let dest_dir = PathBuf::from(&destination_dir);
-    let dest_file = dest_dir.join(&filename);
-    let dest_for_copy = dest_file.clone();
-
-    let src = pointer_path.clone();
-    async_runtime::spawn_blocking(move || -> Result<(), String> {
-        if let Some(parent) = dest_for_copy.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create destination directory: {e}"))?;
-        }
-        fs::copy(&src, &dest_for_copy)
-            .map_err(|e| format!("Failed to copy downloaded file: {e}"))?;
-        Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-
-    let size = fs::metadata(&dest_file)
-        .map_err(|e| format!("Failed to inspect downloaded file: {e}"))?
-        .len();
-
-    // Create and save manifest with source information
-    let publisher = repo_id.split('/').next().unwrap_or(&repo_id).to_string();
-    let repo_name = repo_id
-        .split('/')
-        .next_back()
-        .unwrap_or(&repo_id)
-        .to_string();
-    let quantization = extract_quantization_from_filename(&filename);
-
-    let manifest = DownloadManifest {
-        version: 1,
-        repo_id: repo_id.clone(),
-        repo_name: repo_name.clone(),
-        publisher: publisher.clone(),
-        format: "gguf".to_string(),
-        quantization: quantization.or_else(|| infer_quantization_from_label(&filename)),
-        card_id: None,
-        card_name: None,
-        downloaded_at: chrono::Utc::now().to_rfc3339(),
-    };
-
-    // Save manifest next to the file
-    let manifest_path = dest_dir.join(format!("{}.oxide-manifest.json", filename));
-    let manifest_json = serde_json::to_string_pretty(&manifest)
-        .map_err(|e| format!("Failed to serialize manifest: {e}"))?;
-    fs::write(&manifest_path, manifest_json)
-        .map_err(|e| format!("Failed to save manifest: {e}"))?;
-
-    progress.emit(DownloadStage::Finished);
+    let size = fs::metadata(&dest).map_err(|e| e.to_string())?.len();
 
     Ok(DownloadedFileInfo {
         repo_id,
         filename,
-        local_path: dest_file,
+        local_path: dest,
         size,
     })
 }
 
 #[tauri::command]
 pub async fn get_model_readme(repo_id: String) -> Result<String, String> {
-    let trimmed = repo_id.trim();
-    if trimmed.is_empty() {
-        return Err("Repository id cannot be empty".to_string());
+    let url = format!("https://huggingface.co/{}/raw/main/README.md", repo_id);
+    let client = build_http_client()?;
+    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch README: HTTP {}", resp.status()));
     }
-
-    if let Some(cached) = README_CACHE.read().await.get(trimmed).cloned() {
-        return Ok(cached);
-    }
-
-    let api = ApiBuilder::new()
-        .with_progress(false)
-        .build()
-        .map_err(|e| format!("Failed to initialize hf-hub API: {e}"))?;
-    let repo = api.model(trimmed.to_string());
-
-    let candidates = ["README.md", "README.MD", "Readme.md"];
-    let mut local_path = None;
-    for name in candidates {
-        match repo.get(name).await {
-            Ok(path) => {
-                local_path = Some(path);
-                break;
-            }
-            Err(_) => continue,
-        }
-    }
-
-    let readme_content = if let Some(path) = local_path {
-        let cloned_path = path.clone();
-        async_runtime::spawn_blocking(move || {
-            std::fs::read_to_string(&cloned_path)
-                .map_err(|e| format!("Failed to read README from cache: {e}"))
-        })
-        .await
-        .map_err(|e| format!("Failed to join README read task: {e}"))??
-    } else {
-        let client = build_http_client()?;
-        let fallback_url = format!("https://huggingface.co/{}/raw/main/README.md", trimmed);
-        let response = client
-            .get(&fallback_url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to request README: {e}"))?;
-
-        if response.status().is_success() {
-            response
-                .text()
-                .await
-                .map_err(|e| format!("Failed to decode README response: {e}"))?
-        } else if response.status().as_u16() == 404 {
-            let mut cache = README_CACHE.write().await;
-            cache.insert(trimmed.to_string(), README_FALLBACK_MESSAGE.to_string());
-            return Ok(README_FALLBACK_MESSAGE.to_string());
-        } else {
-            return Err(format!(
-                "Failed to fetch README: HTTP {}",
-                response.status()
-            ));
-        }
-    };
-
-    let mut cache = README_CACHE.write().await;
-    cache.insert(trimmed.to_string(), readme_content.clone());
-    Ok(readme_content)
+    resp.text().await.map_err(|e| e.to_string())
 }
 
-/// Envelope returned by GGUF parsing helper.
-struct MetadataEnvelope {
-    metadata: GGUFMetadata,
-    detected_arch: Option<ArchKind>,
-    validation: ValidationStatus,
-    vocab_size: Option<usize>,
-    is_high_precision: bool,
-}
-
-fn read_gguf_metadata(path: &Path, include_tokens: bool) -> Result<MetadataEnvelope, String> {
+#[tauri::command]
+pub fn delete_local_model(model_path: String) -> Result<(), String> {
+    let path = PathBuf::from(model_path);
     if !path.exists() {
-        return Err(format!("File does not exist: {}", path.display()));
+        return Ok(());
     }
-    if path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| !ext.eq_ignore_ascii_case("gguf"))
-        .unwrap_or(true)
-    {
-        return Err(format!(
-            "Only GGUF files are supported, received: {}",
-            path.display()
-        ));
-    }
-
-    let file = fs::File::open(path).map_err(|e| format!("Failed to open GGUF file: {e}"))?;
-    let mut reader = BufReader::new(file);
-    let content = Content::read(&mut reader).map_err(|e| {
-        let err_str = e.to_string();
-        // Проверяем, не ошибка ли это из-за неподдерживаемого типа данных
-        if err_str.contains("unknown dtype") {
-            format!(
-                "Failed to parse GGUF file: {}. This file may use unsupported quantization types (IQ1_S, IQ1_M, etc.). \
-                Only standard quantizations are supported: F32, F16, BF16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, Q2K-Q8K.",
-                err_str
-            )
-        } else {
-            format!("Failed to parse GGUF file: {}", err_str)
-        }
-    })?;
-
-    // Проверяем на наличие квантованных тензоров.
-    // Если в модели нет КВАНТОВАННЫХ тензоров (только F32, F16, BF16), она считается высокоточной.
-    let has_quantized = content.tensor_infos.values().any(|t| {
-        let dt = t.ggml_dtype as u32;
-        (2..=15).contains(&dt) || (16..=29).contains(&dt) // Q4_0..Q8_K или IQ типы
-    });
-    let is_high_precision = !has_quantized;
-
-    let version = match content.magic {
-        VersionedMagic::GgufV3 => 3,
-        VersionedMagic::GgufV2 => 2,
-        VersionedMagic::GgufV1 => 1,
-    };
-
-    let mut metadata = GGUFMetadata {
-        format_version: version,
-        architecture: metadata_get_string(&content.metadata, "general.architecture"),
-        name: metadata_get_string(&content.metadata, "general.name"),
-        version: metadata_get_string(&content.metadata, "general.version"),
-        author: metadata_get_string(&content.metadata, "general.author"),
-        alignment: metadata_get_u64(&content.metadata, "general.alignment")
-            .unwrap_or(gguf_file::DEFAULT_ALIGNMENT),
-        tensor_count: content.tensor_infos.len(),
-        metadata_kv_count: content.metadata.len(),
-        parameter_count: metadata_get_u64(&content.metadata, "general.parameter_count"),
-        size_label: metadata_get_string(&content.metadata, "general.size_label"),
-        context_length: None,
-        embedding_length: None,
-        block_count: None,
-        attention_head_count: None,
-        kv_head_count: None,
-        rope_dimension: None,
-        tokenizer_model: metadata_get_string(&content.metadata, "tokenizer.ggml.model"),
-        bos_token_id: metadata_get_u32(&content.metadata, "tokenizer.ggml.bos_token_id"),
-        eos_token_id: metadata_get_u32(&content.metadata, "tokenizer.ggml.eos_token_id"),
-        tokenizer_tokens: None,
-        tokenizer_scores: None,
-        custom_metadata: Vec::new(),
-    };
-
-    let arch_key = metadata.architecture.clone();
-    metadata.context_length =
-        metadata_get_arch_u64(&content.metadata, arch_key.as_deref(), "context_length")
-            .or_else(|| metadata_get_u64(&content.metadata, "context_length"));
-    metadata.embedding_length =
-        metadata_get_arch_u64(&content.metadata, arch_key.as_deref(), "embedding_length");
-    metadata.block_count =
-        metadata_get_arch_u64(&content.metadata, arch_key.as_deref(), "block_count");
-    metadata.attention_head_count = metadata_get_arch_u64(
-        &content.metadata,
-        arch_key.as_deref(),
-        "attention.head_count",
-    );
-    metadata.kv_head_count = metadata_get_arch_u64(
-        &content.metadata,
-        arch_key.as_deref(),
-        "attention.head_count_kv",
-    );
-    metadata.rope_dimension = metadata_get_arch_u64(
-        &content.metadata,
-        arch_key.as_deref(),
-        "rope.dimension_count",
-    );
-
-    let (tokens, scores, vocab_size) = extract_tokenizer_data(&content.metadata, include_tokens)?;
-    metadata.tokenizer_tokens = tokens;
-    metadata.tokenizer_scores = scores;
-
-    let custom_metadata =
-        build_custom_metadata(&content.metadata, metadata.tokenizer_tokens.is_some());
-    metadata.custom_metadata = custom_metadata;
-
-    let detected_arch = detect_arch(&content.metadata);
-    let validation = validate_metadata(&metadata, detected_arch.is_some());
-
-    Ok(MetadataEnvelope {
-        metadata,
-        detected_arch,
-        validation,
-        vocab_size,
-        is_high_precision,
-    })
-}
-
-fn scan_directory(dir: &Path) -> Result<Vec<ModelInfo>, String> {
-    if !dir.exists() {
-        return Err(format!("Path does not exist: {}", dir.display()));
-    }
-    if !dir.is_dir() {
-        return Err(format!("Path is not a directory: {}", dir.display()));
-    }
-
-    let mut models = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-
-    while let Some(current) = stack.pop() {
-        let entries = match fs::read_dir(&current) {
-            Ok(entries) => entries,
-            Err(e) => {
-                eprintln!(
-                    "Warning: failed to read directory {}: {e}",
-                    current.display()
-                );
-                continue;
-            }
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                match build_safetensors_model_info(&path) {
-                    Ok(Some(info)) => models.push(info),
-                    Ok(None) => stack.push(path),
-                    Err(err) => {
-                        eprintln!(
-                            "Warning: failed to inspect safetensors directory {}: {err}",
-                            path.display()
-                        );
-                        stack.push(path);
-                    }
-                }
-            } else if path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("gguf"))
-                .unwrap_or(false)
-            {
-                match build_model_info(&path) {
-                    Ok(Some(info)) => models.push(info),
-                    Ok(None) => {
-                        log::info!(
-                            "Skipping high-precision or incompatible model: {}",
-                            path.display()
-                        );
-                    }
-                    Err(err) => eprintln!(
-                        "Warning: Failed to parse GGUF metadata from {}: {err}",
-                        path.display()
-                    ),
-                }
-            }
-        }
-    }
-
-    models.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(models)
-}
-
-fn build_model_info(path: &Path) -> Result<Option<ModelInfo>, String> {
-    use crate::api::model_manager::manifest::load_manifest;
-
-    let envelope = read_gguf_metadata(path, false)?;
-    let file_name = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let metadata_fs = fs::metadata(path).map_err(|e| format!("Failed to read metadata: {e}"))?;
-    let created_at = metadata_fs
-        .created()
-        .or_else(|_| metadata_fs.modified())
-        .map_err(|e| format!("Failed to read timestamp: {e}"))?;
-    let created_at = DateTime::<Utc>::from(created_at);
-
-    let quantization =
-        extract_quantization_from_filename(path.file_name().and_then(|s| s.to_str()).unwrap_or(""));
-
-    let vocab_size = envelope.vocab_size;
-    let detected_architecture = envelope
-        .detected_arch
-        .as_ref()
-        .map(|arch| format!("{arch:?}"));
-
-    let parameter_string = envelope.metadata.size_label.clone().or_else(|| {
-        envelope
-            .metadata
-            .parameter_count
-            .map(format_parameter_count)
-    });
-
-    // Try to load manifest for GGUF files downloaded through our system
-    // We pass the full path so it checks {filename}.oxide-manifest.json first
-    let mut manifest = load_manifest(path);
-
-    // If not found, check if there is a directory-level manifest (loaded by fallback in load_manifest)
-    // If still nothing, infer and save.
-    if manifest.is_none() {
-        let inferred = infer_manifest_from_gguf(path, &envelope.metadata);
-
-        // Save to file-specific manifest to avoid polluting directory
-        if let Err(err) = save_manifest(path, &inferred) {
-            eprintln!(
-                "Warning: failed to save manifest for {}: {err}",
-                path.display()
-            );
-        }
-        manifest = Some(inferred);
-    }
-
-    // Try to extract source repo ID from manifest or GGUF metadata
-    let source_repo_id = manifest
-        .as_ref()
-        .map(|m| m.repo_id.clone())
-        .or_else(|| {
-            custom_metadata_get_string(&envelope.metadata.custom_metadata, "general.source_hf_repo")
-        })
-        .or_else(|| custom_metadata_get_string(&envelope.metadata.custom_metadata, "hf.repo_id"));
-
-    let source_repo_name = manifest.as_ref().map(|m| m.repo_name.clone()).or_else(|| {
-        source_repo_id.as_ref().map(|repo_id| {
-            repo_id
-                .split('/')
-                .next_back()
-                .unwrap_or(repo_id)
-                .to_string()
-        })
-    });
-    let source_quantization = manifest.as_ref().and_then(|m| m.quantization.clone());
-
-    if envelope.is_high_precision {
-        return Ok(None);
-    }
-
-    Ok(Some(ModelInfo {
-        name: file_name,
-        path: path.to_path_buf(),
-        file_size: metadata_fs.len(),
-        format: ModelFormat::Gguf,
-        architecture: envelope.metadata.architecture.clone(),
-        detected_architecture,
-        model_name: envelope.metadata.name.clone(),
-        version: envelope.metadata.version.clone(),
-        context_length: envelope.metadata.context_length,
-        parameter_count: parameter_string,
-        quantization,
-        tokenizer_type: envelope.metadata.tokenizer_model.clone(),
-        vocab_size,
-        source_repo_id,
-        source_repo_name,
-        source_quantization,
-        candle_compatible: envelope.detected_arch.is_some(),
-        validation_status: envelope.validation,
-        created_at,
-        metadata: envelope.metadata,
-    }))
-}
-
-fn build_safetensors_model_info(dir: &Path) -> Result<Option<ModelInfo>, String> {
-    let config_path = dir.join("config.json");
-    if !config_path.exists() {
-        return Ok(None);
-    }
-
-    let safetensors = match local_list_safetensors(dir) {
-        Ok(files) => files,
-        Err(_) => return Ok(None),
-    };
-
-    if safetensors.is_empty() {
-        return Ok(None);
-    }
-
-    let config_json = fs::read_to_string(&config_path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<JsonValue>(&content).ok());
-
-    let config_ref = config_json.as_ref().unwrap_or(&JsonValue::Null);
-    let folder_name = dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("model")
-        .to_string();
-    let model_name = config_ref
-        .get("model_name")
-        .or_else(|| config_ref.get("name"))
-        .and_then(|value| value.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| folder_name.clone());
-    let version = config_ref
-        .get("model_version")
-        .or_else(|| config_ref.get("version"))
-        .and_then(|value| value.as_str())
-        .map(|s| s.to_string());
-
-    let context_length = context_length_from_config(config_ref);
-    let parameter_count = parameter_count_from_config(config_ref);
-    let size_label = config_ref
-        .get("model_size")
-        .or_else(|| config_ref.get("size"))
-        .and_then(|value| value.as_str())
-        .map(|s| s.to_string());
-
-    let detected_arch = detect_arch_from_config(config_ref);
-    let architecture = detected_arch.as_ref().map(|kind| format!("{kind:?}"));
-    let candle_ready = detected_arch.is_some();
-
-    let mut total_bytes = 0u64;
-    for weight in &safetensors {
-        let metadata =
-            fs::metadata(weight).map_err(|e| format!("Failed to stat {}: {e}", weight))?;
-        total_bytes = total_bytes.saturating_add(metadata.len());
-    }
-
-    let dir_meta =
-        fs::metadata(dir).map_err(|e| format!("Failed to read directory metadata: {e}"))?;
-    let created = dir_meta
-        .created()
-        .or_else(|_| dir_meta.modified())
-        .map_err(|e| format!("Failed to read timestamp: {e}"))?;
-    let created_at = DateTime::<Utc>::from(created);
-
-    let mut manifest = load_manifest(dir);
-    if manifest.is_none() {
-        let inferred = infer_manifest_from_safetensors(dir, &folder_name, config_ref);
-        if let Err(err) = save_manifest(dir, &inferred) {
-            eprintln!(
-                "Warning: failed to save safetensors manifest for {}: {err}",
-                dir.display()
-            );
-        }
-        manifest = Some(inferred);
-    }
-    let source_repo_id = manifest.as_ref().map(|m| m.repo_id.clone());
-    let source_repo_name = manifest.as_ref().map(|m| m.repo_name.clone());
-    let source_quantization = manifest.as_ref().and_then(|m| m.quantization.clone());
-    let publisher = manifest.as_ref().map(|m| m.publisher.clone());
-
-    let tokenizer_path = dir.join("tokenizer.json");
-    let metadata = GGUFMetadata {
-        format_version: 3,
-        architecture: architecture.clone(),
-        name: Some(model_name.clone()),
-        version: version.clone(),
-        author: publisher.clone(),
-        alignment: gguf_file::DEFAULT_ALIGNMENT,
-        tensor_count: safetensors.len(),
-        metadata_kv_count: config_ref
-            .as_object()
-            .map(|map| map.len())
-            .unwrap_or_default(),
-        parameter_count: None,
-        size_label,
-        context_length,
-        embedding_length: None,
-        block_count: None,
-        attention_head_count: None,
-        kv_head_count: None,
-        rope_dimension: None,
-        tokenizer_model: tokenizer_path
-            .exists()
-            .then(|| "tokenizer.json".to_string()),
-        bos_token_id: None,
-        eos_token_id: None,
-        tokenizer_tokens: None,
-        tokenizer_scores: None,
-        custom_metadata: Vec::new(),
-    };
-
-    Ok(Some(ModelInfo {
-        name: folder_name,
-        path: dir.to_path_buf(),
-        file_size: total_bytes,
-        format: ModelFormat::Safetensors,
-        architecture,
-        detected_architecture: detected_arch.map(|kind| format!("{kind:?}")),
-        model_name: Some(model_name),
-        version,
-        context_length,
-        parameter_count,
-        quantization: source_quantization.clone(),
-        tokenizer_type: tokenizer_path
-            .exists()
-            .then(|| "tokenizer.json".to_string()),
-        vocab_size: None,
-        source_repo_id,
-        source_repo_name,
-        source_quantization,
-        candle_compatible: candle_ready,
-        validation_status: ValidationStatus {
-            level: ValidationLevel::Warning,
-            messages: vec![
-                "Safetensors-модель. Автоматическая проверка GGUF недоступна.".to_string(),
-            ],
-        },
-        created_at,
-        metadata,
-    }))
-}
-
-pub(crate) fn build_http_client() -> Result<Client, String> {
-    Client::builder()
-        .user_agent(format!(
-            "oxide-lab/{} (https://github.com/FerrisMind/Oxide-Lab)",
-            env!("CARGO_PKG_VERSION")
-        ))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))
-}
-
-async fn fetch_model_detail(client: &Client, repo_id: &str) -> Result<HFModelDetail, String> {
-    let url = format!("https://huggingface.co/api/models/{repo_id}");
-    client
-        .get(url)
-        .query(&[("blobs", "true"), ("config", "true"), ("cardData", "true")])
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch model detail: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Model detail request failed: {e}"))?
-        .json::<HFModelDetail>()
-        .await
-        .map_err(|e| format!("Failed to decode model detail: {e}"))
-}
-
-fn convert_detail_to_info(
-    detail: HFModelDetail,
-    filters: &ModelFilters,
-) -> Result<Option<HFModelInfo>, String> {
-    if detail.private.unwrap_or(false) {
-        return Ok(None);
-    }
-
-    let license = extract_license(&detail);
-    if let Some(expected) = filters.license.as_ref()
-        && license
-            .as_ref()
-            .map(|l| !l.eq_ignore_ascii_case(expected))
-            .unwrap_or(true)
-    {
-        return Ok(None);
-    }
-
-    let architectures = extract_architectures(&detail);
-    if let Some(target_arch) = filters.architecture.as_ref()
-        && !architectures
-            .iter()
-            .any(|arch| arch.eq_ignore_ascii_case(target_arch))
-    {
-        return Ok(None);
-    }
-
-    let gguf_files: Vec<RemoteGGUFFile> = detail
-        .siblings
-        .iter()
-        .filter(|file| file.rfilename.to_lowercase().ends_with(".gguf"))
-        .filter_map(|file| {
-            let size = file.size?;
-            if let Some(limit) = filters.max_file_size
-                && size > limit
-            {
-                return None;
-            }
-            let quant = extract_quantization_from_filename(&file.rfilename)
-                .map(|raw| canonicalize_quantization(&raw));
-            let quant = match quant {
-                Some(value) if is_allowed_quantization(&value) => Some(value),
-                _ => return None,
-            };
-            if let Some(expected) = filters.quantization.as_ref() {
-                let matches = quant
-                    .as_ref()
-                    .map(|q| q.eq_ignore_ascii_case(expected))
-                    .unwrap_or(false);
-                if !matches {
-                    return None;
-                }
-            }
-            let revision = detail.sha.as_deref().unwrap_or("main");
-            let download_url = format!(
-                "https://huggingface.co/{}/resolve/{}/{}",
-                detail.id, revision, file.rfilename
-            );
-            Some(RemoteGGUFFile {
-                filename: file.rfilename.clone(),
-                size,
-                sha256: file.lfs.as_ref().and_then(|lfs| lfs.sha256.clone()),
-                quantization: quant,
-                download_url,
-            })
-        })
-        .collect();
-
-    if gguf_files.is_empty() {
-        return Ok(None);
-    }
-
-    let downloads = detail.downloads.unwrap_or(0);
-    if let Some(min_downloads) = filters.min_downloads
-        && downloads < min_downloads
-    {
-        return Ok(None);
-    }
-
-    let quantizations: Vec<String> = gguf_files
-        .iter()
-        .filter_map(|f| f.quantization.clone())
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let description = extract_description(&detail);
-    let parameter_count = extract_parameter_count_string(&detail);
-    let context_length = extract_context_length(&detail);
-
-    let info = HFModelInfo {
-        repo_id: detail.id.clone(),
-        name: detail.model_id.clone().unwrap_or_else(|| detail.id.clone()),
-        author: detail.author.clone(),
-        description,
-        license,
-        downloads,
-        likes: detail.likes.unwrap_or(0),
-        tags: detail.tags.unwrap_or_default(),
-        architectures,
-        quantizations,
-        gguf_files,
-        last_modified: detail.last_modified.clone(),
-        created_at: detail.created_at.clone(),
-        parameter_count,
-        context_length,
-    };
-
-    Ok(Some(info))
-}
-
-fn apply_search_sorting(
-    models: &mut [HFModelInfo],
-    sort_by: Option<&ModelSortField>,
-    sort_order: Option<&SortOrder>,
-) {
-    let field = sort_by.unwrap_or(&ModelSortField::Downloads);
-    models.sort_by(|a, b| match field {
-        ModelSortField::Downloads => a.downloads.cmp(&b.downloads),
-        ModelSortField::Likes => a.likes.cmp(&b.likes),
-        ModelSortField::Updated => {
-            parse_datetime(&a.last_modified).cmp(&parse_datetime(&b.last_modified))
-        }
-        ModelSortField::FileSize => {
-            let a_size = a.gguf_files.iter().map(|f| f.size).max().unwrap_or(0);
-            let b_size = b.gguf_files.iter().map(|f| f.size).max().unwrap_or(0);
-            a_size.cmp(&b_size)
-        }
-    });
-
-    if !matches!(sort_order, Some(SortOrder::Asc)) {
-        models.reverse();
-    }
-}
-
-fn validate_metadata(metadata: &GGUFMetadata, candle_ready: bool) -> ValidationStatus {
-    let mut errors = Vec::new();
-    let mut warnings = Vec::new();
-
-    if metadata.format_version != 3 {
-        errors.push(format!(
-            "Unsupported GGUF version {} (expected 3)",
-            metadata.format_version
-        ));
-    }
-
-    if metadata.tensor_count == 0 {
-        errors.push("GGUF tensor section is empty".to_string());
-    }
-
-    if metadata.architecture.is_none() {
-        warnings.push("Missing general.architecture metadata".to_string());
-    }
-
-    if metadata.tokenizer_model.is_none() {
-        warnings.push("Missing tokenizer.ggml.model metadata".to_string());
-    }
-
-    if metadata.tokenizer_tokens.is_none() {
-        // Проверим, есть ли другие способы восстановить токенизатор
-        let has_tokenizer_json = metadata
-            .custom_metadata
-            .iter()
-            .any(|kv| kv.key.contains("tokenizer") && kv.key.contains("json"));
-
-        if !has_tokenizer_json {
-            errors.push(
-                "Tokenizer tokens are absent in metadata (GGUF must embed tokenizer definition)"
-                    .to_string(),
-            );
-        }
-    }
-
-    if metadata.bos_token_id.is_none() || metadata.eos_token_id.is_none() {
-        warnings.push("Tokenizer BOS/EOS identifiers are incomplete".to_string());
-    }
-
-    if !candle_ready {
-        warnings.push("Architecture currently not supported by Candle backend".to_string());
-    }
-
-    if errors.is_empty() {
-        if warnings.is_empty() {
-            ValidationStatus {
-                level: ValidationLevel::Ok,
-                messages: Vec::new(),
-            }
-        } else {
-            ValidationStatus {
-                level: ValidationLevel::Warning,
-                messages: warnings,
-            }
-        }
-    } else {
-        let mut messages = errors;
-        messages.extend(warnings);
-        ValidationStatus {
-            level: ValidationLevel::Error,
-            messages,
-        }
-    }
-}
-
-fn format_parameter_count(count: u64) -> String {
-    const ONE_BILLION: f64 = 1_000_000_000.0;
-    const ONE_MILLION: f64 = 1_000_000.0;
-    const ONE_THOUSAND: f64 = 1_000.0;
-
-    let count_f = count as f64;
-    if count_f >= ONE_BILLION {
-        format!("{:.1}B", count_f / ONE_BILLION)
-    } else if count_f >= ONE_MILLION {
-        format!("{:.1}M", count_f / ONE_MILLION)
-    } else if count_f >= ONE_THOUSAND {
-        format!("{:.1}K", count_f / ONE_THOUSAND)
-    } else {
-        count.to_string()
-    }
-}
-
-fn extract_quantization_from_filename(filename: &str) -> Option<String> {
-    static REGEX: OnceCell<Regex> = OnceCell::new();
-    let regex = REGEX.get_or_init(|| {
-        Regex::new(r"(Q\d+_\w+|Q\d+\w+|F16|F32|FP\d+|INT\d+|BF16)")
-            .expect("Failed to compile quantization regex")
-    });
-    regex
-        .find(&filename.to_uppercase())
-        .map(|m| m.as_str().to_string())
-}
-
-const ALLOWED_QUANTIZATIONS: &[&str] = &["Q4_K_M", "Q5_K_M", "Q6_K_M", "Q8_K_M"];
-
-fn canonicalize_quantization(raw: &str) -> String {
-    let mut upper = raw.to_uppercase();
-    if let Some(idx) = upper.find("K_M")
-        && idx > 0
-        && !upper[..idx].ends_with('_')
-    {
-        upper.insert(idx, '_');
-    }
-    upper
-}
-
-fn infer_manifest_from_gguf(path: &Path, metadata: &GGUFMetadata) -> DownloadManifest {
-    let file_name = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("model")
-        .to_string();
-    let file_stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("model")
-        .to_string();
-    let repo_id = custom_metadata_get_string(&metadata.custom_metadata, "general.source_hf_repo")
-        .or_else(|| custom_metadata_get_string(&metadata.custom_metadata, "hf.repo_id"))
-        .unwrap_or_else(|| format!("local/{}", file_stem));
-    let repo_name = metadata
-        .name
-        .clone()
-        .or_else(|| repo_id.split('/').next_back().map(|s| s.to_string()))
-        .unwrap_or_else(|| file_stem.clone());
-    let publisher = metadata
-        .author
-        .clone()
-        .unwrap_or_else(|| "local".to_string());
-    let quantization = infer_quantization_from_label(&file_name);
-
-    DownloadManifest {
-        version: 1,
-        repo_id,
-        repo_name,
-        publisher,
-        format: "gguf".to_string(),
-        quantization,
-        card_id: None,
-        card_name: None,
-        downloaded_at: Utc::now().to_rfc3339(),
-    }
-}
-
-fn infer_manifest_from_safetensors(
-    _dir: &Path,
-    folder_name: &str,
-    config: &JsonValue,
-) -> DownloadManifest {
-    let repo_id = config
-        .get("source_hf_repo")
-        .or_else(|| config.get("repo_id"))
-        .or_else(|| config.get("hf_repo_id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("local/{}", folder_name));
-    let repo_name = config
-        .get("model_name")
-        .or_else(|| config.get("name"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| folder_name.to_string());
-    let publisher = config
-        .get("publisher")
-        .or_else(|| config.get("author"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "local".to_string());
-    let quantization = config
-        .get("quantization")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .or_else(|| infer_quantization_from_label(folder_name));
-
-    DownloadManifest {
-        version: 1,
-        repo_id,
-        repo_name,
-        publisher,
-        format: "safetensors".to_string(),
-        quantization,
-        card_id: None,
-        card_name: None,
-        downloaded_at: Utc::now().to_rfc3339(),
-    }
+    fs::remove_file(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1368,382 +550,36 @@ pub fn update_model_manifest(
     repo_name: Option<String>,
     publisher: Option<String>,
 ) -> Result<(), String> {
-    let path = PathBuf::from(model_path);
-    // We don't need manifest_dir calculation if we pass path directly to resolve_manifest_path
-    if !path.exists() {
-        return Err(format!("Model path does not exist: {}", path.display()));
-    }
+    let target = PathBuf::from(&model_path);
+    let existing = load_manifest(&target);
 
-    let mut manifest = load_manifest(&path).unwrap_or_else(|| DownloadManifest {
+    let repo_name = repo_name
+        .or_else(|| existing.as_ref().map(|m| m.repo_name.clone()))
+        .or_else(|| {
+            target
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| "local-model".to_string());
+
+    let publisher = publisher
+        .or_else(|| existing.as_ref().map(|m| m.publisher.clone()))
+        .unwrap_or_else(|| "local".to_string());
+
+    let manifest = DownloadManifest {
         version: 1,
-        repo_id: path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|s| format!("local/{s}"))
-            .unwrap_or_else(|| "local/model".to_string()),
-        repo_name: repo_name.clone().unwrap_or_else(|| {
-            path.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        }),
-        publisher: publisher.clone().unwrap_or_else(|| "local".to_string()),
+        repo_id: existing
+            .as_ref()
+            .map(|m| m.repo_id.clone())
+            .unwrap_or_else(|| "local/local-model".to_string()),
+        repo_name: repo_name.clone(),
+        publisher,
         format: "gguf".to_string(),
-        quantization: None,
-        card_id: None,
-        card_name: None,
+        quantization: infer_quantization_from_label(&repo_name),
+        card_id: existing.as_ref().and_then(|m| m.card_id.clone()),
+        card_name: existing.as_ref().and_then(|m| m.card_name.clone()),
         downloaded_at: Utc::now().to_rfc3339(),
-    });
-
-    if let Some(name) = repo_name.filter(|v| !v.trim().is_empty()) {
-        manifest.repo_name = name;
-    }
-    if let Some(pubish) = publisher.filter(|v| !v.trim().is_empty()) {
-        manifest.publisher = pubish;
-    }
-
-    save_manifest(&path, &manifest)
-}
-
-fn is_allowed_quantization(value: &str) -> bool {
-    ALLOWED_QUANTIZATIONS
-        .iter()
-        .any(|allowed| allowed.eq_ignore_ascii_case(value))
-}
-
-fn metadata_get_string(metadata: &HashMap<String, GgufValue>, key: &str) -> Option<String> {
-    metadata.get(key).and_then(|value| match value {
-        GgufValue::String(s) => Some(s.clone()),
-        _ => None,
-    })
-}
-
-fn custom_metadata_get_string(custom: &[GGUFKeyValue], key: &str) -> Option<String> {
-    custom
-        .iter()
-        .find(|kv| kv.key == key)
-        .and_then(|kv| kv.value.as_str())
-        .map(|s| s.to_string())
-}
-
-fn metadata_get_u32(metadata: &HashMap<String, GgufValue>, key: &str) -> Option<u32> {
-    metadata.get(key).and_then(|value| match value {
-        GgufValue::U32(v) => Some(*v),
-        GgufValue::U16(v) => Some(*v as u32),
-        GgufValue::U8(v) => Some(*v as u32),
-        GgufValue::I32(v) if *v >= 0 => Some(*v as u32),
-        GgufValue::I16(v) if *v >= 0 => Some(*v as u32),
-        GgufValue::I8(v) if *v >= 0 => Some(*v as u32),
-        _ => None,
-    })
-}
-
-fn metadata_get_u64(metadata: &HashMap<String, GgufValue>, key: &str) -> Option<u64> {
-    metadata.get(key).and_then(|value| match value {
-        GgufValue::U64(v) => Some(*v),
-        GgufValue::U32(v) => Some(*v as u64),
-        GgufValue::U16(v) => Some(*v as u64),
-        GgufValue::U8(v) => Some(*v as u64),
-        GgufValue::I64(v) if *v >= 0 => Some(*v as u64),
-        GgufValue::I32(v) if *v >= 0 => Some(*v as u64),
-        GgufValue::I16(v) if *v >= 0 => Some(*v as u64),
-        GgufValue::I8(v) if *v >= 0 => Some(*v as u64),
-        _ => None,
-    })
-}
-
-fn metadata_get_arch_u64(
-    metadata: &HashMap<String, GgufValue>,
-    arch: Option<&str>,
-    suffix: &str,
-) -> Option<u64> {
-    arch.and_then(|arch| metadata_get_u64(metadata, &format!("{arch}.{suffix}")))
-}
-
-fn extract_tokenizer_data(
-    metadata: &HashMap<String, GgufValue>,
-    include_tokens: bool,
-) -> Result<TokenizerExtraction, String> {
-    // Попробуем найти токены в различных возможных ключах
-    let tokens = metadata
-        .get("tokenizer.ggml.tokens")
-        .or_else(|| metadata.get("tokenizer.tokens"))
-        .or_else(|| metadata.get("tokenizer.vocab"))
-        .or_else(|| metadata.get("tokenizer.ggml.vocab"));
-
-    let scores = metadata
-        .get("tokenizer.ggml.scores")
-        .or_else(|| metadata.get("tokenizer.scores"));
-
-    let mut vocab_size = None;
-    let tokenizer_tokens = if include_tokens {
-        match tokens {
-            Some(GgufValue::Array(values)) => {
-                vocab_size = Some(values.len());
-                let mut result = Vec::with_capacity(values.len());
-                for value in values {
-                    if let GgufValue::String(token) = value {
-                        result.push(token.clone());
-                    } else {
-                        return Err("tokenizer.ggml.tokens contains non-string entry".to_string());
-                    }
-                }
-                Some(result)
-            }
-            Some(_) => {
-                return Err("tokenizer.ggml.tokens has unexpected format".to_string());
-            }
-            None => None,
-        }
-    } else {
-        if let Some(GgufValue::Array(values)) = tokens {
-            vocab_size = Some(values.len());
-        }
-        None
     };
 
-    let tokenizer_scores = if include_tokens {
-        match scores {
-            Some(GgufValue::Array(values)) => {
-                let mut result = Vec::with_capacity(values.len());
-                for value in values {
-                    match value {
-                        GgufValue::F32(v) => result.push(*v),
-                        GgufValue::F64(v) => result.push(*v as f32),
-                        _ => {
-                            return Err(
-                                "tokenizer.ggml.scores contains non-floating entry".to_string()
-                            );
-                        }
-                    }
-                }
-                Some(result)
-            }
-            Some(_) => {
-                return Err("tokenizer.ggml.scores has unexpected format".to_string());
-            }
-            None => None,
-        }
-    } else {
-        None
-    };
-
-    Ok((tokenizer_tokens, tokenizer_scores, vocab_size))
+    save_manifest(&target, &manifest)
 }
-
-fn build_custom_metadata(
-    metadata: &HashMap<String, GgufValue>,
-    include_token_payload: bool,
-) -> Vec<GGUFKeyValue> {
-    const EXCLUDED_KEYS: &[&str] = &[
-        "general.architecture",
-        "general.name",
-        "general.version",
-        "general.author",
-        "general.alignment",
-        "general.parameter_count",
-        "general.size_label",
-        "tokenizer.ggml.model",
-        "tokenizer.ggml.bos_token_id",
-        "tokenizer.ggml.eos_token_id",
-        "tokenizer.ggml.tokens",
-        "tokenizer.ggml.scores",
-    ];
-
-    let mut result = Vec::new();
-    for (key, value) in metadata {
-        if EXCLUDED_KEYS.contains(&key.as_str()) {
-            continue;
-        }
-        if !include_token_payload && key.starts_with("tokenizer.ggml.tokens") {
-            continue;
-        }
-        result.push(GGUFKeyValue {
-            key: key.clone(),
-            value: gguf_value_to_json(value),
-        });
-    }
-    result.sort_by(|a, b| a.key.cmp(&b.key));
-    result
-}
-
-fn gguf_value_to_json(value: &GgufValue) -> JsonValue {
-    match value {
-        GgufValue::U8(v) => JsonValue::from(*v),
-        GgufValue::I8(v) => JsonValue::from(*v),
-        GgufValue::U16(v) => JsonValue::from(*v),
-        GgufValue::I16(v) => JsonValue::from(*v),
-        GgufValue::U32(v) => JsonValue::from(*v),
-        GgufValue::I32(v) => JsonValue::from(*v),
-        GgufValue::U64(v) => JsonValue::from(*v),
-        GgufValue::I64(v) => JsonValue::from(*v),
-        GgufValue::F32(v) => JsonValue::from(*v),
-        GgufValue::F64(v) => JsonValue::from(*v),
-        GgufValue::Bool(v) => JsonValue::from(*v),
-        GgufValue::String(v) => JsonValue::from(v.clone()),
-        GgufValue::Array(items) => {
-            let converted: Vec<JsonValue> = items.iter().map(gguf_value_to_json).collect();
-            JsonValue::from(converted)
-        }
-    }
-}
-
-fn parse_datetime(value: &Option<String>) -> Option<DateTime<Utc>> {
-    value
-        .as_ref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
-fn extract_license(detail: &HFModelDetail) -> Option<String> {
-    if let Some(card_data) = detail.card_data.as_ref()
-        && let Some(license) = card_data.get("license").and_then(|v| v.as_str())
-    {
-        return Some(license.to_string());
-    }
-    detail.tags.as_ref().and_then(|tags| {
-        tags.iter()
-            .find(|tag| tag.starts_with("license:"))
-            .map(|tag| tag.trim_start_matches("license:").to_string())
-    })
-}
-
-fn extract_description(detail: &HFModelDetail) -> Option<String> {
-    detail
-        .card_data
-        .as_ref()
-        .and_then(|card| card.get("description"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-}
-
-fn extract_architectures(detail: &HFModelDetail) -> Vec<String> {
-    detail
-        .config
-        .as_ref()
-        .and_then(|cfg| cfg.get("architectures"))
-        .and_then(|v| v.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn parameter_count_from_config(config: &JsonValue) -> Option<String> {
-    if let Some(value) = config.get("num_parameters").and_then(|v| v.as_u64()) {
-        return Some(format_parameter_count(value));
-    }
-    if let Some(value) = config.get("n_params").and_then(|v| v.as_u64()) {
-        return Some(format_parameter_count(value));
-    }
-    None
-}
-
-fn context_length_from_config(config: &JsonValue) -> Option<u64> {
-    config
-        .get("context_length")
-        .or_else(|| config.get("max_position_embeddings"))
-        .and_then(|val| val.as_u64())
-}
-
-fn extract_parameter_count_string(detail: &HFModelDetail) -> Option<String> {
-    if let Some(config) = detail.config.as_ref() {
-        if let Some(value) = config.get("num_parameters").and_then(|v| v.as_u64()) {
-            return Some(format_parameter_count(value));
-        }
-        if let Some(value) = config.get("n_params").and_then(|v| v.as_u64()) {
-            return Some(format_parameter_count(value));
-        }
-    }
-
-    detail.tags.as_ref().and_then(|tags| {
-        tags.iter()
-            .find(|tag| tag.starts_with("size:"))
-            .map(|tag| tag.trim_start_matches("size:").to_string())
-    })
-}
-
-fn extract_context_length(detail: &HFModelDetail) -> Option<u64> {
-    detail
-        .config
-        .as_ref()
-        .and_then(|cfg| {
-            cfg.get("context_length")
-                .or_else(|| cfg.get("max_position_embeddings"))
-        })
-        .and_then(|val| val.as_u64())
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct HFSearchModel {
-    id: String,
-    #[serde(default)]
-    author: Option<String>,
-    #[serde(default)]
-    downloads: Option<u64>,
-    #[serde(default)]
-    likes: Option<u64>,
-    #[serde(default)]
-    private: Option<bool>,
-    #[serde(default, rename = "lastModified")]
-    last_modified: Option<String>,
-    #[serde(default, rename = "createdAt")]
-    created_at: Option<String>,
-    #[serde(default)]
-    tags: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct HFModelDetail {
-    id: String,
-    #[serde(default)]
-    author: Option<String>,
-    #[serde(default)]
-    downloads: Option<u64>,
-    #[serde(default)]
-    likes: Option<u64>,
-    #[serde(default)]
-    private: Option<bool>,
-    #[serde(default)]
-    tags: Option<Vec<String>>,
-    #[serde(default)]
-    sha: Option<String>,
-    #[serde(default, rename = "lastModified")]
-    last_modified: Option<String>,
-    #[serde(default, rename = "createdAt")]
-    created_at: Option<String>,
-    #[serde(default, rename = "cardData")]
-    card_data: Option<JsonValue>,
-    #[serde(default)]
-    config: Option<JsonValue>,
-    #[serde(default)]
-    siblings: Vec<HFSiblingDetail>,
-    #[serde(default, rename = "modelId")]
-    model_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct HFSiblingDetail {
-    rfilename: String,
-    #[serde(default)]
-    size: Option<u64>,
-    #[serde(default, rename = "blobId")]
-    blob_id: Option<String>,
-    #[serde(default)]
-    lfs: Option<HFFileLfs>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct HFFileLfs {
-    #[serde(default)]
-    sha256: Option<String>,
-    #[serde(default)]
-    size: Option<u64>,
-}
-type TokenizerExtraction = (Option<Vec<String>>, Option<Vec<f32>>, Option<usize>);

@@ -2,14 +2,13 @@
   /**
    * Composer Component
    *
-   * Chat input area with send/stop controls, attachments, and voice input.
+   * Chat input area with send/stop controls and attachments.
    * Uses ai-elements PromptInput components.
    */
   import ArrowUp from 'phosphor-svelte/lib/ArrowUp';
   import Stop from 'phosphor-svelte/lib/Stop';
   import Paperclip from 'phosphor-svelte/lib/Paperclip';
   import Broom from 'phosphor-svelte/lib/Broom';
-  import Microphone from 'phosphor-svelte/lib/Microphone';
   import SlidersHorizontal from 'phosphor-svelte/lib/SlidersHorizontal';
   import { Button } from '$lib/components/ui/button';
   import {
@@ -21,7 +20,6 @@
     PromptInputAttachment,
     type PromptInputMessage,
   } from '$lib/components/ai-elements/prompt-input';
-  import WaveLoader from '$lib/components/ui/loader/WaveLoader.svelte';
   import { cn } from '../../utils';
   import { t } from '$lib/i18n';
   import { chatState } from '$lib/stores/chat';
@@ -51,7 +49,6 @@
     busy?: boolean;
     isLoaded?: boolean;
     canStop?: boolean;
-    isRecording?: boolean;
     supports_text?: boolean;
     supports_image?: boolean;
     supports_audio?: boolean;
@@ -63,7 +60,6 @@
     onStop?: () => void;
     onClear?: () => void;
     onAttach?: (detail: AttachDetail) => void;
-    onVoiceTranscribe?: (text: string) => Promise<void>;
     onToggleLoaderPanel?: () => void;
     onToggleChatHistory?: () => void;
   }
@@ -73,7 +69,6 @@
     busy = false,
     isLoaded = false,
     canStop = false,
-    isRecording = $bindable(false),
     supports_text = true,
     supports_image = false,
     supports_audio: _supports_audio = false,
@@ -85,7 +80,6 @@
     onStop,
     onClear,
     onAttach,
-    onVoiceTranscribe: _onVoiceTranscribe,
     onToggleLoaderPanel,
     onToggleChatHistory: _onToggleChatHistory,
   }: Props = $props();
@@ -95,7 +89,7 @@
 
   // Build accept string for file input
   const accept = $derived(buildAccept());
-  const sendDisabled = $derived(!isLoaded || isRecording || (!busy && !prompt.trim()));
+  const sendDisabled = $derived(!isLoaded || (!busy && !prompt.trim()));
 
   function buildAccept() {
     const extensions: string[] = [];
@@ -146,65 +140,6 @@
   function triggerSettings() {
     onToggleLoaderPanel?.();
   }
-
-  import { startVoiceCapture, type VoiceCapture } from '$lib/services';
-  import CircleNotch from 'phosphor-svelte/lib/CircleNotch';
-  import LanguageSelector from '$lib/components/ui/voice/LanguageSelector.svelte';
-  import { browser } from '$app/environment';
-
-  let voiceCapture: VoiceCapture | null = null;
-  let isTranscribing = $state(false);
-  
-  // Load from local storage or default to "auto"
-  let selectedLanguage = $state<string>(
-    browser ? localStorage.getItem('voice_language') || "auto" : "auto"
-  );
-
-  $effect(() => {
-    if (browser) {
-        localStorage.setItem('voice_language', selectedLanguage);
-    }
-  });
-
-  async function triggerVoiceInput() {
-    if (isRecording) {
-      // Stop recording
-      if (voiceCapture) {
-        try {
-          isRecording = false; // Stop wave animation immediately
-          isTranscribing = true; // Show spinner
-          
-          // Pass selected language (null if auto)
-          const lang = selectedLanguage === "auto" ? null : selectedLanguage;
-          const text = await voiceCapture.stop(lang);
-          
-          if (text) {
-             // Append to prompt with a space if needed
-             prompt = prompt ? `${prompt} ${text}` : text;
-          }
-        } catch (e: any) {
-           console.error('Failed to transcribe:', e);
-           handleError({ code: 'stt_error', message: e.toString() });
-        } finally {
-           voiceCapture = null;
-           isRecording = false;
-           isTranscribing = false;
-        }
-      }
-    } else {
-      // Start recording
-      try {
-        attachError = null;
-        voiceCapture = await startVoiceCapture();
-        isRecording = true;
-      } catch (e: any) {
-        console.error('Failed to start recording:', e);
-        handleError({ code: 'stt_error', message: `Could not start recording: ${e.toString()}` });
-        isRecording = false;
-      }
-    }
-  }
-
 
   function handleSubmit(message: PromptInputMessage) {
     // Handle attached files
@@ -286,31 +221,6 @@
         </PromptInputTools>
 
         <PromptInputTools class="flex items-center gap-2">
-          {#if isRecording}
-            <WaveLoader size="sm" class="text-destructive mr-2" />
-            <div class="mr-2">
-                <LanguageSelector 
-                    selectedLanguage={selectedLanguage} 
-                    onSelect={(l) => selectedLanguage = l} 
-                />
-            </div>
-          {/if}
-          <!-- Voice button -->
-          <PromptInputButton
-            class={cn(isRecording && 'text-destructive')}
-            onclick={triggerVoiceInput}
-            disabled={busy || isTranscribing}
-            aria-label={$t('chat.composer.voice.startRecording') || 'Voice input'}
-          >
-            {#if isTranscribing}
-                <CircleNotch size={16} weight="bold" class="animate-spin" />
-            {:else if isRecording}
-              <Stop size={16} weight="bold" />
-            {:else}
-              <Microphone size={16} weight="bold" />
-            {/if}
-          </PromptInputButton>
-
           <!-- Send/Stop button -->
           <Button
             variant="default"

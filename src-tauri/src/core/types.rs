@@ -6,7 +6,6 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-/// Structured message for streaming with thinking support.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StreamMessage {
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -30,6 +29,121 @@ pub enum DevicePreference {
     Metal,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BackendPreference {
+    #[default]
+    Auto,
+    Llamacpp,
+    Candle,
+}
+
+impl BackendPreference {
+    pub fn normalized(self) -> Self {
+        BackendPreference::Llamacpp
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ActiveBackend {
+    #[default]
+    None,
+    Llamacpp,
+    Candle,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum LlamaSessionKind {
+    Chat,
+    Embedding,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LlamaEmbeddingsStrategy {
+    #[default]
+    SeparateSession,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlamaRuntimeConfig {
+    #[serde(default)]
+    pub server_path: Option<String>,
+    #[serde(default = "default_ngl")]
+    pub n_gpu_layers: i32,
+    #[serde(default = "default_threads")]
+    pub threads: i32,
+    #[serde(default)]
+    pub threads_batch: i32,
+    #[serde(default = "default_ctx_size")]
+    pub ctx_size: i32,
+    #[serde(default = "default_batch_size")]
+    pub batch_size: i32,
+    #[serde(default = "default_ubatch_size")]
+    pub ubatch_size: i32,
+    #[serde(default = "default_n_predict")]
+    pub n_predict: i32,
+    #[serde(default = "default_flash_attn")]
+    pub flash_attn: String,
+    #[serde(default)]
+    pub extra_env: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub embeddings_strategy: LlamaEmbeddingsStrategy,
+}
+
+const fn default_ngl() -> i32 {
+    100
+}
+const fn default_threads() -> i32 {
+    0
+}
+const fn default_ctx_size() -> i32 {
+    4096
+}
+const fn default_batch_size() -> i32 {
+    512
+}
+const fn default_ubatch_size() -> i32 {
+    512
+}
+const fn default_n_predict() -> i32 {
+    -1
+}
+fn default_flash_attn() -> String {
+    "auto".to_string()
+}
+
+impl Default for LlamaRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            server_path: None,
+            n_gpu_layers: default_ngl(),
+            threads: default_threads(),
+            threads_batch: 0,
+            ctx_size: default_ctx_size(),
+            batch_size: default_batch_size(),
+            ubatch_size: default_ubatch_size(),
+            n_predict: default_n_predict(),
+            flash_attn: default_flash_attn(),
+            extra_env: std::collections::HashMap::new(),
+            embeddings_strategy: LlamaEmbeddingsStrategy::SeparateSession,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlamaSessionSnapshot {
+    pub pid: i32,
+    pub port: u16,
+    pub model_id: String,
+    pub api_key: String,
+    pub kind: LlamaSessionKind,
+    pub created_at: u64,
+    pub last_health_ok_at: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "format", rename_all = "lowercase")]
 pub enum LoadRequest {
@@ -41,33 +155,23 @@ pub enum LoadRequest {
     },
     #[serde(rename = "hub_gguf")]
     HubGguf {
-        /// Репозиторий на HF Hub: например, "Qwen/Qwen2.5-3B-Instruct-GGUF"
         repo_id: String,
-        /// Ревизия/ветка/коммит (опционально), по умолчанию — main
         revision: Option<String>,
-        /// Имя файла .gguf в репозитории. Обязателен для однозначной загрузки.
         filename: String,
         context_length: usize,
         device: Option<DevicePreference>,
     },
     #[serde(rename = "hub_safetensors")]
     HubSafetensors {
-        /// Репозиторий на HF Hub: например, "meta-llama/Meta-Llama-3-8B-Instruct"
         repo_id: String,
-        /// Ревизия/ветка/коммит (опционально), по умолчанию — main
         revision: Option<String>,
-        /// Контекст (KV-cache length)
         context_length: usize,
-        /// Предпочтительное устройство
         device: Option<DevicePreference>,
     },
     #[serde(rename = "local_safetensors")]
     LocalSafetensors {
-        /// Путь к локальной директории с моделью safetensors
         model_path: String,
-        /// Контекст (KV-cache length)
         context_length: usize,
-        /// Предпочтительное устройство
         device: Option<DevicePreference>,
     },
 }
@@ -77,9 +181,8 @@ pub struct GenerateRequest {
     pub prompt: String,
     #[serde(default)]
     pub messages: Option<Vec<ChatMessage>>,
-    // Вложения временно отключены
     #[serde(default)]
-    pub attachments: Option<Vec<Attachment>>, // deprecated
+    pub attachments: Option<Vec<Attachment>>,
     #[serde(default)]
     pub max_new_tokens: Option<usize>,
     pub temperature: Option<f64>,
@@ -98,31 +201,22 @@ pub struct GenerateRequest {
     pub verbose_prompt: Option<bool>,
     #[serde(default)]
     pub tracing: Option<bool>,
-    /// Edit/Regenerate: if set, truncate history at this message index before generating.
-    /// Used for regenerating from a specific point or editing a message.
     #[serde(default)]
     pub edit_index: Option<usize>,
-    /// Output format constraint for grammar sampling (json, json_schema)
     #[serde(default)]
     pub format: Option<crate::generate::grammar::OutputFormat>,
-    /// Tools available for function calling. If provided, enables tool call parsing.
     #[serde(default)]
     pub tools: Option<Vec<crate::generate::tool_call_parser::Tool>>,
-    /// Stop sequences - generation stops when any of these are encountered
     #[serde(default)]
     pub stop_sequences: Option<Vec<String>>,
-    /// Tool choice: auto, none, required, or specific function
     #[serde(default)]
     pub tool_choice: Option<ToolChoice>,
 }
 
-/// Tool choice options for controlling function calling behavior
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolChoice {
-    /// "auto", "none", "required"
     Mode(String),
-    /// {"type": "function", "function": {"name": "..."}}
     Function {
         r#type: String,
         function: ToolChoiceFunction,
@@ -134,7 +228,6 @@ pub struct ToolChoiceFunction {
     pub name: String,
 }
 
-// Структура Attachment оставлена на будущее (компат), но можно удалить полностью при необходимости.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attachment {
     pub kind: Option<String>,
@@ -142,26 +235,4 @@ pub struct Attachment {
     pub name: Option<String>,
     pub path: Option<String>,
     pub bytes_b64: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum SttModelSource {
-    Bundled,
-    Custom,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SttSettings {
-    pub source: SttModelSource,
-    pub custom_dir: Option<String>,
-}
-
-impl Default for SttSettings {
-    fn default() -> Self {
-        Self {
-            source: SttModelSource::Bundled,
-            custom_dir: None,
-        }
-    }
 }

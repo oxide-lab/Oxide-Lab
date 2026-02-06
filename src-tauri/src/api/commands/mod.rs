@@ -1,3 +1,4 @@
+pub mod backend;
 pub mod device;
 pub mod experimental;
 pub mod general;
@@ -7,9 +8,9 @@ pub mod metadata;
 pub mod model;
 pub mod precision;
 pub mod prompts;
-pub mod stt;
 pub mod threads;
 
+pub use backend::*;
 pub use device::*;
 pub use experimental::*;
 pub use general::*;
@@ -19,5 +20,4 @@ pub use metadata::*;
 pub use model::*;
 pub use precision::*;
 pub use prompts::*;
-pub use stt::*;
 pub use threads::*;

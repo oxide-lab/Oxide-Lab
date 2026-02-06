@@ -94,10 +94,42 @@
         }
     },
     "loader": {
+        "backend": {
+            "title": "Бэкенд инференса",
+            "active": "Активный: {backend}",
+            "auto": "Авто",
+            "llamacpp": "Llama.cpp",
+            "candle": "Candle"
+        },
+        "runtime": {
+            "title": "Параметры рантайма",
+            "engine": "Движок",
+            "save": "Сохранить рантайм",
+            "serverPath": "Путь к серверу (опционально)",
+            "serverPathHint": "Оставьте пустым для авто-поиска через config/env/example/bin/PATH.",
+            "gpuLayers": "Слои на GPU (-ngl)",
+            "contextSize": "Размер контекста (--ctx-size)",
+            "threads": "CPU потоки (--threads)",
+            "threadsBatch": "Потоки батча (--threads-batch)",
+            "batchSize": "Размер батча (--batch-size)",
+            "ubatchSize": "Размер микробатча (--ubatch-size)",
+            "maxTokens": "Максимум токенов (--n-predict)",
+            "flashAttn": "Flash Attention (--flash-attn)",
+            "candleHint": "Для Candle здесь используются общие настройки чата (контекст/семплинг). Отдельные runtime-override пока не включены."
+        },
         "device": "Устройство",
         "contextLength": "Длина контекста",
         "cpuFeatures": "Возможности CPU",
         "advancedOptions": "Дополнительные параметры",
+        "sampling": {
+            "title": "Параметры семплинга",
+            "useCustom": "Использовать свои параметры",
+            "temperature": "Температура",
+            "topK": "Top-K",
+            "topP": "Top-P",
+            "minP": "Min-P",
+            "repeatPenalty": "Штраф за повтор"
+        },
         "splitPrompt": "Разбивка промпта",
         "verbosePrompt": "Подробный промпт",
         "chromeTracing": "Chrome tracing",

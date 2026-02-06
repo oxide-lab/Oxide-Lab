@@ -10,8 +10,8 @@ use crate::generate::cancel::CANCEL_LOADING;
 
 use crate::models::registry::{detect_arch, get_model_factory};
 use crate::{log_load, log_template, log_template_error};
-use candle::quantized::{gguf_file, GgmlDType};
-use std::collections::HashSet;
+use candle::quantized::{GgmlDType, gguf_file};
+
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -518,7 +518,6 @@ pub fn load_gguf_model(
 /// Проверяет наличие поддерживаемых типов данных в GGUF файле
 /// Возвращает ошибку, если найдены неподдерживаемые типы данных
 fn check_supported_dtypes(content: &gguf_file::Content) -> Result<(), String> {
-    let mut found_unsupported = Vec::new();
     let mut haq_quantized_tensors = false;
 
     for tensor_info in content.tensor_infos.values() {
@@ -539,41 +538,26 @@ fn check_supported_dtypes(content: &gguf_file::Content) -> Result<(), String> {
             | GgmlDType::Q6K
             | GgmlDType::Q8K => {
                 // Supported
-                if tensor_info.ggml_dtype != GgmlDType::F32 
-                    && tensor_info.ggml_dtype != GgmlDType::F16 
-                    && tensor_info.ggml_dtype != GgmlDType::BF16 {
+                if tensor_info.ggml_dtype != GgmlDType::F32
+                    && tensor_info.ggml_dtype != GgmlDType::F16
+                    && tensor_info.ggml_dtype != GgmlDType::BF16
+                {
                     haq_quantized_tensors = true;
                 }
-            }
-            other => {
-                // Collect unique unsupported types
-                 let dtype_str = format!("{:?}", other);
-                 if !found_unsupported.contains(&dtype_str) {
-                     found_unsupported.push(dtype_str);
-                 }
             }
         }
     }
 
     // High-precision check
     if !haq_quantized_tensors {
-         // Allow high precision if explicit override or just warn?
-         // Current logic blocks it. Keeping consistent with previous logic.
-         let error_msg = "Pure high-precision GGUF models (F32, F16, BF16) are currently disabled. \
+        // Allow high precision if explicit override or just warn?
+        // Current logic blocks it. Keeping consistent with previous logic.
+        let error_msg = "Pure high-precision GGUF models (F32, F16, BF16) are currently disabled. \
                           These models produce incorrect output on CUDA in the current version of Candle. \
                           Please use a quantized model instead (Q4_K_M, Q5_K_M, Q8_0, etc.)."
             .to_string();
-         log::error!(
+        log::error!(
             "Model loading blocked: Model appears to be high-precision (no quantized tensors found)"
-         );
-         return Err(error_msg);
-    }
-
-    if !found_unsupported.is_empty() {
-        let error_msg = format!(
-            "Model loading blocked. Found unsupported quantization types: {:?}. \
-            Please use a model with supported quantizations (Q4_K_M, Q5_K_M, Q8_0, etc.).",
-            found_unsupported
         );
         return Err(error_msg);
     }

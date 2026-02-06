@@ -1,5 +1,4 @@
 pub mod commands;
-pub mod device;
 pub mod download_manager;
 pub mod local_models;
 pub mod model_cards;

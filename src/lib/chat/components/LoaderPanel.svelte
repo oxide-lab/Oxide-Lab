@@ -9,13 +9,15 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Progress } from '$lib/components/ui/progress';
   import { Checkbox } from '$lib/components/ui/checkbox';
+  import { Input } from '$lib/components/ui/input';
+  import { Button } from '$lib/components/ui/button';
   import { cn } from '../../utils';
   import Cpu from 'phosphor-svelte/lib/Cpu';
   import GpuCard from 'phosphor-svelte/lib/GraphicsCard';
   import Check from 'phosphor-svelte/lib/Check';
 
   interface Props {
-    format?: 'gguf' | 'hub_gguf' | 'hub_safetensors' | 'local_safetensors';
+    format?: 'gguf' | 'hub_gguf';
     modelPath?: string;
     repoId?: string;
     revision?: string;
@@ -40,6 +42,17 @@
     split_prompt?: boolean;
     verbose_prompt?: boolean;
     tracing?: boolean;
+    use_custom_params?: boolean;
+    temperature?: number;
+    temperature_enabled?: boolean;
+    top_k_enabled?: boolean;
+    top_k_value?: number;
+    top_p_enabled?: boolean;
+    top_p_value?: number;
+    min_p_enabled?: boolean;
+    min_p_value?: number;
+    repeat_penalty_enabled?: boolean;
+    repeat_penalty_value?: number;
     onDeviceToggle?: (enabled: boolean) => void;
     class?: string;
   }
@@ -70,6 +83,17 @@
     split_prompt = $bindable(false),
     verbose_prompt = $bindable(false),
     tracing = $bindable(false),
+    use_custom_params = $bindable(false),
+    temperature = $bindable(0.8),
+    temperature_enabled = $bindable(false),
+    top_k_enabled = $bindable(false),
+    top_k_value = $bindable(40),
+    top_p_enabled = $bindable(false),
+    top_p_value = $bindable(0.9),
+    min_p_enabled = $bindable(false),
+    min_p_value = $bindable(0.05),
+    repeat_penalty_enabled = $bindable(false),
+    repeat_penalty_value = $bindable(1.1),
     onDeviceToggle,
     class: className = '',
   }: Props = $props();
@@ -83,6 +107,18 @@
   }
 
   const contextOptions = [2048, 4096, 8192, 16384, 32768];
+
+  function formatLoadingStage(stage: string): string {
+    if (!stage) return '';
+    const key = `chat.loading.stages.${stage}`;
+    const localized = $t(key);
+    if (localized && localized !== key) {
+      return localized;
+    }
+    const fallback = $t('chat.loading.stages.default', { stage });
+    return fallback || stage;
+  }
+
 </script>
 
 <section class={cn('loader-panel space-y-6', className)}>
@@ -90,8 +126,8 @@
   <div class="space-y-3">
     <Label class="text-sm font-medium">{$t('common.loader.device') || 'Device'}</Label>
     <div class="flex gap-2">
-      <button
-        type="button"
+      <Button
+        variant="outline"
         class={cn(
           'flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border transition-all',
           !use_gpu
@@ -105,9 +141,9 @@
         {#if !use_gpu}
           <Check class="size-4 ml-auto" />
         {/if}
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="outline"
         class={cn(
           'flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border transition-all',
           !cuda_available && !cuda_build && 'opacity-50 cursor-not-allowed',
@@ -123,7 +159,7 @@
         {#if use_gpu}
           <Check class="size-4 ml-auto" />
         {/if}
-      </button>
+      </Button>
     </div>
     {#if !cuda_available && !cuda_build}
       <p class="text-xs text-muted-foreground">
@@ -139,10 +175,11 @@
     >
     <div class="flex flex-wrap gap-2">
       {#each contextOptions as option}
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           class={cn(
-            'px-3 py-1.5 rounded-md text-sm border transition-all',
+            'transition-all',
             ctx_limit_value === option
               ? 'border-primary bg-primary/10 text-primary font-medium'
               : 'border-border hover:border-muted-foreground',
@@ -152,7 +189,7 @@
           }}
         >
           {option.toLocaleString()}
-        </button>
+        </Button>
       {/each}
     </div>
   </div>
@@ -197,6 +234,73 @@
     </div>
   </div>
 
+  <!-- Sampling Parameters -->
+  <div class="space-y-3">
+    <div class="flex items-center justify-between">
+      <Label class="text-sm font-medium">
+        {$t('common.loader.sampling.title') || 'Sampling Parameters'}
+      </Label>
+      <div class="flex items-center gap-2">
+        <Checkbox id="use-custom-params" bind:checked={use_custom_params} />
+        <Label for="use-custom-params" class="text-xs cursor-pointer text-muted-foreground">
+          {$t('common.loader.sampling.useCustom') || 'Use custom parameters'}
+        </Label>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3">
+      <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+        <div class="flex items-center gap-2">
+          <Checkbox id="temperature-enabled" bind:checked={temperature_enabled} disabled={!use_custom_params} />
+          <Label for="temperature-enabled" class="text-sm cursor-pointer">
+            {$t('common.loader.sampling.temperature') || 'Temperature'}
+          </Label>
+        </div>
+        <Input type="number" step="0.01" min="0" max="2" bind:value={temperature} disabled={!use_custom_params || !temperature_enabled} />
+      </div>
+
+      <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+        <div class="flex items-center gap-2">
+          <Checkbox id="top-k-enabled" bind:checked={top_k_enabled} disabled={!use_custom_params} />
+          <Label for="top-k-enabled" class="text-sm cursor-pointer">
+            {$t('common.loader.sampling.topK') || 'Top-K'}
+          </Label>
+        </div>
+        <Input type="number" step="1" min="1" bind:value={top_k_value} disabled={!use_custom_params || !top_k_enabled} />
+      </div>
+
+      <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+        <div class="flex items-center gap-2">
+          <Checkbox id="top-p-enabled" bind:checked={top_p_enabled} disabled={!use_custom_params} />
+          <Label for="top-p-enabled" class="text-sm cursor-pointer">
+            {$t('common.loader.sampling.topP') || 'Top-P'}
+          </Label>
+        </div>
+        <Input type="number" step="0.01" min="0" max="1" bind:value={top_p_value} disabled={!use_custom_params || !top_p_enabled} />
+      </div>
+
+      <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+        <div class="flex items-center gap-2">
+          <Checkbox id="min-p-enabled" bind:checked={min_p_enabled} disabled={!use_custom_params} />
+          <Label for="min-p-enabled" class="text-sm cursor-pointer">
+            {$t('common.loader.sampling.minP') || 'Min-P'}
+          </Label>
+        </div>
+        <Input type="number" step="0.01" min="0" max="1" bind:value={min_p_value} disabled={!use_custom_params || !min_p_enabled} />
+      </div>
+
+      <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+        <div class="flex items-center gap-2">
+          <Checkbox id="repeat-penalty-enabled" bind:checked={repeat_penalty_enabled} disabled={!use_custom_params} />
+          <Label for="repeat-penalty-enabled" class="text-sm cursor-pointer">
+            {$t('common.loader.sampling.repeatPenalty') || 'Repeat penalty'}
+          </Label>
+        </div>
+        <Input type="number" step="0.01" min="0.1" max="2" bind:value={repeat_penalty_value} disabled={!use_custom_params || !repeat_penalty_enabled} />
+      </div>
+    </div>
+  </div>
+
   <!-- Loading Status -->
   {#if isLoadingModel || isUnloadingModel}
     <div class="space-y-3 p-4 rounded-lg border bg-muted/50">
@@ -209,7 +313,7 @@
           {/if}
         </span>
         {#if loadingStage}
-          <Badge variant="outline">{loadingStage}</Badge>
+          <Badge variant="outline">{formatLoadingStage(loadingStage)}</Badge>
         {/if}
       </div>
       <Progress value={isLoadingModel ? loadingProgress : unloadingProgress} class="h-2" />

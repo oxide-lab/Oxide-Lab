@@ -6,6 +6,6 @@ pub mod app;
 pub mod core;
 pub mod generate;
 pub mod i18n;
-pub mod models;
+pub mod inference;
 
 pub use app::run;

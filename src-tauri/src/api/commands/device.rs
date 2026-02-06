@@ -1,8 +1,27 @@
-use crate::core::device::device_label;
+use crate::core::device::{cuda_available, device_label, select_device, simd_caps};
 use crate::core::state::SharedState;
 use crate::core::types::DevicePreference;
 
 use serde::{Deserialize, Serialize};
+
+fn has_cuda_binary_bundle() -> bool {
+    let repo_bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("example")
+        .join("bin");
+    let Ok(entries) = std::fs::read_dir(repo_bin) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let p = entry.path();
+        p.is_dir()
+            && p
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_ascii_lowercase().contains("cuda"))
+                .unwrap_or(false)
+    })
+}
 
 #[tauri::command]
 pub fn set_device(
@@ -10,7 +29,8 @@ pub fn set_device(
     pref: DevicePreference,
 ) -> Result<(), String> {
     let mut guard = state.lock().map_err(|e| e.to_string())?;
-    crate::api::device::set_device(&mut guard, pref)
+    guard.device_pref = select_device(Some(pref));
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,16 +47,11 @@ pub struct DeviceInfoDto {
 #[tauri::command]
 pub fn get_device_info(state: tauri::State<'_, SharedState>) -> Result<DeviceInfoDto, String> {
     let guard = state.lock().map_err(|e| e.to_string())?;
-    let current = device_label(&guard.device).to_string();
-    let cuda_build = cfg!(feature = "cuda");
-    #[cfg(feature = "cuda")]
-    let cuda_available = candle::Device::cuda_if_available(0).is_ok();
-    #[cfg(not(feature = "cuda"))]
-    let cuda_available = false;
-    let avx = candle::utils::with_avx();
-    let neon = candle::utils::with_neon();
-    let simd128 = candle::utils::with_simd128();
-    let f16c = candle::utils::with_f16c();
+    let current = device_label(&guard.device_pref).to_string();
+    let cuda_build = has_cuda_binary_bundle();
+    let cuda_available = cuda_available();
+    let (avx, neon, simd128, f16c) = simd_caps();
+
     Ok(DeviceInfoDto {
         cuda_build,
         cuda_available,
@@ -57,28 +72,15 @@ pub struct ProbeCudaDto {
 
 #[tauri::command]
 pub fn probe_cuda() -> Result<ProbeCudaDto, String> {
-    let cuda_build = cfg!(feature = "cuda");
-    #[cfg(feature = "cuda")]
-    {
-        match candle::Device::cuda_if_available(0) {
-            Ok(_) => Ok(ProbeCudaDto {
-                cuda_build,
-                ok: true,
-                error: None,
-            }),
-            Err(e) => Ok(ProbeCudaDto {
-                cuda_build,
-                ok: false,
-                error: Some(e.to_string()),
-            }),
-        }
-    }
-    #[cfg(not(feature = "cuda"))]
-    {
-        Ok(ProbeCudaDto {
-            cuda_build,
-            ok: false,
-            error: Some("built without cuda feature".to_string()),
-        })
-    }
+    let cuda_build = has_cuda_binary_bundle();
+    let ok = cuda_available();
+    Ok(ProbeCudaDto {
+        cuda_build,
+        ok,
+        error: if ok {
+            None
+        } else {
+            Some("CUDA runtime not detected in environment".to_string())
+        },
+    })
 }

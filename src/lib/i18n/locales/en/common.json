@@ -95,10 +95,42 @@
         }
     },
     "loader": {
+        "backend": {
+            "title": "Inference Backend",
+            "active": "Active: {backend}",
+            "auto": "Auto",
+            "llamacpp": "Llama.cpp",
+            "candle": "Candle"
+        },
+        "runtime": {
+            "title": "Runtime Settings",
+            "engine": "Engine",
+            "save": "Save runtime",
+            "serverPath": "Server path (optional)",
+            "serverPathHint": "Leave empty to auto-detect from config/env/example/bin/PATH.",
+            "gpuLayers": "GPU layers (-ngl)",
+            "contextSize": "Context size (--ctx-size)",
+            "threads": "CPU threads (--threads)",
+            "threadsBatch": "Batch threads (--threads-batch)",
+            "batchSize": "Batch size (--batch-size)",
+            "ubatchSize": "Micro-batch size (--ubatch-size)",
+            "maxTokens": "Max generated tokens (--n-predict)",
+            "flashAttn": "Flash attention (--flash-attn)",
+            "candleHint": "For Candle backend, shared chat settings are used here (context/sampling). Dedicated runtime overrides are not enabled yet."
+        },
         "device": "Device",
         "contextLength": "Context Length",
         "cpuFeatures": "CPU Features",
         "advancedOptions": "Advanced Options",
+        "sampling": {
+            "title": "Sampling Parameters",
+            "useCustom": "Use custom parameters",
+            "temperature": "Temperature",
+            "topK": "Top-K",
+            "topP": "Top-P",
+            "minP": "Min-P",
+            "repeatPenalty": "Repeat penalty"
+        },
         "splitPrompt": "Split prompt",
         "verbosePrompt": "Verbose prompt",
         "chromeTracing": "Chrome tracing",

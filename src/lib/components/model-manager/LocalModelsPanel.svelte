@@ -14,7 +14,6 @@
   import { Spinner } from '$lib/components/ui/spinner';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import * as ScrollArea from '$lib/components/ui/scroll-area';
-  import { Checkbox } from '$lib/components/ui/checkbox';
   import { Label } from '$lib/components/ui/label';
   import FolderOpen from 'phosphor-svelte/lib/FolderOpen';
   import MagnifyingGlass from 'phosphor-svelte/lib/MagnifyingGlass';
@@ -49,7 +48,6 @@
   let editingModelPath = $state<string | null>(null);
   let editPublisher = $state('');
   let editName = $state('');
-  let candleOnlyFilter = $state(false);
   let searchQuery = $state('');
 
   // Validation badge variants
@@ -152,12 +150,6 @@
     updateFilter({ searchText: value });
   }
 
-  function handleCandleOnlyChange(checked: boolean | 'indeterminate') {
-    const value = checked === true;
-    candleOnlyFilter = value;
-    updateFilter({ candleOnly: value });
-  }
-
   async function handleDelete(model: ModelInfo) {
     const confirmMessage = $t('models.local.details.deleteConfirm').replace('{name}', model.name);
     const confirmed = confirm(confirmMessage);
@@ -176,7 +168,7 @@
     if (!ox?.loadModelFromManager) return;
     ox.loadModelFromManager({
       path: model.path,
-      format: model.format === 'gguf' ? 'gguf' : 'local_safetensors',
+      format: 'gguf',
     });
   }
 
@@ -193,7 +185,6 @@
   // ─────────────────────────────────────────────────────────────
 
   onMount(async () => {
-    candleOnlyFilter = $filterOptions.candleOnly ?? false;
     if ($folderPath) {
       await scanFolder($folderPath);
     }
@@ -250,17 +241,6 @@
       />
     </div>
 
-    <!-- Candle Only Filter -->
-    <div class="flex items-center gap-2">
-      <Checkbox
-        id="candle-only"
-        checked={candleOnlyFilter}
-        onCheckedChange={handleCandleOnlyChange}
-      />
-      <Label for="candle-only" class="text-sm cursor-pointer">
-        {$t('models.local.candleOnly')}
-      </Label>
-    </div>
   </div>
 
   <!-- Error Banner -->

@@ -4,7 +4,6 @@ use tauri::Emitter;
 use tauri::Manager;
 
 use crate::api::commands::threads::{apply_rayon_thread_limit, default_rayon_thread_limit};
-use crate::core::audio_capture::AudioCaptureState;
 use crate::core::device::select_device;
 use crate::core::performance::StartupTracker;
 use crate::core::rayon_pool::init_global_low_priority_pool;
@@ -61,6 +60,8 @@ pub fn run() {
     i18n::init();
 
     let shared = build_shared_state();
+    let llama_cpp_state = crate::inference::llamacpp::state::LlamaCppState::new();
+    let llama_cpp_state_for_exit = llama_cpp_state.clone();
     let performance_monitor = {
         let guard = shared.lock().expect("Failed to lock shared state");
         guard.performance_monitor.clone()
@@ -101,7 +102,7 @@ pub fn run() {
         },
     ];
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -112,7 +113,7 @@ pub fn run() {
                 .build(),
         )
         .manage(shared.clone())
-        .manage(AudioCaptureState::new())
+        .manage(llama_cpp_state.clone())
         .invoke_handler(tauri::generate_handler![
             crate::api::greet,
             get_app_info,
@@ -143,13 +144,6 @@ pub fn run() {
             crate::api::performance_api::clear_performance_metrics,
             crate::api::performance_api::get_startup_metrics,
             crate::api::performance_api::get_system_usage,
-            crate::api::transcribe_audio,
-            crate::api::start_voice_recording,
-            crate::api::stop_voice_recording_and_transcribe,
-            crate::api::cancel_voice_recording,
-            crate::api::get_stt_settings,
-            crate::api::set_stt_settings,
-            crate::api::download_stt_model,
             crate::api::local_models::parse_gguf_metadata,
             crate::api::local_models::scan_models_folder,
             crate::api::local_models::scan_local_models_folder,
@@ -175,6 +169,11 @@ pub fn run() {
             crate::api::prefix_cache_api::get_prefix_cache_info,
             crate::api::prefix_cache_api::set_prefix_cache_enabled,
             crate::api::prefix_cache_api::clear_prefix_cache,
+            crate::api::get_active_backend,
+            crate::api::get_backend_preference,
+            crate::api::set_backend_preference,
+            crate::api::get_llama_runtime_config,
+            crate::api::set_llama_runtime_config,
         ])
         .setup(move |app| {
             // Hybrid responsiveness: keep the window/event-loop thread slightly prioritized on Windows,
@@ -231,9 +230,16 @@ pub fn run() {
 
             // Start OpenAI-compatible API server
             let openai_state = shared.clone();
+            let openai_llama_state = llama_cpp_state.clone();
             tauri::async_runtime::spawn(async move {
                 use crate::api::openai_server::OPENAI_PORT;
-                match crate::api::openai_server::start_server(openai_state, OPENAI_PORT).await {
+                match crate::api::openai_server::start_server(
+                    openai_state,
+                    openai_llama_state,
+                    OPENAI_PORT,
+                )
+                .await
+                {
                     Ok(_shutdown_tx) => {
                         log::info!("OpenAI API server started on port {}", OPENAI_PORT);
                     }
@@ -247,8 +253,28 @@ pub fn run() {
             if let Some(main_window) = app.get_webview_window("main") {
                 main_window.open_devtools();
             }
+
+            // Periodic llama session cleanup.
+            let cleanup_llama_state = llama_cpp_state.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+                loop {
+                    interval.tick().await;
+                    let _ = crate::inference::llamacpp::process::cleanup_dead_sessions(
+                        &cleanup_llama_state,
+                    );
+                }
+            });
+
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(move |_handle, event| {
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            let _ =
+                crate::inference::llamacpp::process::unload_all_sessions(&llama_cpp_state_for_exit);
+        }
+    });
 }

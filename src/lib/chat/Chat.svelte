@@ -37,9 +37,9 @@
   let prompt = $state(savedState.prompt);
   let messages = $state<ChatMessage[]>(Array.isArray(savedState.messages) ? savedState.messages : []);
   let busy = $state(savedState.busy);
-  let format = $state<'gguf' | 'hub_gguf' | 'hub_safetensors' | 'local_safetensors'>(savedState.format);
+  let format = $state<'gguf' | 'hub_gguf'>(savedState.format);
   let pendingModelPath = $state(savedState.pendingModelPath);
-  let pendingFormat = $state<'gguf' | 'hub_gguf' | 'hub_safetensors' | 'local_safetensors'>(savedState.pendingFormat);
+  let pendingFormat = $state<'gguf' | 'hub_gguf'>(savedState.pendingFormat);
   let isLoaded = $state(savedState.isLoaded);
   let errorText = $state(savedState.errorText);
 
@@ -350,6 +350,7 @@
   const sendMessage = controller.handleSend;
   const stopGenerate = controller.stopGenerate;
 
+
   // Derived values
   let isChatHistoryVisible = $derived(!!get(showChatHistory));
   let hasMessages = $derived((messages?.length ?? 0) > 0);
@@ -391,7 +392,7 @@
   /**
    * Load a model from the Model Manager or header picker
    */
-  function loadModelFromManager(args: { path: string; format: 'gguf' | 'local_safetensors' }) {
+  function loadModelFromManager(args: { path: string; format: 'gguf' }) {
     if (!args?.path) return;
     pendingModelPath = args.path;
     pendingFormat = args.format;
@@ -496,6 +497,7 @@
         }, 150);
       },
     );
+
   });
 
   onDestroy(() => {
@@ -654,6 +656,17 @@
             bind:split_prompt
             bind:verbose_prompt
             bind:tracing
+            bind:use_custom_params
+            bind:temperature
+            bind:temperature_enabled
+            bind:top_k_enabled
+            bind:top_k_value
+            bind:top_p_enabled
+            bind:top_p_value
+            bind:min_p_enabled
+            bind:min_p_value
+            bind:repeat_penalty_enabled
+            bind:repeat_penalty_value
             onDeviceToggle={(val) => controller.setDeviceByToggle(val)}
           />
         </div>

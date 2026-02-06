@@ -2,71 +2,62 @@ use crate::core::performance::PerformanceMonitor;
 use crate::core::precision::{Precision, PrecisionPolicy};
 use crate::core::prefix_cache::{PrefixCache, PrefixCacheConfig};
 use crate::core::scheduler::{ModelScheduler, SchedulerConfig};
-use candle::Device;
-use serde_json;
+use crate::core::types::{
+    ActiveBackend, BackendPreference, DevicePreference, LlamaRuntimeConfig, LlamaSessionSnapshot,
+};
 use std::fs::File;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tauri::Manager;
-use tokenizers::Tokenizer;
 
-/// Универсальное состояние для любой модели
 pub struct ModelState {
     pub(crate) scheduler: ModelScheduler,
-    // gguf_file удалён, так как модель владеет ресурсами
-    pub(crate) tokenizer: Option<Tokenizer>,
-    pub(crate) device: Device,
+    pub(crate) device_pref: DevicePreference,
     pub(crate) context_length: usize,
     pub(crate) model_path: Option<String>,
-    pub(crate) tokenizer_path: Option<String>,
-    pub(crate) model_config_json: Option<String>,
-    /// Detected architecture kind
-    pub(crate) arch: Option<crate::models::registry::ArchKind>,
     pub(crate) chat_template: Option<String>,
-    // HF Hub (safetensors) связанные артефакты
     pub(crate) hub_repo_id: Option<String>,
     pub(crate) hub_revision: Option<String>,
-    pub(crate) safetensors_files: Option<Vec<String>>,
-    /// Precision policy for model loading
     pub(crate) precision_policy: PrecisionPolicy,
-    /// Highest allowed Rayon thread count (None = automatic).
     pub(crate) rayon_thread_limit: Option<usize>,
-    /// Performance monitor для отслеживания метрик
     pub(crate) performance_monitor: Arc<PerformanceMonitor>,
-    /// Prefix Cache для переиспользования KV-кэшей
     pub(crate) prefix_cache: PrefixCache,
+    pub(crate) backend_preference: BackendPreference,
+    pub(crate) active_backend: ActiveBackend,
+    pub(crate) active_model_id: Option<String>,
+    pub(crate) active_llama_session: Option<LlamaSessionSnapshot>,
+    pub(crate) llama_runtime: LlamaRuntimeConfig,
 }
 
 impl ModelState {
-    pub fn new(device: Device) -> Self {
+    pub fn new(device_pref: DevicePreference) -> Self {
         Self {
             scheduler: ModelScheduler::new(SchedulerConfig::default()),
-            tokenizer: None,
-            device,
+            device_pref,
             context_length: 4096,
             model_path: None,
-            tokenizer_path: None,
-            model_config_json: None,
             chat_template: None,
-            arch: None,
             hub_repo_id: None,
             hub_revision: None,
-            safetensors_files: None,
             precision_policy: PrecisionPolicy::Default,
             rayon_thread_limit: None,
             performance_monitor: Arc::new(PerformanceMonitor::new(1000)),
-            // Prefix cache включён по умолчанию (32 записи)
             prefix_cache: PrefixCache::new(PrefixCacheConfig::enabled(32)),
+            backend_preference: BackendPreference::Llamacpp,
+            active_backend: ActiveBackend::None,
+            active_model_id: None,
+            active_llama_session: None,
+            llama_runtime: LlamaRuntimeConfig::default(),
         }
     }
 
     pub fn save_precision(&self, app: &AppHandle) -> Result<(), String> {
         let profile_dir = Self::ensure_profile_dir(app)?;
         let path = profile_dir.join("precision.json");
-        let file =
-            File::create(&path).map_err(|e| format!("Failed to create precision file: {}", e))?;
+        let file = File::create(&path)
+            .map_err(|e| format!("Failed to create precision file: {}", e))?;
         serde_json::to_writer(file, &self.precision_policy)
             .map_err(|e| format!("Failed to serialize precision: {}", e))?;
         Ok(())
@@ -76,11 +67,10 @@ impl ModelState {
         let profile_dir = Self::profile_dir(app)?;
         let path = profile_dir.join("precision.json");
         if path.exists() {
-            let file =
-                File::open(&path).map_err(|e| format!("Failed to open precision file: {}", e))?;
+            let file = File::open(&path)
+                .map_err(|e| format!("Failed to open precision file: {}", e))?;
             let _policy: PrecisionPolicy = serde_json::from_reader(file)
                 .map_err(|e| format!("Failed to deserialize precision: {}", e))?;
-            // For now, let's just return the default precision since we don't have a direct conversion
             Ok(Precision::default())
         } else {
             Ok(Precision::default())

@@ -16,10 +16,4 @@ export { ModelCardsService } from './model-cards';
 // Performance service
 export { PerformanceService, performanceService } from './performance-service';
 
-// STT service
-export { getSttSettings, setSttSettings, downloadSttModel } from './stt-service';
-
-// Voice input service
-export { startVoiceCapture } from './voice-input';
-export type { VoiceCapture } from './voice-input';
 

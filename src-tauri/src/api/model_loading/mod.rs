@@ -1,9 +1,3 @@
-pub mod context_algo;
-pub mod context_settings;
-pub mod gguf;
-pub mod hub_gguf;
-pub mod safetensors;
-
 use serde::Serialize;
 use tauri::Emitter;
 
@@ -42,39 +36,33 @@ impl LoadDebugCtx {
         self.enabled
     }
 
-    pub fn load_id(&self) -> u64 {
-        self.load_id
-    }
-
     pub fn elapsed_ms(&self) -> u128 {
         self.start.elapsed().as_millis()
     }
 
     pub fn stage_begin(&self, stage: &str) {
-        if !self.enabled {
-            return;
+        if self.enabled {
+            crate::log_debug!(
+                crate::core::log::Component::Load,
+                "[load:{} +{}ms] stage_begin={}",
+                self.load_id,
+                self.elapsed_ms(),
+                stage
+            );
         }
-        crate::log_debug!(
-            crate::core::log::Component::Load,
-            "[load:{} +{}ms] stage_begin={}",
-            self.load_id,
-            self.elapsed_ms(),
-            stage
-        );
     }
 
     pub fn stage_end(&self, stage: &str, duration: Duration) {
-        if !self.enabled {
-            return;
+        if self.enabled {
+            crate::log_debug!(
+                crate::core::log::Component::Load,
+                "[load:{} +{}ms] stage_end={} dur_ms={}",
+                self.load_id,
+                self.elapsed_ms(),
+                stage,
+                duration.as_millis()
+            );
         }
-        crate::log_debug!(
-            crate::core::log::Component::Load,
-            "[load:{} +{}ms] stage_end={} dur_ms={}",
-            self.load_id,
-            self.elapsed_ms(),
-            stage,
-            duration.as_millis()
-        );
     }
 }
 

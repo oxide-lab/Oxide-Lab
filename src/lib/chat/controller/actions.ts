@@ -14,6 +14,15 @@ import { chatState } from '$lib/stores/chat';
 export function createActions(ctx: ChatControllerCtx) {
     const stream = createStreamListener(ctx);
 
+    function toBackendMessages(messages: typeof ctx.messages) {
+        return messages
+            .filter((m) => m.role === 'user' || m.role === 'assistant')
+            .map((m) => ({
+                role: m.role,
+                content: m.content ?? '',
+            }));
+    }
+
     function isModelLoadDebugEnabled() {
         try {
             return localStorage.getItem('oxide.debugModelLoad') === '1';
@@ -217,39 +226,12 @@ export function createActions(ctx: ChatControllerCtx) {
                         device: ctx.use_gpu ? { kind: 'cuda', index: 0 } : { kind: 'cpu' },
                     },
                 });
-            } else if (ctx.format === 'hub_safetensors') {
-                if (!ctx.repoId) {
-                    await message('Укажите repoId (owner/repo)', {
-                        title: 'Загрузка из HF Hub',
-                        kind: 'warning',
-                    });
-                    return;
-                }
-                await invoke('load_model', {
-                    req: {
-                        format: 'hub_safetensors',
-                        repo_id: ctx.repoId,
-                        revision: ctx.revision || null,
-                        context_length,
-                        device: ctx.use_gpu ? { kind: 'cuda', index: 0 } : { kind: 'cpu' },
-                    },
+            } else {
+                await message('Поддерживаются только форматы GGUF и Hub GGUF.', {
+                    title: 'Неподдерживаемый формат',
+                    kind: 'warning',
                 });
-            } else if (ctx.format === 'local_safetensors') {
-                if (!ctx.modelPath) {
-                    await message('Укажите директорию с моделью safetensors', {
-                        title: 'Локальная модель',
-                        kind: 'warning',
-                    });
-                    return;
-                }
-                await invoke('load_model', {
-                    req: {
-                        format: 'local_safetensors',
-                        model_path: ctx.modelPath,
-                        context_length,
-                        device: ctx.use_gpu ? { kind: 'cuda', index: 0 } : { kind: 'cpu' },
-                    },
-                });
+                return;
             }
 
             await refreshDeviceInfo();
@@ -375,6 +357,7 @@ export function createActions(ctx: ChatControllerCtx) {
             await invoke('generate_stream', {
                 req: {
                     prompt: chatPrompt,
+                    messages: toBackendMessages(hist),
                     use_custom_params: ctx.use_custom_params,
                     temperature: ctx.use_custom_params && ctx.temperature_enabled ? ctx.temperature : null,
                     top_p: ctx.use_custom_params && ctx.top_p_enabled
@@ -549,6 +532,7 @@ export function createActions(ctx: ChatControllerCtx) {
             await invoke('generate_stream', {
                 req: {
                     prompt: chatPrompt,
+                    messages: toBackendMessages(hist),
                     use_custom_params: ctx.use_custom_params,
                     temperature: ctx.use_custom_params && ctx.temperature_enabled ? ctx.temperature : null,
                     top_p: ctx.use_custom_params && ctx.top_p_enabled

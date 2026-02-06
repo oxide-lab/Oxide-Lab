@@ -65,7 +65,7 @@
   const quickModels = derived(models, ($models) =>
     $models.filter(
       (model: ModelInfo) =>
-        model.candle_compatible && Boolean(model.source_repo_name?.trim() || model.name?.trim()),
+        Boolean(model.source_repo_name?.trim() || model.name?.trim()),
     ),
   );
   const currentModelPath = derived(chatState, ($chatState) => $chatState.modelPath);
@@ -134,7 +134,7 @@
     }
     ox.loadModelFromManager({
       path: model.path,
-      format: model.format === 'gguf' ? 'gguf' : 'local_safetensors',
+      format: 'gguf',
     });
     closeModelPicker();
   }

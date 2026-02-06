@@ -109,7 +109,6 @@ export interface FilterOptions {
     architecture?: string;
     quantization?: string;
     searchText?: string;
-    candleOnly?: boolean;
     validation?: ValidationLevel | 'all';
     format?: ModelFormat;
 }

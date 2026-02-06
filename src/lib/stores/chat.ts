@@ -22,9 +22,9 @@ export type ChatPersistedState = {
     repoId: string;
     revision: string;
     hubGgufFilename: string;
-    format: 'gguf' | 'hub_gguf' | 'hub_safetensors' | 'local_safetensors';
+    format: 'gguf' | 'hub_gguf';
     pendingModelPath: string;
-    pendingFormat: 'gguf' | 'hub_gguf' | 'hub_safetensors' | 'local_safetensors';
+    pendingFormat: 'gguf' | 'hub_gguf';
 
     // Chat state
     prompt: string;

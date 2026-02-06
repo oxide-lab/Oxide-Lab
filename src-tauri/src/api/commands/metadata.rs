@@ -1,7 +1,21 @@
 use crate::core::state::SharedState;
-
-use candle::quantized::gguf_file;
 use std::path::Path;
+
+fn read_gguf_metadata_keys(path: &Path) -> Result<Vec<String>, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let parsed = gguf::GGUFFile::read(&bytes)?
+        .ok_or_else(|| "GGUF file appears truncated or incomplete".to_string())?;
+
+    let mut keys: Vec<String> = parsed
+        .header
+        .metadata
+        .into_iter()
+        .map(|entry| entry.key)
+        .collect();
+    keys.sort();
+    keys.dedup();
+    Ok(keys)
+}
 
 #[tauri::command]
 pub fn gguf_list_metadata_keys_from_path(path: String) -> Result<Vec<String>, String> {
@@ -17,11 +31,7 @@ pub fn gguf_list_metadata_keys_from_path(path: String) -> Result<Vec<String>, St
     {
         return Err("Path is not a .gguf file".to_string());
     }
-    let mut f = std::fs::File::open(p).map_err(|e| e.to_string())?;
-    let content = gguf_file::Content::read(&mut f).map_err(|e| e.to_string())?;
-    let mut keys: Vec<String> = content.metadata.keys().cloned().collect();
-    keys.sort();
-    Ok(keys)
+    read_gguf_metadata_keys(p)
 }
 
 #[tauri::command]
@@ -45,9 +55,5 @@ pub fn gguf_list_metadata_keys(
     {
         return Err("Loaded model is not a .gguf file".to_string());
     }
-    let mut f = std::fs::File::open(p).map_err(|e| e.to_string())?;
-    let content = gguf_file::Content::read(&mut f).map_err(|e| e.to_string())?;
-    let mut keys: Vec<String> = content.metadata.keys().cloned().collect();
-    keys.sort();
-    Ok(keys)
+    read_gguf_metadata_keys(p)
 }

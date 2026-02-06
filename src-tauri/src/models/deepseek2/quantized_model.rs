@@ -4,10 +4,10 @@
 
 use candle::quantized::{GgmlDType, gguf_file};
 use candle::{D, DType, Device, IndexOp, Result, Tensor};
+use candle_nn::RmsNorm;
 use candle_nn::kv_cache::ConcatKvCache;
 use candle_nn::{Embedding, Module};
 use candle_transformers::models::with_tracing::QMatMul;
-use candle_transformers::quantized_nn::RmsNorm;
 use std::sync::Arc;
 
 use super::config::*;
@@ -39,7 +39,8 @@ impl Module for Mlp {
         let up = self.up_proj.forward(xs)?;
         let gate = self.gate_proj.forward(xs)?;
         self.down_proj
-            .forward(&(candle_nn::ops::silu(&gate)? * up)?)
+            .forward(&(candle_nn::ops::silu(&gate)? * up)?)?
+            .to_dtype(DType::F32)
     }
 }
 
@@ -68,7 +69,8 @@ impl Module for SharedExperts {
         let up = self.up_proj.forward(xs)?;
         let gate = self.gate_proj.forward(xs)?;
         self.down_proj
-            .forward(&(candle_nn::ops::silu(&gate)? * up)?)
+            .forward(&(candle_nn::ops::silu(&gate)? * up)?)?
+            .to_dtype(DType::F32)
     }
 }
 
@@ -78,7 +80,7 @@ enum MoeOrMlp {
 }
 
 impl MoeOrMlp {
-    fn forward(&self, xs: &Tensor, is_prefill: bool) -> Result<Tensor> {
+    fn forward(&mut self, xs: &Tensor, is_prefill: bool) -> Result<Tensor> {
         match self {
             Self::Mlp(m) => m.forward(xs),
             Self::FusedMoe(m) => m.forward(xs, is_prefill),
@@ -88,16 +90,17 @@ impl MoeOrMlp {
 
 pub struct QuantizedAttention {
     kv_a_proj_with_mqa: QMatMul,
-    kv_a_layernorm: candle_transformers::quantized_nn::RmsNorm,
+    kv_a_layernorm: RmsNorm,
     kv_b_proj: QMatMul,
     q_proj: QMatMul,
     q_a_proj: Option<QMatMul>,
-    q_a_layernorm: Option<candle_transformers::quantized_nn::RmsNorm>,
+    q_a_layernorm: Option<RmsNorm>,
     q_b_proj: Option<QMatMul>,
     o_proj: QMatMul,
     rotary_emb: Arc<DeepSeekV2RotaryEmbedding>,
     cfg: DeepSeekV2Config,
     kv_cache: ConcatKvCache,
+    softmax_scale: f64,
 }
 
 impl QuantizedAttention {
@@ -113,16 +116,14 @@ impl QuantizedAttention {
         let kv_a_proj_with_mqa = gg.qmatmul(&format!("{prefix}.attn_kv_a_mqa.weight"))?;
         let kv_a_layernorm = {
             let w = gg.tensor(&format!("{prefix}.attn_kv_a_norm.weight"))?;
-            candle_transformers::quantized_nn::RmsNorm::from_qtensor(w, 1e-6)?
+            RmsNorm::new(w.dequantize(_device)?, 1e-6)
         };
         let kv_b_proj = gg.qmatmul(&format!("{prefix}.attn_kv_b.weight"))?;
 
         let (q_a_proj, q_a_layernorm, q_b_proj, q_proj) = if let Some(_rank) = cfg.q_lora_rank {
             let a = Some(gg.qmatmul(&format!("{prefix}.attn_q_a.weight"))?);
             let w = gg.tensor(&format!("{prefix}.attn_q_a_norm.weight"))?;
-            let norm = Some(candle_transformers::quantized_nn::RmsNorm::from_qtensor(
-                w, 1e-6,
-            )?);
+            let norm = Some(RmsNorm::new(w.dequantize(_device)?, 1e-6));
             let b = Some(gg.qmatmul(&format!("{prefix}.attn_q_b.weight"))?);
             (a, norm, b, gg.qmatmul(&format!("{prefix}.attn_q.weight"))?)
         } else {
@@ -135,7 +136,30 @@ impl QuantizedAttention {
         };
 
         let o_proj = gg.qmatmul(&format!("{prefix}.attn_output.weight"))?;
-        let kv_cache = ConcatKvCache::new(2);
+        let kv_cache = ConcatKvCache::new(1);
+
+        // Calculate softmax_scale with Yarn mscale correction (critical for DeepSeek2)
+        let q_head_dim = cfg.qk_nope_head_dim + cfg.qk_rope_head_dim;
+        let mut softmax_scale = 1.0 / (q_head_dim as f64).sqrt();
+        if let Some(DeepSeekV2RopeScaling::Yarn {
+            factor,
+            mscale_all_dim,
+            ..
+        }) = &cfg.rope_scaling
+        {
+            // mscale = 0.1 * mscale_all_dim * ln(factor) + 1.0
+            let mscale = if *factor <= 1.0 {
+                1.0
+            } else {
+                0.1 * (*mscale_all_dim as f64) * (*factor as f64).ln() + 1.0
+            };
+            softmax_scale *= mscale * mscale;
+            log::info!(
+                "DeepSeek2 Yarn softmax_scale correction: mscale={:.4}, final_scale={:.6}",
+                mscale,
+                softmax_scale
+            );
+        }
 
         Ok(Self {
             kv_a_proj_with_mqa,
@@ -149,6 +173,7 @@ impl QuantizedAttention {
             rotary_emb,
             cfg: cfg.clone(),
             kv_cache,
+            softmax_scale,
         })
     }
 
@@ -164,12 +189,12 @@ impl QuantizedAttention {
         {
             let x = q_a.forward(x)?;
             let x = q_norm.forward(&x)?;
-            q_b.forward(&x)?
+            q_b.forward(&x)?.to_dtype(DType::F32)?
         } else {
-            self.q_proj.forward(x)?
+            self.q_proj.forward(x)?.to_dtype(DType::F32)?
         };
 
-        let kv = self.kv_a_proj_with_mqa.forward(x)?;
+        let kv = self.kv_a_proj_with_mqa.forward(x)?.to_dtype(DType::F32)?;
         let kv_lora_rank = self.cfg.kv_lora_rank;
         let qk_rope_head_dim = self.cfg.qk_rope_head_dim;
         let qk_nope_head_dim = self.cfg.qk_nope_head_dim;
@@ -182,7 +207,10 @@ impl QuantizedAttention {
             .contiguous()?;
 
         let kv_compressed = self.kv_a_layernorm.forward(&kv_compressed)?;
-        let kv_decompressed = self.kv_b_proj.forward(&kv_compressed)?;
+        let kv_decompressed = self
+            .kv_b_proj
+            .forward(&kv_compressed)?
+            .to_dtype(DType::F32)?;
 
         let q_head_dim = qk_nope_head_dim + qk_rope_head_dim;
         let q = q
@@ -210,29 +238,17 @@ impl QuantizedAttention {
 
         // Apply RoPE
         let (q_rope, k_rope) = {
-            let original_dtype = q_rope.dtype();
             let q_rope = q_rope.transpose(1, 2)?.contiguous()?.to_dtype(DType::F32)?;
             let k_rope = k_rope
                 .unsqueeze(2)?
                 .transpose(1, 2)?
                 .contiguous()?
                 .to_dtype(DType::F32)?;
-            log::info!(
-                "RoPE forward: q_rope dtype={:?}, k_rope dtype={:?}",
-                q_rope.dtype(),
-                k_rope.dtype()
-            );
+
             let (q_rope, k_rope) = self.rotary_emb.forward(&q_rope, &k_rope, input_pos)?;
             (
-                q_rope
-                    .transpose(1, 2)?
-                    .contiguous()?
-                    .to_dtype(original_dtype)?,
-                k_rope
-                    .transpose(1, 2)?
-                    .squeeze(2)?
-                    .contiguous()?
-                    .to_dtype(original_dtype)?,
+                q_rope.transpose(1, 2)?.contiguous()?,
+                k_rope.transpose(1, 2)?.squeeze(2)?.contiguous()?,
             )
         };
 
@@ -254,12 +270,11 @@ impl QuantizedAttention {
 
         let (k_cached, v_cached) = self.kv_cache.append(&k, &v_base)?;
 
-        let scale = 1.0 / (q_head_dim as f64).sqrt();
         let q = q.transpose(1, 2)?.contiguous()?;
         let k = k_cached.transpose(1, 2)?.contiguous()?;
         let v = v_cached.transpose(1, 2)?.contiguous()?;
 
-        let mut scores = (q.matmul(&k.transpose(2, 3)?.contiguous()?)? * scale)?;
+        let mut scores = (q.matmul(&k.transpose(2, 3)?.contiguous()?)? * self.softmax_scale)?;
         if let Some(m) = mask {
             scores = scores.broadcast_add(m)?;
         }
@@ -270,7 +285,7 @@ impl QuantizedAttention {
             .contiguous()?
             .reshape((b_sz, seq_len, ()))?;
 
-        self.o_proj.forward(&xs)
+        self.o_proj.forward(&xs)?.to_dtype(DType::F32)
     }
 
     pub fn clear_kv_cache(&mut self) {
@@ -435,6 +450,119 @@ impl GGUFDeepSeek2 {
             kv_lora_rank
         );
 
+        // Detect Yarn parameters (DeepSeek V2 specific)
+        let rope_scaling = {
+            let get_f32 = |keys: &[&str]| -> Option<f32> {
+                for key in keys {
+                    if let Some(v) = md_get(key).and_then(|v| v.to_f32().ok()) {
+                        return Some(v);
+                    }
+                }
+                None
+            };
+
+            let get_u32 = |keys: &[&str]| -> Option<u32> {
+                for key in keys {
+                    if let Some(v) = md_get(key).and_then(|v| v.to_u32().ok()) {
+                        return Some(v);
+                    }
+                }
+                None
+            };
+
+            let get_str = |keys: &[&str]| -> Option<String> {
+                for key in keys {
+                    if let Some(v) = md_get(key).and_then(|v| match v {
+                        gguf_file::Value::String(s) => Some(s.clone()),
+                        _ => None,
+                    }) {
+                        return Some(v);
+                    }
+                }
+                None
+            };
+
+            let scaling_type = get_str(&["rope.scaling.type", "deepseek2.rope.scaling.type"]);
+            let is_yarn = scaling_type.as_deref() == Some("yarn");
+
+            // Enforce Yarn for DeepSeek2 architecture if not explicitly disabled or other type
+            if is_yarn || arch == "deepseek2" || arch == "deepseek_v2" {
+                let factor = get_f32(&["rope.scaling.factor", "deepseek2.rope.scaling.factor"])
+                    .unwrap_or(40.0);
+                let original_max_position_embeddings = get_u32(&[
+                    "rope.scaling.original_context_length",
+                    "deepseek2.rope.scaling.original_context_length",
+                ])
+                .unwrap_or(4096) as usize;
+
+                let beta_fast = get_f32(&[
+                    "rope.scaling.yarn_beta_fast",
+                    "deepseek2.rope.scaling.yarn_beta_fast",
+                ])
+                .unwrap_or(32.0);
+                let beta_slow = get_f32(&[
+                    "rope.scaling.yarn_beta_slow",
+                    "deepseek2.rope.scaling.yarn_beta_slow",
+                ])
+                .unwrap_or(1.0);
+
+                // mscale lookup: try multiple GGUF key variants
+                // Note: yarn_log_multiplier in some GGUFs is stored as mscale*0.1 due to formula semantics
+                let mscale = get_f32(&[
+                    "rope.scaling.yarn_mscale",
+                    "deepseek2.rope.scaling.yarn_mscale",
+                    "rope.scaling.mscale",
+                    "deepseek2.rope.scaling.mscale",
+                ])
+                .or_else(|| {
+                    // yarn_log_multiplier is stored as mscale * 0.1 in some GGUF files
+                    get_f32(&[
+                        "rope.scaling.yarn_log_multiplier",
+                        "deepseek2.rope.scaling.yarn_log_multiplier",
+                    ])
+                    .map(|v| v * 10.0) // Convert back: 0.0707 * 10 = 0.707
+                })
+                .unwrap_or(0.707); // DeepSeek V2 standard: 1/sqrt(2) ≈ 0.707
+
+                let mscale_all_dim = get_f32(&[
+                    "rope.scaling.yarn_mscale_all_dim",
+                    "deepseek2.rope.scaling.yarn_mscale_all_dim",
+                    "rope.scaling.mscale_all_dim",
+                    "deepseek2.rope.scaling.mscale_all_dim",
+                ])
+                .or_else(|| {
+                    get_f32(&[
+                        "rope.scaling.yarn_log_multiplier",
+                        "deepseek2.rope.scaling.yarn_log_multiplier",
+                    ])
+                    .map(|v| v * 10.0)
+                })
+                .unwrap_or(0.707);
+
+                log::info!(
+                    "DeepSeek2 GGUF: Yarn RoPE detected. Factor={}, OriginalCtx={}, Beta={}/{}, mscale={:.4}/{:.4}",
+                    factor,
+                    original_max_position_embeddings,
+                    beta_fast,
+                    beta_slow,
+                    mscale,
+                    mscale_all_dim
+                );
+
+                Some(DeepSeekV2RopeScaling::Yarn {
+                    original_max_position_embeddings,
+                    beta_fast,
+                    beta_slow,
+                    mscale,
+                    mscale_all_dim,
+                    factor,
+                    scaling_type: ScaledRopeType::Yarn,
+                })
+            } else {
+                None
+            }
+        };
+
         let cfg = DeepSeekV2Config {
             vocab_size,
             hidden_size,
@@ -462,17 +590,20 @@ impl GGUFDeepSeek2 {
             topk_group: 1,
             topk_method: TopkMethod::Greedy,
             scoring_func: ScoringFunc::Softmax,
-            rope_scaling: None,
+            rope_scaling,
             tie_word_embeddings: false,
             hidden_act: candle_nn::Activation::Silu,
         };
 
-        log::info!("DeepSeek2 GGUF: loading token embeddings...");
+        log::info!("DeepSeek2 GGUF: loading token embeddings (dtype=F32)...");
         let embed_tokens = gg.tensor("token_embd.weight")?.dequantize(device)?;
         let embed_tokens = Embedding::new(embed_tokens, hidden_size);
 
         log::info!("DeepSeek2 GGUF: loading output norm and lm_head...");
-        let norm = gg.rms_norm("output_norm.weight", rms_norm_eps)?;
+        let norm = RmsNorm::new(
+            gg.tensor("output_norm.weight")?.dequantize(device)?,
+            rms_norm_eps,
+        );
         let output = match gg.qmatmul("output.weight") {
             Ok(v) => v,
             _ => {
@@ -517,11 +648,17 @@ impl GGUFDeepSeek2 {
                 num_hidden_layers
             );
             log::info!("  -> loading {}.attn_norm.weight", prefix);
-            let input_layernorm =
-                gg.rms_norm(&format!("{prefix}.attn_norm.weight"), rms_norm_eps)?;
+            let input_layernorm = RmsNorm::new(
+                gg.tensor(&format!("{prefix}.attn_norm.weight"))?
+                    .dequantize(device)?,
+                rms_norm_eps,
+            );
             log::info!("  -> loading {}.ffn_norm.weight", prefix);
-            let post_attention_layernorm =
-                gg.rms_norm(&format!("{prefix}.ffn_norm.weight"), rms_norm_eps)?;
+            let post_attention_layernorm = RmsNorm::new(
+                gg.tensor(&format!("{prefix}.ffn_norm.weight"))?
+                    .dequantize(device)?,
+                rms_norm_eps,
+            );
             log::info!("  -> loading attention for {}", prefix);
             let attn =
                 QuantizedAttention::new(&mut gg, &prefix, dtype, device, &cfg, rotary_emb.clone())?;
@@ -542,7 +679,7 @@ impl GGUFDeepSeek2 {
                 let gate_weight = gg
                     .tensor(&format!("{prefix}.ffn_gate_inp.weight"))?
                     .dequantize(device)?;
-                let gate = candle_nn::Linear::new(gate_weight, None); // Bias? DeepSeek usually no bias in simplified models
+                let gate = candle_nn::Linear::new(gate_weight, None);
 
                 let gate_experts_t = gg.tensor(&format!("{prefix}.ffn_gate_exps.weight"))?;
                 let gate_experts = if matches!(
@@ -557,11 +694,12 @@ impl GGUFDeepSeek2 {
                     ExpertWeights::Quantized(Arc::new(gate_experts_t))
                 } else {
                     log::info!(
-                        "Dequantizing {} MOE experts to F16 (dtype {:?})",
+                        "Dequantizing {} MOE experts to {:?} (dtype {:?})",
                         prefix,
+                        dtype,
                         gate_experts_t.dtype()
                     );
-                    ExpertWeights::Dequantized(gate_experts_t.dequantize_f16(device)?)
+                    ExpertWeights::Dequantized(gate_experts_t.dequantize(device)?.to_dtype(dtype)?)
                 };
 
                 let up_experts_t = gg.tensor(&format!("{prefix}.ffn_up_exps.weight"))?;
@@ -576,7 +714,7 @@ impl GGUFDeepSeek2 {
                 ) {
                     ExpertWeights::Quantized(Arc::new(up_experts_t))
                 } else {
-                    ExpertWeights::Dequantized(up_experts_t.dequantize_f16(device)?)
+                    ExpertWeights::Dequantized(up_experts_t.dequantize(device)?.to_dtype(dtype)?)
                 };
 
                 let down_experts_t = gg.tensor(&format!("{prefix}.ffn_down_exps.weight"))?;
@@ -591,7 +729,7 @@ impl GGUFDeepSeek2 {
                 ) {
                     ExpertWeights::Quantized(Arc::new(down_experts_t))
                 } else {
-                    ExpertWeights::Dequantized(down_experts_t.dequantize_f16(device)?)
+                    ExpertWeights::Dequantized(down_experts_t.dequantize(device)?.to_dtype(dtype)?)
                 };
 
                 let moe = FusedMoeGGUF {
@@ -626,33 +764,50 @@ impl GGUFDeepSeek2 {
         })
     }
 
+    fn causal_mask(&self, b: usize, tgt: usize, offset: usize) -> Result<Tensor> {
+        let mask: Vec<_> = (0..tgt)
+            .flat_map(|i| {
+                (0..(tgt + offset)).map(move |j| {
+                    if j <= i + offset {
+                        0f32
+                    } else {
+                        f32::NEG_INFINITY
+                    }
+                })
+            })
+            .collect();
+        Tensor::from_slice(&mask, (b, 1, tgt, tgt + offset), &self.device)
+    }
+
     pub fn forward(&mut self, input: &Tensor, pos: usize) -> Result<Tensor> {
-        let (_b_sz, seq_len) = input.dims2()?;
+        let (b_sz, seq_len) = input.dims2()?;
         let is_prefill = seq_len > 1;
         let mut xs = self.embed_tokens.forward(input)?;
 
         let mask = if seq_len == 1 {
             None
         } else {
-            // Simplified mask
-            Some(Tensor::zeros((seq_len, seq_len), DType::F32, &self.device)?)
+            Some(self.causal_mask(b_sz, seq_len, pos)?)
         };
 
         for layer in &mut self.layers {
             let residual = &xs;
             let x = layer.input_layernorm.forward(&xs)?;
-            let x = layer.attn.forward(&x, mask.as_ref(), pos)?;
+            let x = layer
+                .attn
+                .forward(&x, mask.as_ref(), pos)?
+                .to_dtype(DType::F32)?;
             let x = (x + residual)?;
 
             let residual = &x;
             let x = layer.post_attention_layernorm.forward(&x)?;
             let x = match &layer.shared_experts {
                 Some(shared) => {
-                    let moe_out = layer.mlp.forward(&x, is_prefill)?;
-                    let shared_out = shared.forward(&x)?;
+                    let moe_out = layer.mlp.forward(&x, is_prefill)?.to_dtype(DType::F32)?;
+                    let shared_out = shared.forward(&x)?.to_dtype(DType::F32)?;
                     (moe_out + shared_out)?
                 }
-                None => layer.mlp.forward(&x, is_prefill)?,
+                None => layer.mlp.forward(&x, is_prefill)?.to_dtype(DType::F32)?,
             };
             xs = (x + residual)?;
         }
@@ -667,5 +822,7 @@ impl GGUFDeepSeek2 {
         for layer in &mut self.layers {
             layer.attn.clear_kv_cache();
         }
+        // Force synchronization to ensure clean state on GPU
+        let _ = self.device.synchronize();
     }
 }
