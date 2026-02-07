@@ -1,7 +1,7 @@
+use crate::core::settings_v2::SettingsV2State;
 use std::fs::{File, create_dir_all};
 use std::io::{Read, Write};
 use tauri::Manager;
-use crate::core::settings_v2::SettingsV2State;
 
 #[tauri::command]
 pub fn get_experimental_features_enabled(app: tauri::AppHandle) -> Result<bool, String> {

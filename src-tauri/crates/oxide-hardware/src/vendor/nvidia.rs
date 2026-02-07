@@ -2,6 +2,7 @@ use crate::types::{GpuInfo, GpuUsage};
 
 use {
     crate::types::Vendor,
+    nvml_wrapper::enum_wrappers::device::TemperatureSensor,
     nvml_wrapper::{error::NvmlError, Nvml},
     std::sync::OnceLock,
 };
@@ -61,11 +62,21 @@ impl GpuInfo {
         let nvml = get_nvml().ok_or(NvmlError::Unknown)?;
         let device = nvml.device_by_index(index)?;
         let mem_info = device.memory_info()?;
+        let temperature_c = device
+            .temperature(TemperatureSensor::Gpu)
+            .ok()
+            .map(|value| value as f32);
+        let utilization_percent = device
+            .utilization_rates()
+            .ok()
+            .map(|rates| rates.gpu as f32);
 
         Ok(GpuUsage {
             uuid: self.uuid.clone(),
             used_memory: mem_info.used / (1024 * 1024), // bytes to MiB
             total_memory: mem_info.total / (1024 * 1024), // bytes to MiB
+            temperature_c,
+            utilization_percent,
         })
     }
 }

@@ -48,11 +48,7 @@ async fn auth_middleware(
 
 fn build_cors(config: &OpenAiServerConfig) -> Result<Option<CorsLayer>, String> {
     let methods = [Method::GET, Method::POST, Method::OPTIONS];
-    let headers = [
-        header::AUTHORIZATION,
-        header::CONTENT_TYPE,
-        header::ACCEPT,
-    ];
+    let headers = [header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT];
 
     match config.cors_mode {
         CorsMode::SameOrigin => Ok(None),

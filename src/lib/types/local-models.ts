@@ -132,6 +132,9 @@ export interface RemoteModelInfo {
     author?: string;
     description?: string;
     license?: string;
+    pipeline_tag?: string;
+    library?: string;
+    languages: string[];
     downloads: number;
     likes: number;
     tags: string[];

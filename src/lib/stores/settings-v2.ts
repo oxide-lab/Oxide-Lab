@@ -21,6 +21,13 @@ const loading = writable(false);
 const error = writable<string | null>(null);
 const warnings = writable<string[]>([]);
 const openAiStatus = writable<Awaited<ReturnType<typeof getOpenAiServerStatus>> | null>(null);
+const HARDWARE_ENV_KEYS = new Set([
+  'CUDA_VISIBLE_DEVICES',
+  'HIP_VISIBLE_DEVICES',
+  'OXIDE_SELECTED_GPU_UUID',
+  'OXIDE_MEMORY_MAPPING',
+  'OXIDE_GPU_SPLIT',
+]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -40,6 +47,45 @@ function countDiffs(left: unknown, right: unknown): number {
     return count;
   }
   return Object.is(left, right) ? 0 : 1;
+}
+
+function filterExtraEnv(
+  env: Record<string, string>,
+  predicate: (key: string) => boolean,
+): Record<string, string> {
+  const entries = Object.entries(env).filter(([key]) => predicate(key));
+  return Object.fromEntries(entries);
+}
+
+function projectHardwareSettings(performance: AppSettingsV2['performance']) {
+  const runtime = performance.llama_runtime;
+  const extraEnv = runtime.extra_env ?? {};
+  return {
+    memory_mode: performance.memory_mode,
+    llama_runtime: {
+      n_gpu_layers: runtime.n_gpu_layers,
+      threads: runtime.threads,
+      batch_size: runtime.batch_size,
+      extra_env: filterExtraEnv(extraEnv, (key) => HARDWARE_ENV_KEYS.has(key)),
+    },
+  };
+}
+
+function projectRuntimeSettings(performance: AppSettingsV2['performance']) {
+  const runtime = performance.llama_runtime;
+  const extraEnv = runtime.extra_env ?? {};
+  const runtimeWithoutHardware = Object.fromEntries(
+    Object.entries(runtime).filter(
+      ([key]) => key !== 'n_gpu_layers' && key !== 'threads' && key !== 'batch_size' && key !== 'extra_env',
+    ),
+  );
+  return {
+    manual_thread_limit: performance.manual_thread_limit,
+    llama_runtime: {
+      ...runtimeWithoutHardware,
+      extra_env: filterExtraEnv(extraEnv, (key) => !HARDWARE_ENV_KEYS.has(key)),
+    },
+  };
 }
 
 async function runFrontendMigration(snapshot: AppSettingsV2) {
@@ -137,6 +183,7 @@ const dirtyBySection = derived([settings, sessionBaseline], ([$settings, $baseli
       general: 0,
       models_storage: 0,
       performance: 0,
+      hardware: 0,
       chat_presets: 0,
       privacy_data: 0,
       developer: 0,
@@ -147,7 +194,14 @@ const dirtyBySection = derived([settings, sessionBaseline], ([$settings, $baseli
   return {
     general: countDiffs($settings.general, $baseline.general),
     models_storage: countDiffs($settings.models_storage, $baseline.models_storage),
-    performance: countDiffs($settings.performance, $baseline.performance),
+    performance: countDiffs(
+      projectRuntimeSettings($settings.performance),
+      projectRuntimeSettings($baseline.performance),
+    ),
+    hardware: countDiffs(
+      projectHardwareSettings($settings.performance),
+      projectHardwareSettings($baseline.performance),
+    ),
     chat_presets: countDiffs($settings.chat_presets, $baseline.chat_presets),
     privacy_data: countDiffs($settings.privacy_data, $baseline.privacy_data),
     developer: countDiffs($settings.developer, $baseline.developer),

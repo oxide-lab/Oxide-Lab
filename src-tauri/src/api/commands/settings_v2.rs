@@ -39,7 +39,9 @@ fn apply_runtime_side_effects(
 }
 
 #[tauri::command]
-pub fn get_app_settings_v2(state: tauri::State<'_, SettingsV2State>) -> Result<AppSettingsV2, String> {
+pub fn get_app_settings_v2(
+    state: tauri::State<'_, SettingsV2State>,
+) -> Result<AppSettingsV2, String> {
     let guard = state.inner.lock().map_err(|e| e.to_string())?;
     Ok(guard.get())
 }
@@ -211,15 +213,6 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
         dev_only: false,
     },
     SearchEntry {
-        id: "performance.n_gpu_layers",
-        section: "performance",
-        title: "GPU Layers",
-        description: "Number of offloaded layers",
-        keywords: &["gpu", "layers", "offload", "vram"],
-        synonyms: &["ngl", "слои gpu", "camadas gpu"],
-        dev_only: false,
-    },
-    SearchEntry {
         id: "performance.ctx_size",
         section: "performance",
         title: "Context Size",
@@ -229,12 +222,66 @@ const SEARCH_ENTRIES: &[SearchEntry] = &[
         dev_only: false,
     },
     SearchEntry {
-        id: "performance.batch_size",
-        section: "performance",
-        title: "Batch Size",
-        description: "Batch token size",
-        keywords: &["batch", "ubatch", "tokens"],
-        synonyms: &["throughput", "пакет", "lote"],
+        id: "performance.hardware.gpu_offload",
+        section: "hardware",
+        title: "Hardware GPU Offload",
+        description: "GPU offload layers and VRAM estimation",
+        keywords: &["hardware", "gpu", "offload", "layers", "vram"],
+        synonyms: &["gpu layers", "аппаратное ускорение", "camadas gpu"],
+        dev_only: false,
+    },
+    SearchEntry {
+        id: "performance.hardware.gpu_selection",
+        section: "hardware",
+        title: "Hardware GPU Selection",
+        description: "Choose runtime GPU for model execution",
+        keywords: &["hardware", "gpu", "device", "selection"],
+        synonyms: &["main gpu", "выбор gpu", "selecao gpu"],
+        dev_only: false,
+    },
+    SearchEntry {
+        id: "performance.hardware.cpu_threads",
+        section: "hardware",
+        title: "Hardware CPU Threads",
+        description: "CPU thread tuning for llama runtime",
+        keywords: &["hardware", "cpu", "threads", "n_threads"],
+        synonyms: &["thread limit", "потоки cpu", "threads cpu"],
+        dev_only: false,
+    },
+    SearchEntry {
+        id: "performance.hardware.memory_mapping",
+        section: "hardware",
+        title: "Memory Mapping",
+        description: "Load model in RAM or memory-mapped I/O",
+        keywords: &["hardware", "memory", "mmap", "ram"],
+        synonyms: &["no mmap", "карта памяти", "mapeamento"],
+        dev_only: false,
+    },
+    SearchEntry {
+        id: "performance.hardware.split_gpus",
+        section: "hardware",
+        title: "Split Across GPUs",
+        description: "Distribute model layers across detected GPUs",
+        keywords: &["hardware", "gpu", "split", "multi-gpu"],
+        synonyms: &["split mode", "несколько gpu", "multi gpu"],
+        dev_only: false,
+    },
+    SearchEntry {
+        id: "performance.hardware.batch_size",
+        section: "hardware",
+        title: "Hardware Batch Size",
+        description: "Batch size tuning for throughput and latency",
+        keywords: &["hardware", "batch", "throughput", "latency"],
+        synonyms: &["token batch", "размер батча", "tamanho batch"],
+        dev_only: false,
+    },
+    SearchEntry {
+        id: "performance.hardware.memory_mode",
+        section: "hardware",
+        title: "Hardware Memory Mode",
+        description: "Planner strategy for memory pressure",
+        keywords: &["hardware", "memory mode", "planner"],
+        synonyms: &["memory profile", "режим памяти", "modo memoria"],
         dev_only: false,
     },
     SearchEntry {
@@ -349,7 +396,10 @@ pub fn search_settings_v2(
 
     let mut out = Vec::new();
     for hit_id in index.search(&normalized).into_iter().take(20) {
-        let Some(entry) = SEARCH_ENTRIES.iter().find(|entry| entry.id == hit_id.as_str()) else {
+        let Some(entry) = SEARCH_ENTRIES
+            .iter()
+            .find(|entry| entry.id == hit_id.as_str())
+        else {
             continue;
         };
         out.push(SettingsSearchResult {

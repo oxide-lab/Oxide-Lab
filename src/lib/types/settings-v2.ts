@@ -145,6 +145,7 @@ export type SettingsSectionId =
   | 'general'
   | 'models_storage'
   | 'performance'
+  | 'hardware'
   | 'chat_presets'
   | 'privacy_data'
   | 'developer'

@@ -7,6 +7,7 @@ export { default as VramBudgetCard } from './VramBudgetCard.svelte';
 export { default as SettingsSectionGeneral } from './SettingsSectionGeneral.svelte';
 export { default as SettingsSectionModelsStorage } from './SettingsSectionModelsStorage.svelte';
 export { default as SettingsSectionPerformance } from './SettingsSectionPerformance.svelte';
+export { default as SettingsSectionHardware } from './SettingsSectionHardware.svelte';
 export { default as SettingsSectionChatPresets } from './SettingsSectionChatPresets.svelte';
 export { default as SettingsSectionPrivacyData } from './SettingsSectionPrivacyData.svelte';
 export { default as SettingsSectionDeveloper } from './SettingsSectionDeveloper.svelte';

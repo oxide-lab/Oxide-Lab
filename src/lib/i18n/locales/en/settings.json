@@ -164,8 +164,12 @@
         "description": "Default model folders, cache locations, and discovery behavior."
       },
       "performance": {
-        "title": "Performance",
-        "description": "Runtime loading and memory controls."
+        "title": "Runtime",
+        "description": "Generation runtime tuning and inference behavior."
+      },
+      "hardware": {
+        "title": "Hardware",
+        "description": "Live hardware dashboard, GPU offload and system resource controls."
       },
       "chat_presets": {
         "title": "Chat & Presets",

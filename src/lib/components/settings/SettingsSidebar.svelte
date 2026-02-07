@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
+  import * as Separator from '$lib/components/ui/separator';
   import { t } from '$lib/i18n';
   import { cn } from '$lib/utils';
   import type { SettingsSectionId } from '$lib/types/settings-v2';
@@ -9,6 +10,7 @@
     id: SettingsSectionId;
     label: string;
     icon: any;
+    separatorBefore?: boolean;
   }
 
   interface Props {
@@ -25,6 +27,9 @@
 <aside class={cn('w-full rounded-xl border bg-card p-2', className)}>
   <nav aria-label="Settings sections" class="space-y-1">
     {#each sections as section (section.id)}
+      {#if section.separatorBefore}
+        <Separator.Root class="my-2" />
+      {/if}
       <Button
         variant="ghost"
         class={cn(

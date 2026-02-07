@@ -1,5 +1,5 @@
-use crate::core::state::SharedState;
 use crate::core::settings_v2::SettingsV2State;
+use crate::core::state::SharedState;
 use crate::core::types::{ActiveBackend, BackendPreference, LlamaRuntimeConfig};
 use crate::inference::scheduler::{SchedulerStats, VramScheduler};
 use tauri::Manager;

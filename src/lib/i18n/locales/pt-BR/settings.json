@@ -164,8 +164,12 @@
         "description": "Pastas de modelos, cache e descoberta."
       },
       "performance": {
-        "title": "Desempenho",
-        "description": "Controles de carregamento e memória."
+        "title": "Runtime",
+        "description": "Ajustes de runtime e comportamento de inferência."
+      },
+      "hardware": {
+        "title": "Hardware",
+        "description": "Painel de hardware em tempo real, offload de GPU e controle de recursos do sistema."
       },
       "chat_presets": {
         "title": "Chat e Presets",

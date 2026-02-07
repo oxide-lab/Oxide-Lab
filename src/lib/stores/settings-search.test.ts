@@ -167,4 +167,20 @@ describe('settings-search store', () => {
     expect(get(settingsSearchStore.searchHistory)).toEqual([]);
     expect(localStorage.getItem('settings.search.history.v2')).toBe('[]');
   });
+
+  it('keeps hardware registry entries mapped to hardware section', () => {
+    const splitEntry = settingsSearchStore.registry.find(
+      (item) => item.id === 'performance.hardware.split_gpus',
+    );
+    const batchEntry = settingsSearchStore.registry.find(
+      (item) => item.id === 'performance.hardware.batch_size',
+    );
+    const memoryModeEntry = settingsSearchStore.registry.find(
+      (item) => item.id === 'performance.hardware.memory_mode',
+    );
+
+    expect(splitEntry?.section).toBe('hardware');
+    expect(batchEntry?.section).toBe('hardware');
+    expect(memoryModeEntry?.section).toBe('hardware');
+  });
 });

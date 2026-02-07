@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { HardwareSystemInfo } from '$lib/types/hardware';
 
-interface BackendVersion {
+export interface BackendVersion {
     version: string;
     backend: string;
 }
@@ -209,6 +209,16 @@ async function saveRuntimeConfig(config: LlamaRuntimeConfig): Promise<void> {
     await invoke('set_llama_runtime_config', { config });
 }
 
+async function resolveInstalledBackendExecutable(
+    version: string,
+    backend: string,
+): Promise<string | null> {
+    return await invoke<string | null>('plugin:llamacpp|resolve_installed_backend_executable', {
+        version,
+        backend,
+    });
+}
+
 export class LlamaBackendService {
     async getRuntimeConfig(): Promise<LlamaRuntimeConfig> {
         return await getRuntimeConfig();
@@ -276,6 +286,42 @@ export class LlamaBackendService {
         };
     }
 
+    async getInstalledOverview(): Promise<{
+        currentBackend: string | null;
+        serverPath: string | null;
+        installed: BackendVersion[];
+    }> {
+        const [runtime, backendsDir] = await Promise.all([getRuntimeConfig(), getBackendsDir()]);
+        const inferredCurrentBackend = inferBackendFromServerPath(runtime.server_path);
+        const currentBackend = inferredCurrentBackend ?? runtime.selected_backend ?? null;
+
+        if (inferredCurrentBackend && inferredCurrentBackend !== runtime.selected_backend) {
+            await saveRuntimeConfig({
+                ...runtime,
+                selected_backend: inferredCurrentBackend,
+            });
+        }
+
+        let installed = await getLocalInstalledBackends(backendsDir);
+        const currentEntry = parseBackendString(currentBackend);
+        if (
+            currentEntry &&
+            !installed.some(
+                (item) =>
+                    item.version === currentEntry.version && item.backend === currentEntry.backend,
+            )
+        ) {
+            installed = [currentEntry, ...installed];
+        }
+        installed.sort(compareBackendVersion);
+
+        return {
+            currentBackend,
+            serverPath: runtime.server_path ?? null,
+            installed,
+        };
+    }
+
     async checkForUpdates(currentBackend: string | null): Promise<BackendUpdateCheck | null> {
         if (!currentBackend) {
             return null;
@@ -308,6 +354,27 @@ export class LlamaBackendService {
         return {
             backendString,
             serverPath,
+        };
+    }
+
+    async setSelectedBackend(backendString: string): Promise<{ backendString: string; serverPath: string | null }> {
+        const [version, backend] = backendString.split('/');
+        if (!version || !backend) {
+            throw new Error(`Invalid backend format: ${backendString}`);
+        }
+
+        const runtime = await getRuntimeConfig();
+        const resolvedServerPath = await resolveInstalledBackendExecutable(version, backend);
+        await saveRuntimeConfig({
+            ...runtime,
+            selected_backend: backendString,
+            // Clear stale path when backend binary cannot be resolved locally.
+            server_path: resolvedServerPath,
+        });
+
+        return {
+            backendString,
+            serverPath: resolvedServerPath,
         };
     }
 }

@@ -3,8 +3,8 @@
  *
  * Команды для управления локалью из frontend.
  */
-use crate::i18n::{self, Locale};
 use crate::core::settings_v2::SettingsV2State;
+use crate::i18n::{self, Locale};
 use tauri::Manager;
 
 /// Получить текущую локаль

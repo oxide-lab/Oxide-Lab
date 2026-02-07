@@ -56,6 +56,8 @@ impl GpuInfo {
                     uuid: self.uuid.clone(),
                     total_memory: read_mem(&device_path.join("mem_info_vram_total")),
                     used_memory: read_mem(&device_path.join("mem_info_vram_used")),
+                    temperature_c: None,
+                    utilization_percent: None,
                 });
             }
             Err(format!("GPU not found").into())
@@ -88,6 +90,8 @@ impl GpuInfo {
                 uuid: self.uuid.clone(),
                 used_memory: used_memory as u64,
                 total_memory: self.total_memory,
+                temperature_c: None,
+                utilization_percent: None,
             },
             None => self.get_usage_unsupported(),
         }

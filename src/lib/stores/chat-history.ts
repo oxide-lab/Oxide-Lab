@@ -317,12 +317,15 @@ function createChatHistoryStore() {
         },
 
         deleteSession: async (sessionId: string) => {
+            let deleted = false;
             try {
                 const db = await getDb();
                 await db.execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
+                deleted = true;
             } catch (err) {
                 console.error('Failed to delete session from DB:', err);
             }
+            if (!deleted) return;
 
             update((s) => {
                 const sessions = s.sessions.filter((sess) => sess.id !== sessionId);
@@ -357,12 +360,15 @@ function createChatHistoryStore() {
         },
 
         clearAll: async () => {
+            let deleted = false;
             try {
                 const db = await getDb();
                 await db.execute('DELETE FROM sessions');
+                deleted = true;
             } catch (err) {
                 console.error('Failed to clear chat history:', err);
             }
+            if (!deleted) return;
 
             update((s) => ({ ...s, sessions: [], currentSessionId: null }));
         },

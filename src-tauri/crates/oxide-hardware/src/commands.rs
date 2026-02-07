@@ -3,7 +3,7 @@ use crate::{
     vendor::{nvidia, vulkan},
     SYSTEM_INFO,
 };
-use sysinfo::System;
+use sysinfo::{Disks, System};
 
 #[tauri::command]
 pub fn get_system_info() -> SystemInfo {
@@ -66,11 +66,19 @@ pub fn get_system_usage() -> SystemUsage {
     let cpus = system.cpus();
     let cpu_usage =
         cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / (cpus.len().max(1) as f32);
+    let disks = Disks::new_with_refreshed_list();
+    let disk_total_bytes = disks.iter().map(|disk| disk.total_space()).sum::<u64>();
+    let disk_free_bytes = disks
+        .iter()
+        .map(|disk| disk.available_space())
+        .sum::<u64>();
 
     SystemUsage {
         cpu: cpu_usage,
         used_memory: system.used_memory() / 1024 / 1024, // bytes to MiB,
         total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB,
+        disk_free_bytes,
+        disk_total_bytes,
         gpus: get_system_info()
             .gpus
             .iter()

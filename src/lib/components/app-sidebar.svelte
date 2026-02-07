@@ -116,6 +116,21 @@
     void ensureDownloadManager();
   });
 
+  async function confirmDestructive(message: string): Promise<boolean> {
+    try {
+      const { confirm } = await import('@tauri-apps/plugin-dialog');
+      return await confirm(message, {
+        title: 'Confirm',
+        kind: 'warning',
+        okLabel: 'Delete',
+        cancelLabel: 'Cancel',
+      });
+    } catch {
+      if (typeof window === 'undefined') return false;
+      return window.confirm(message);
+    }
+  }
+
   function navigateTo(path: string) {
     if (currentPath === path) return;
     goto(path);
@@ -144,13 +159,13 @@
   }
 
   async function handleDeleteSession(id: string) {
-    const ok = confirm(deleteLabel + '?');
+    const ok = await confirmDestructive(deleteLabel + '?');
     if (!ok) return;
     await chatHistory.deleteSession(id);
   }
 
   async function handleDeleteAllChats() {
-    const ok = confirm(deleteAllChatsLabel + '?');
+    const ok = await confirmDestructive(deleteAllChatsLabel + '?');
     if (!ok) return;
     await chatHistory.clearAll();
   }
@@ -279,7 +294,7 @@
     </Sidebar.Group>
 
     <!-- Chats History (hidden when collapsed) -->
-    {#if sidebar.state !== 'collapsed' && hasAnySessions}
+    {#if sidebar.state !== 'collapsed'}
       <Sidebar.Group class="group/chats-collapsible flex-1 min-h-0 flex flex-col !p-0 !pb-2 translate-x-2">
         <Sidebar.GroupLabel>
           {#snippet child({ props })}
@@ -334,6 +349,9 @@
 
         {#if chatsExpanded}
         <Sidebar.GroupContent class="chat-history-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mr-2">
+          {#if !hasAnySessions}
+            <div class="pl-2 pr-2 pt-2 text-sm text-sidebar-foreground/50">No chats yet</div>
+          {/if}
           <!-- Today -->
           {#if $groupedSessions.today.length > 0}
             <div class="mb-1.5 pl-1.5 pr-2 pt-2 text-sm font-medium text-sidebar-foreground/50">{todayLabel}</div>

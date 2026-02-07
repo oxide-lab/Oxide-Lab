@@ -60,6 +60,8 @@ pub struct GpuUsage {
     pub uuid: String,
     pub used_memory: u64,
     pub total_memory: u64,
+    pub temperature_c: Option<f32>,
+    pub utilization_percent: Option<f32>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -67,5 +69,7 @@ pub struct SystemUsage {
     pub cpu: f32,
     pub used_memory: u64,
     pub total_memory: u64,
+    pub disk_free_bytes: u64,
+    pub disk_total_bytes: u64,
     pub gpus: Vec<GpuUsage>,
 }

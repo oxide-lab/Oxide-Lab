@@ -3,6 +3,7 @@
    * User Message Component
    * Displays a user message with attachments and edit functionality.
    */
+  import { onMount } from 'svelte';
   import type { ChatMessage, Attachment } from '$lib/chat/types';
   import { isImageFile, isImageMimeType } from '$lib/chat/types';
   import { Button } from '$lib/components/ui/button';
@@ -32,6 +33,8 @@
   // Edit state
   let isEditing = $state(false);
   let editContent = $state('');
+  let copyTooltipOpen = $state(false);
+  let editTooltipOpen = $state(false);
 
   // Derived: split attachments into images and files
   let imageAttachments = $derived(
@@ -45,12 +48,19 @@
     ) ?? []
   );
 
+  function closeActionTooltips() {
+    copyTooltipOpen = false;
+    editTooltipOpen = false;
+  }
+
   function handleCopy() {
+    closeActionTooltips();
     onCopy?.(message.content);
     navigator.clipboard.writeText(message.content);
   }
 
   function startEdit() {
+    closeActionTooltips();
     editContent = message.content;
     isEditing = true;
   }
@@ -77,6 +87,21 @@
       cancelEdit();
     }
   }
+
+  onMount(() => {
+    const onWheelOrTouch = () => closeActionTooltips();
+    const onScroll = () => closeActionTooltips();
+
+    window.addEventListener('wheel', onWheelOrTouch, { passive: true });
+    window.addEventListener('touchmove', onWheelOrTouch, { passive: true });
+    window.addEventListener('scroll', onScroll, true);
+
+    return () => {
+      window.removeEventListener('wheel', onWheelOrTouch);
+      window.removeEventListener('touchmove', onWheelOrTouch);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  });
 </script>
 
 <div
@@ -151,7 +176,7 @@
         class="message-actions mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
       >
         <Tooltip.Provider>
-          <Tooltip.Root delayDuration={60}>
+          <Tooltip.Root delayDuration={60} bind:open={copyTooltipOpen}>
             <Tooltip.Trigger>
               <Button
                 variant="ghost"
@@ -168,7 +193,7 @@
 
         {#if onEdit}
           <Tooltip.Provider>
-            <Tooltip.Root delayDuration={60}>
+            <Tooltip.Root delayDuration={60} bind:open={editTooltipOpen}>
               <Tooltip.Trigger>
                 <Button
                   variant="ghost"

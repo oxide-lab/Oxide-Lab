@@ -147,6 +147,7 @@ pub fn run() {
             crate::api::local_models::scan_local_models_folder,
             crate::api::local_models::search_huggingface_gguf,
             crate::api::local_models::download_hf_model_file,
+            crate::api::local_models::get_hf_model_metadata,
             crate::api::local_models::get_model_readme,
             crate::api::local_models::delete_local_model,
             crate::api::local_models::update_model_manifest,
@@ -263,7 +264,8 @@ pub fn run() {
 
     app.run(move |_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } = event {
-            if let Some(openai) = _handle.try_state::<crate::api::openai::OpenAiServerController>() {
+            if let Some(openai) = _handle.try_state::<crate::api::openai::OpenAiServerController>()
+            {
                 let controller = openai.inner().clone();
                 tauri::async_runtime::block_on(async move {
                     controller.stop().await;

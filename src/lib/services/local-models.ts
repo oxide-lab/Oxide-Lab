@@ -17,6 +17,11 @@ import type {
 } from '$lib/types/local-models';
 import { SimSearch } from '$lib/utils/simsearch';
 
+export interface RemoteModelMetadata {
+    parameter_count?: string;
+    context_length?: number;
+}
+
 export class LocalModelsService {
     /**
      * Scan a directory for local GGUF models.
@@ -113,6 +118,19 @@ export class LocalModelsService {
         } catch (error) {
             console.error('Failed to load model README:', error);
             throw new Error(`Failed to load model README: ${error}`);
+        }
+    }
+
+    /**
+     * Fetch supplemental metadata for a remote Hugging Face model.
+     */
+    static async getRemoteModelMetadata(repoId: string): Promise<RemoteModelMetadata> {
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            return await invoke<RemoteModelMetadata>('get_hf_model_metadata', { repoId });
+        } catch (error) {
+            console.error('Failed to load model metadata:', error);
+            throw new Error(`Failed to load model metadata: ${error}`);
         }
     }
 

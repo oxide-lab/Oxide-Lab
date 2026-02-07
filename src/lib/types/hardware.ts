@@ -39,11 +39,15 @@ export interface HardwareGpuUsage {
     uuid: string;
     used_memory: number;
     total_memory: number;
+    temperature_c?: number | null;
+    utilization_percent?: number | null;
 }
 
 export interface HardwareSystemUsage {
     cpu: number;
     used_memory: number;
     total_memory: number;
+    disk_free_bytes: number;
+    disk_total_bytes: number;
     gpus: HardwareGpuUsage[];
 }

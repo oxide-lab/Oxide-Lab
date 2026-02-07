@@ -25,6 +25,7 @@
   import SlidersHorizontal from 'phosphor-svelte/lib/SlidersHorizontal';
   import Cube from 'phosphor-svelte/lib/Cube';
   import Gauge from 'phosphor-svelte/lib/Gauge';
+  import Cpu from 'phosphor-svelte/lib/Cpu';
   import ChatsCircle from 'phosphor-svelte/lib/ChatsCircle';
   import Shield from 'phosphor-svelte/lib/Shield';
   import Code from 'phosphor-svelte/lib/Code';
@@ -105,6 +106,7 @@
     general: 'settings.v2.sections.general.title',
     models_storage: 'settings.v2.sections.models_storage.title',
     performance: 'settings.v2.sections.performance.title',
+    hardware: 'settings.v2.sections.hardware.title',
     chat_presets: 'settings.v2.sections.chat_presets.title',
     privacy_data: 'settings.v2.sections.privacy_data.title',
     developer: 'settings.v2.sections.developer.title',
@@ -113,16 +115,18 @@
   const settingsSectionOrder: SettingsSectionId[] = [
     'general',
     'models_storage',
-    'performance',
     'chat_presets',
     'privacy_data',
     'developer',
     'about',
+    'performance',
+    'hardware',
   ];
   const settingsSectionIconMap: Record<SettingsSectionId, any> = {
     general: SlidersHorizontal,
     models_storage: Cube,
     performance: Gauge,
+    hardware: Cpu,
     chat_presets: ChatsCircle,
     privacy_data: Shield,
     developer: Code,
@@ -463,6 +467,9 @@
                         </DropdownMenu.Trigger>
                         <DropdownMenu.Content align="start" sideOffset={6} class="w-56 z-[1400]">
                           {#each settingsSectionOrder as sectionId (sectionId)}
+                            {#if sectionId === 'performance'}
+                              <DropdownMenu.Separator />
+                            {/if}
                             {@const SectionIcon = settingsSectionIconMap[sectionId]}
                             <DropdownMenu.Item onSelect={() => openSettingsSectionShortcut(sectionId)}>
                               <SectionIcon class="size-4" />

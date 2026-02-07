@@ -128,7 +128,8 @@ impl Default for ChatPresetSettings {
         let precision = ChatPreset {
             id: "precision".to_string(),
             name: "Precision".to_string(),
-            system_prompt: "You are a precise assistant. State assumptions and avoid speculation.".to_string(),
+            system_prompt: "You are a precise assistant. State assumptions and avoid speculation."
+                .to_string(),
             sampling: ChatSamplingSettings {
                 temperature: 0.1,
                 top_p: 0.7,
@@ -342,7 +343,8 @@ pub struct SettingsV2Store {
 impl SettingsV2Store {
     pub fn load(app: &AppHandle) -> Result<Self, String> {
         let profile_dir = profile_dir(app)?;
-        fs::create_dir_all(&profile_dir).map_err(|e| format!("Failed to create profile dir: {e}"))?;
+        fs::create_dir_all(&profile_dir)
+            .map_err(|e| format!("Failed to create profile dir: {e}"))?;
 
         let path = profile_dir.join("settings_v2.json");
         let backup_path = profile_dir.join("settings_v2.bak");
@@ -353,7 +355,11 @@ impl SettingsV2Store {
                     Ok(parsed) => parsed,
                     Err(err) => {
                         let _ = fs::copy(&path, &backup_path);
-                        log::warn!("settings_v2.json parse error; backing up to {:?}: {}", backup_path, err);
+                        log::warn!(
+                            "settings_v2.json parse error; backing up to {:?}: {}",
+                            backup_path,
+                            err
+                        );
                         Self::migrate_from_legacy(app)?
                     }
                 },
@@ -446,7 +452,10 @@ impl SettingsV2Store {
         Ok(self.settings.clone())
     }
 
-    pub fn update_openai_config(&mut self, config: OpenAiServerConfig) -> Result<SettingsApplyResult, String> {
+    pub fn update_openai_config(
+        &mut self,
+        config: OpenAiServerConfig,
+    ) -> Result<SettingsApplyResult, String> {
         self.settings.developer.openai_server = config;
         let warnings = self.validate()?;
         self.save()?;
@@ -469,9 +478,18 @@ impl SettingsV2Store {
             profile_dir: profile.to_string_lossy().to_string(),
             settings_file: self.path.to_string_lossy().to_string(),
             settings_backup_file: self.backup_path.to_string_lossy().to_string(),
-            chat_db: profile.join("chat_history.db").to_string_lossy().to_string(),
-            legacy_thread_limit_file: profile.join("thread_limit.json").to_string_lossy().to_string(),
-            legacy_runtime_file: profile.join("llama_runtime.json").to_string_lossy().to_string(),
+            chat_db: profile
+                .join("chat_history.db")
+                .to_string_lossy()
+                .to_string(),
+            legacy_thread_limit_file: profile
+                .join("thread_limit.json")
+                .to_string_lossy()
+                .to_string(),
+            legacy_runtime_file: profile
+                .join("llama_runtime.json")
+                .to_string_lossy()
+                .to_string(),
             legacy_experimental_file: profile
                 .join("experimental_features.json")
                 .to_string_lossy()
@@ -714,11 +732,8 @@ pub fn validate_settings(settings: &AppSettingsV2) -> Result<Vec<String>, String
 
 fn ensure_builtin_presets(presets: &mut ChatPresetSettings) {
     let defaults = ChatPresetSettings::default();
-    let mut existing_ids: std::collections::HashSet<String> = presets
-        .presets
-        .iter()
-        .map(|p| p.id.clone())
-        .collect();
+    let mut existing_ids: std::collections::HashSet<String> =
+        presets.presets.iter().map(|p| p.id.clone()).collect();
 
     for builtin in defaults.presets {
         if existing_ids.insert(builtin.id.clone()) {
@@ -754,7 +769,8 @@ mod tests {
         let mut settings = AppSettingsV2::default();
         settings.general.developer_mode = false;
         settings.developer.openai_server.cors_mode = CorsMode::Any;
-        let err = validate_settings(&settings).expect_err("cors any outside developer mode must fail");
+        let err =
+            validate_settings(&settings).expect_err("cors any outside developer mode must fail");
         assert!(err.contains("cors_mode=any"));
     }
 

@@ -14,6 +14,7 @@
     SettingsSectionChatPresets,
     SettingsSectionDeveloper,
     SettingsSectionGeneral,
+    SettingsSectionHardware,
     SettingsSectionModelsStorage,
     SettingsSectionPerformance,
     SettingsSectionPrivacyData,
@@ -32,9 +33,10 @@
     DataLocations,
     SettingsSectionId,
   } from '$lib/types/settings-v2';
-  import SlidersHorizontal from 'phosphor-svelte/lib/SlidersHorizontal';
+  import GearFine from 'phosphor-svelte/lib/GearFine';
   import Cube from 'phosphor-svelte/lib/Cube';
-  import Gauge from 'phosphor-svelte/lib/Gauge';
+  import Engine from 'phosphor-svelte/lib/Engine';
+  import Cpu from 'phosphor-svelte/lib/Cpu';
   import ChatsCircle from 'phosphor-svelte/lib/ChatsCircle';
   import Shield from 'phosphor-svelte/lib/Shield';
   import Code from 'phosphor-svelte/lib/Code';
@@ -61,13 +63,23 @@
   let highlightResetHandle: ReturnType<typeof setTimeout> | null = null;
 
   const allSections = [
-    { id: 'general', label: 'settings.v2.sections.general.title', icon: SlidersHorizontal },
+    { id: 'general', label: 'settings.v2.sections.general.title', icon: GearFine },
     { id: 'models_storage', label: 'settings.v2.sections.models_storage.title', icon: Cube },
-    { id: 'performance', label: 'settings.v2.sections.performance.title', icon: Gauge },
     { id: 'chat_presets', label: 'settings.v2.sections.chat_presets.title', icon: ChatsCircle },
     { id: 'privacy_data', label: 'settings.v2.sections.privacy_data.title', icon: Shield },
     { id: 'developer', label: 'settings.v2.sections.developer.title', icon: Code },
     { id: 'about', label: 'settings.v2.sections.about.title', icon: Info },
+    {
+      id: 'performance',
+      label: 'settings.v2.sections.performance.title',
+      icon: Engine,
+      separatorBefore: true,
+    },
+    {
+      id: 'hardware',
+      label: 'settings.v2.sections.hardware.title',
+      icon: Cpu,
+    },
   ] as const;
 
   const visibleSections = allSections;
@@ -338,8 +350,17 @@
             {#if activeSection === 'performance'}
               <SettingsSectionPerformance
                 value={$settings.performance}
+                chatPresets={$settings.chat_presets}
                 highlightedSettingId={highlightedSettingId}
-                expertMode={true}
+                onChange={(next) => settings.updateSection('performance', next)}
+                onChangeChatPresets={(next) => settings.updateSection('chat_presets', next)}
+              />
+            {/if}
+
+            {#if activeSection === 'hardware'}
+              <SettingsSectionHardware
+                value={$settings.performance}
+                highlightedSettingId={highlightedSettingId}
                 onChange={(next) => settings.updateSection('performance', next)}
               />
             {/if}

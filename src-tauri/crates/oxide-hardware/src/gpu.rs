@@ -28,6 +28,8 @@ impl GpuInfo {
             uuid: self.uuid.clone(),
             used_memory: 0,
             total_memory: 0,
+            temperature_c: None,
+            utilization_percent: None,
         }
     }
 }

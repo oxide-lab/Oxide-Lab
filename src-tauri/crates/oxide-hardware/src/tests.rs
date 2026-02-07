@@ -11,6 +11,18 @@ fn test_system_info() {
 #[test]
 fn test_system_usage() {
     let usage = get_system_usage();
+    assert!(usage.disk_total_bytes >= usage.disk_free_bytes);
+    if usage.disk_total_bytes == 0 {
+        assert_eq!(usage.disk_free_bytes, 0);
+    }
+    for gpu in &usage.gpus {
+        if let Some(temp) = gpu.temperature_c {
+            assert!(temp >= 0.0);
+        }
+        if let Some(utilization) = gpu.utilization_percent {
+            assert!((0.0..=100.0).contains(&utilization));
+        }
+    }
     println!("System Usage Info: {:?}", usage);
 }
 

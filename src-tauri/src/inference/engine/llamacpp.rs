@@ -102,6 +102,146 @@ impl LlamaCppAdapter {
         }
     }
 
+    fn parse_version_backend(value: &str) -> Option<(&str, &str)> {
+        let (version, backend) = value.split_once('/')?;
+        let version = version.trim();
+        let backend = backend.trim();
+        if version.is_empty() || backend.is_empty() {
+            return None;
+        }
+        Some((version, backend))
+    }
+
+    fn normalize_backend_name(value: &str) -> String {
+        let normalized = value.to_ascii_lowercase();
+
+        if normalized.contains("win-cpu-x64") {
+            return "win-common_cpus-x64".to_string();
+        }
+        if normalized.contains("win-cpu-arm64") {
+            return "win-arm64".to_string();
+        }
+        if normalized.contains("win-vulkan-x64") {
+            return "win-vulkan-common_cpus-x64".to_string();
+        }
+        if normalized.contains("win-cuda-11") {
+            return "win-cuda-11-common_cpus-x64".to_string();
+        }
+        if normalized.contains("win-cuda-12") {
+            return "win-cuda-12-common_cpus-x64".to_string();
+        }
+        if normalized.contains("win-cuda-13") {
+            return "win-cuda-13-common_cpus-x64".to_string();
+        }
+        if normalized == "ubuntu-x64" || normalized == "linux-x64" {
+            return "linux-common_cpus-x64".to_string();
+        }
+        if normalized.contains("ubuntu-vulkan-x64") || normalized.contains("linux-vulkan-x64") {
+            return "linux-vulkan-common_cpus-x64".to_string();
+        }
+        if normalized.contains("ubuntu-cuda-11") || normalized.contains("linux-cuda-11") {
+            return "linux-cuda-11-common_cpus-x64".to_string();
+        }
+        if normalized.contains("ubuntu-cuda-12") || normalized.contains("linux-cuda-12") {
+            return "linux-cuda-12-common_cpus-x64".to_string();
+        }
+        if normalized.contains("ubuntu-cuda-13") || normalized.contains("linux-cuda-13") {
+            return "linux-cuda-13-common_cpus-x64".to_string();
+        }
+        if normalized == "macos-x64" || normalized == "darwin-x64" {
+            return "macos-x64".to_string();
+        }
+        if normalized == "macos-arm64" || normalized == "darwin-arm64" {
+            return "macos-arm64".to_string();
+        }
+
+        normalized
+    }
+
+    fn is_build_version(version: &str) -> bool {
+        version.starts_with('b')
+            && version.len() > 1
+            && version[1..].chars().all(|ch| ch.is_ascii_digit())
+    }
+
+    fn infer_backend_from_server_path(server_path: &str) -> Option<String> {
+        let normalized = server_path.replace('\\', "/");
+        let segments: Vec<&str> = normalized
+            .split('/')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        if segments.is_empty() {
+            return None;
+        }
+
+        let file_name = segments.last()?.to_ascii_lowercase();
+        if file_name != "llama-server" && file_name != "llama-server.exe" {
+            return None;
+        }
+
+        if segments.len() >= 2 {
+            let bundle_dir = segments[segments.len() - 2];
+            let lower_bundle_dir = bundle_dir.to_ascii_lowercase();
+            if lower_bundle_dir.starts_with("llama-")
+                && let Some(rest) = bundle_dir.strip_prefix("llama-")
+                && let Some((version, backend)) = rest.split_once("-bin-")
+                && Self::is_build_version(version)
+            {
+                return Some(format!("{}/{}", version, backend));
+            }
+        }
+
+        if segments.len() >= 5 {
+            let maybe_bin = segments[segments.len() - 2];
+            let maybe_build = segments[segments.len() - 3];
+            if maybe_bin.eq_ignore_ascii_case("bin") && maybe_build.eq_ignore_ascii_case("build") {
+                let backend = segments[segments.len() - 4];
+                let version = segments[segments.len() - 5];
+                if Self::is_build_version(version) {
+                    return Some(format!("{}/{}", version, backend));
+                }
+            }
+        }
+
+        if segments.len() >= 3 {
+            let backend = segments[segments.len() - 2];
+            let version = segments[segments.len() - 3];
+            if Self::is_build_version(version) {
+                return Some(format!("{}/{}", version, backend));
+            }
+        }
+
+        None
+    }
+
+    fn backend_selection_matches(inferred_backend: &str, selected_backend: &str) -> bool {
+        let Some((inferred_version, inferred_name)) = Self::parse_version_backend(inferred_backend)
+        else {
+            return false;
+        };
+        let Some((selected_version, selected_name)) = Self::parse_version_backend(selected_backend)
+        else {
+            return false;
+        };
+
+        inferred_version.eq_ignore_ascii_case(selected_version)
+            && Self::normalize_backend_name(inferred_name)
+                .eq_ignore_ascii_case(&Self::normalize_backend_name(selected_name))
+    }
+
+    fn should_use_explicit_server_path(
+        explicit_path: &str,
+        selected_backend: Option<&str>,
+    ) -> bool {
+        let Some(selected_backend) = selected_backend else {
+            return true;
+        };
+        let Some(inferred_backend) = Self::infer_backend_from_server_path(explicit_path) else {
+            return true;
+        };
+        Self::backend_selection_matches(&inferred_backend, selected_backend)
+    }
+
     fn candidate_binary_names() -> &'static [&'static str] {
         if cfg!(windows) {
             &["llama-server.exe", "llama-server"]
@@ -158,6 +298,14 @@ impl LlamaCppAdapter {
 
     fn binary_score(runtime_cfg: &LlamaRuntimeConfig, dir_name: &str) -> i32 {
         let name = dir_name.to_ascii_lowercase();
+        if let Some((_, selected_backend)) = runtime_cfg
+            .selected_backend
+            .as_deref()
+            .and_then(Self::parse_version_backend)
+            && name.contains(&selected_backend.to_ascii_lowercase())
+        {
+            return 450;
+        }
         let prefers_gpu = runtime_cfg.n_gpu_layers > 0;
         if name.contains("cuda") {
             if prefers_gpu { 300 } else { 120 }
@@ -217,6 +365,63 @@ impl LlamaCppAdapter {
         out
     }
 
+    fn resolve_selected_backend_binary(
+        &self,
+        runtime_cfg: &LlamaRuntimeConfig,
+        selected_backend: &str,
+    ) -> Option<PathBuf> {
+        if let Some((version, backend)) = Self::parse_version_backend(selected_backend)
+            && let Some(path) = self.resolve_installed_backend_binary_path(version, backend)
+        {
+            return Some(path);
+        }
+
+        self.find_bundled_binaries(runtime_cfg)
+            .into_iter()
+            .find(|path| {
+                let candidate = path.to_string_lossy();
+                let Some(inferred) = Self::infer_backend_from_server_path(&candidate) else {
+                    return false;
+                };
+                Self::backend_selection_matches(&inferred, selected_backend)
+            })
+    }
+
+    fn resolve_installed_backend_binary_path(
+        &self,
+        version: &str,
+        backend: &str,
+    ) -> Option<PathBuf> {
+        let root = self
+            .app_handle
+            .path()
+            .app_local_data_dir()
+            .ok()?
+            .join("oxide-lab")
+            .join("llamacpp")
+            .join("backends")
+            .join(version)
+            .join(backend);
+
+        let exe_name = if cfg!(windows) {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        };
+
+        let build = root.join("build").join("bin").join(exe_name);
+        if build.exists() && build.is_file() {
+            return Some(build);
+        }
+
+        let direct = root.join(exe_name);
+        if direct.exists() && direct.is_file() {
+            return Some(direct);
+        }
+
+        None
+    }
+
     fn find_path_binary() -> Option<PathBuf> {
         let path_var = env::var_os("PATH")?;
         for dir in env::split_paths(&path_var) {
@@ -235,6 +440,10 @@ impl LlamaCppAdapter {
             .server_path
             .as_ref()
             .and_then(|v| Self::resolve_binary_from_path(v))
+            && Self::should_use_explicit_server_path(
+                &explicit.to_string_lossy(),
+                runtime_cfg.selected_backend.as_deref(),
+            )
         {
             return Ok(explicit.to_string_lossy().to_string());
         }
@@ -243,6 +452,12 @@ impl LlamaCppAdapter {
             && let Some(env_path) = Self::resolve_binary_from_path(&v)
         {
             return Ok(env_path.to_string_lossy().to_string());
+        }
+
+        if let Some(selected_backend) = runtime_cfg.selected_backend.as_deref()
+            && let Some(path) = self.resolve_selected_backend_binary(runtime_cfg, selected_backend)
+        {
+            return Ok(path.to_string_lossy().to_string());
         }
 
         if let Some(path) = self.find_bundled_binaries(runtime_cfg).into_iter().next() {
@@ -287,7 +502,7 @@ impl LlamaCppAdapter {
             main_gpu: 0,
             flash_attn: runtime_cfg.flash_attn.clone(),
             cont_batching: true,
-            no_mmap: false,
+            no_mmap: Self::should_disable_mmap(&runtime_cfg.extra_env),
             mlock: false,
             no_kv_offload: false,
             cache_type_k: "f16".to_string(),
@@ -299,6 +514,13 @@ impl LlamaCppAdapter {
             rope_freq_scale: 1.0,
             ctx_shift: false,
         }
+    }
+
+    fn should_disable_mmap(extra_env: &HashMap<String, String>) -> bool {
+        extra_env
+            .get("OXIDE_MEMORY_MAPPING")
+            .map(|value| value.eq_ignore_ascii_case("ram"))
+            .unwrap_or(false)
     }
 
     fn api_key(model_id: &str, kind: EngineSessionKind) -> String {
@@ -501,5 +723,88 @@ impl EngineAdapter for LlamaCppAdapter {
         input: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
         http_client::create_embeddings(session, model, input).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LlamaCppAdapter;
+    use crate::core::types::LlamaRuntimeConfig;
+
+    fn runtime_with_mapping(mapping: Option<&str>) -> LlamaRuntimeConfig {
+        let mut cfg = LlamaRuntimeConfig::default();
+        if let Some(value) = mapping {
+            cfg.extra_env
+                .insert("OXIDE_MEMORY_MAPPING".to_string(), value.to_string());
+        }
+        cfg
+    }
+
+    #[test]
+    fn build_config_enables_no_mmap_when_mapping_is_ram() {
+        let cfg = runtime_with_mapping(Some("ram"));
+        let built = LlamaCppAdapter::build_config(&cfg);
+        assert!(built.no_mmap);
+    }
+
+    #[test]
+    fn build_config_keeps_mmap_when_mapping_is_mmap() {
+        let cfg = runtime_with_mapping(Some("mmap"));
+        let built = LlamaCppAdapter::build_config(&cfg);
+        assert!(!built.no_mmap);
+    }
+
+    #[test]
+    fn build_config_keeps_mmap_when_mapping_is_missing() {
+        let cfg = runtime_with_mapping(None);
+        let built = LlamaCppAdapter::build_config(&cfg);
+        assert!(!built.no_mmap);
+    }
+
+    #[test]
+    fn build_config_enables_no_mmap_for_uppercase_ram_value() {
+        let cfg = runtime_with_mapping(Some("RAM"));
+        let built = LlamaCppAdapter::build_config(&cfg);
+        assert!(built.no_mmap);
+    }
+
+    #[test]
+    fn infer_backend_from_server_path_handles_bundled_layout() {
+        let inferred = LlamaCppAdapter::infer_backend_from_server_path(
+            r"C:\app\bin\llama-b7951-bin-win-cuda-12-common_cpus-x64\llama-server.exe",
+        );
+        assert_eq!(
+            inferred.as_deref(),
+            Some("b7951/win-cuda-12-common_cpus-x64")
+        );
+    }
+
+    #[test]
+    fn infer_backend_from_server_path_handles_installed_layout() {
+        let inferred = LlamaCppAdapter::infer_backend_from_server_path(
+            r"C:\Users\me\AppData\Local\oxide-lab\llamacpp\backends\b7951\win-cuda-12-common_cpus-x64\build\bin\llama-server.exe",
+        );
+        assert_eq!(
+            inferred.as_deref(),
+            Some("b7951/win-cuda-12-common_cpus-x64")
+        );
+    }
+
+    #[test]
+    fn explicit_path_is_rejected_when_selected_backend_mismatches() {
+        let should_use = LlamaCppAdapter::should_use_explicit_server_path(
+            r"C:\app\bin\llama-b7951-bin-win-cpu-x64\llama-server.exe",
+            Some("b7951/win-cuda-12-common_cpus-x64"),
+        );
+        assert!(!should_use);
+    }
+
+    #[test]
+    fn explicit_path_is_accepted_when_selected_backend_matches() {
+        let should_use = LlamaCppAdapter::should_use_explicit_server_path(
+            r"C:\app\bin\llama-b7951-bin-win-cuda-12-common_cpus-x64\llama-server.exe",
+            Some("b7951/win-cuda-12-common_cpus-x64"),
+        );
+        assert!(should_use);
     }
 }

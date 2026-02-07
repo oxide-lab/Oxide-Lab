@@ -115,4 +115,40 @@ describe('settings-v2 store', () => {
     expect(localStorage.getItem('settings_v2_frontend_migrated')).toBe('1');
     expect(localStorage.getItem('local_models_folder_path')).toBeNull();
   });
+
+  it('tracks hardware-only changes separately from runtime changes', async () => {
+    const snapshot = settingsV2Store.getSnapshot();
+    expect(snapshot).not.toBeNull();
+    if (!snapshot) return;
+
+    await settingsV2Store.updateSection('performance', {
+      ...snapshot.performance,
+      llama_runtime: {
+        ...snapshot.performance.llama_runtime,
+        n_gpu_layers: snapshot.performance.llama_runtime.n_gpu_layers + 1,
+      },
+    });
+
+    const dirty = get(settingsV2Store.dirtyBySection);
+    expect(dirty.hardware).toBeGreaterThan(0);
+    expect(dirty.performance).toBe(0);
+  });
+
+  it('tracks runtime-only changes separately from hardware changes', async () => {
+    const snapshot = settingsV2Store.getSnapshot();
+    expect(snapshot).not.toBeNull();
+    if (!snapshot) return;
+
+    await settingsV2Store.updateSection('performance', {
+      ...snapshot.performance,
+      llama_runtime: {
+        ...snapshot.performance.llama_runtime,
+        threads_batch: snapshot.performance.llama_runtime.threads_batch + 1,
+      },
+    });
+
+    const dirty = get(settingsV2Store.dirtyBySection);
+    expect(dirty.performance).toBeGreaterThan(0);
+    expect(dirty.hardware).toBe(0);
+  });
 });

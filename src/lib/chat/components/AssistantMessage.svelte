@@ -3,6 +3,7 @@
    * Assistant Message Component
    * Displays an assistant message with reasoning, markdown content, and actions.
    */
+  import { onMount } from 'svelte';
   import type { ChatMessage } from '$lib/chat/types';
   import { Reasoning, ReasoningContent } from '$lib/components/ai-elements/reasoning';
   import { Markdown } from '$lib/components/ai-elements/markdown';
@@ -36,22 +37,34 @@
 
   // State for raw view
   let showRaw = $state(false);
+  let copyTooltipOpen = $state(false);
+  let regenerateTooltipOpen = $state(false);
+  let rawTooltipOpen = $state(false);
 
   // Derived values
   let thinkingContent = $derived(message.thinking?.replace(/<think>/g, '').trim());
   let hasThinking = $derived(!!thinkingContent);
   let showActions = $derived(!isStreaming && message.content);
 
+  function closeActionTooltips() {
+    copyTooltipOpen = false;
+    regenerateTooltipOpen = false;
+    rawTooltipOpen = false;
+  }
+
   function handleCopy() {
+    closeActionTooltips();
     onCopy?.(message.content);
     navigator.clipboard.writeText(message.content);
   }
 
   function handleRegenerate() {
+    closeActionTooltips();
     onRegenerate?.(index);
   }
 
   function toggleRaw() {
+    closeActionTooltips();
     showRaw = !showRaw;
   }
 
@@ -63,6 +76,21 @@
     raw += message.content;
     return raw;
   }
+
+  onMount(() => {
+    const onWheelOrTouch = () => closeActionTooltips();
+    const onScroll = () => closeActionTooltips();
+
+    window.addEventListener('wheel', onWheelOrTouch, { passive: true });
+    window.addEventListener('touchmove', onWheelOrTouch, { passive: true });
+    window.addEventListener('scroll', onScroll, true);
+
+    return () => {
+      window.removeEventListener('wheel', onWheelOrTouch);
+      window.removeEventListener('touchmove', onWheelOrTouch);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  });
 </script>
 
 <div
@@ -100,7 +128,7 @@
       )}
     >
       <Tooltip.Provider>
-        <Tooltip.Root delayDuration={60}>
+        <Tooltip.Root delayDuration={60} bind:open={copyTooltipOpen}>
           <Tooltip.Trigger>
             <Button
               variant="ghost"
@@ -117,7 +145,7 @@
 
       {#if onRegenerate}
         <Tooltip.Provider>
-          <Tooltip.Root delayDuration={60}>
+          <Tooltip.Root delayDuration={60} bind:open={regenerateTooltipOpen}>
             <Tooltip.Trigger>
               <Button
                 variant="ghost"
@@ -134,7 +162,7 @@
       {/if}
 
       <Tooltip.Provider>
-        <Tooltip.Root delayDuration={60}>
+        <Tooltip.Root delayDuration={60} bind:open={rawTooltipOpen}>
           <Tooltip.Trigger>
             <Button
               variant={showRaw ? 'secondary' : 'ghost'}

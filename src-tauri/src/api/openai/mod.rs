@@ -90,8 +90,12 @@ impl OpenAiServerController {
             return Ok(());
         }
 
-        let shutdown_tx =
-            start_server(self.app_handle.clone(), self.model_state.clone(), config.clone()).await?;
+        let shutdown_tx = start_server(
+            self.app_handle.clone(),
+            self.model_state.clone(),
+            config.clone(),
+        )
+        .await?;
         let mut runtime = self.runtime.lock().await;
         runtime.shutdown = Some(shutdown_tx);
         runtime.config = Some(config);
