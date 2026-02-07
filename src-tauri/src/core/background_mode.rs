@@ -60,4 +60,3 @@ mod tests {
         let _guard = BackgroundModeGuard::new();
     }
 }
-

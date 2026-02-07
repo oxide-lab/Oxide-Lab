@@ -49,6 +49,16 @@ impl EngineSessionManager {
         self.adapter()?.stop_session(Some(model_id), None).await
     }
 
+    pub async fn stop_session_kind(
+        &self,
+        model_id: &str,
+        kind: EngineSessionKind,
+    ) -> Result<(), String> {
+        self.adapter()?
+            .stop_session(Some(model_id), Some(kind))
+            .await
+    }
+
     pub async fn stop_all_sessions(&self, model_id: Option<&str>) -> Result<(), String> {
         self.adapter()?.stop_session(model_id, None).await
     }
@@ -71,4 +81,3 @@ impl EngineSessionManager {
         self.adapter()?.embeddings(session, model, input).await
     }
 }
-

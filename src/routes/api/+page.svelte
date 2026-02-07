@@ -120,7 +120,11 @@ print(completion.choices[0].message.content)`);
             <div class="flex gap-2 flex-wrap">
                 <Badge variant="secondary">POST /chat/completions</Badge>
                 <Badge variant="secondary">POST /completions</Badge>
+                <Badge variant="secondary">POST /embeddings</Badge>
+                <Badge variant="secondary">POST /responses</Badge>
                 <Badge variant="secondary">GET /models</Badge>
+                <Badge variant="secondary">GET /models/{'{model}'}</Badge>
+                <Badge variant="outline">POST /images/* (501)</Badge>
             </div>
         </div>
       </Card.Content>

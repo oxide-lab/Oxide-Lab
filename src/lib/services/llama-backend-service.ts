@@ -22,7 +22,7 @@ interface BackendUpdateCheck {
     target_backend: string | null;
 }
 
-interface LlamaRuntimeConfig {
+export interface LlamaRuntimeConfig {
     server_path: string | null;
     selected_backend: string | null;
     n_gpu_layers: number;
@@ -35,6 +35,16 @@ interface LlamaRuntimeConfig {
     flash_attn: string;
     extra_env: Record<string, string>;
     embeddings_strategy: 'separate_session';
+    scheduler: {
+        keep_alive_secs: number;
+        max_loaded_models: number;
+        max_queue: number;
+        queue_wait_timeout_ms: number;
+        vram_recovery_timeout_ms: number;
+        vram_recovery_poll_ms: number;
+        vram_recovery_threshold: number;
+        expiration_tick_ms: number;
+    };
 }
 
 interface GithubReleaseAsset {
@@ -200,6 +210,14 @@ async function saveRuntimeConfig(config: LlamaRuntimeConfig): Promise<void> {
 }
 
 export class LlamaBackendService {
+    async getRuntimeConfig(): Promise<LlamaRuntimeConfig> {
+        return await getRuntimeConfig();
+    }
+
+    async saveRuntimeConfig(config: LlamaRuntimeConfig): Promise<void> {
+        await saveRuntimeConfig(config);
+    }
+
     async getOverview(): Promise<{
         currentBackend: string | null;
         serverPath: string | null;

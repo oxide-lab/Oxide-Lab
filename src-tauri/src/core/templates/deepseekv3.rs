@@ -8,4 +8,3 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["<｜end▁of▁sentence｜>"],
     force_bos: false,
 };
-

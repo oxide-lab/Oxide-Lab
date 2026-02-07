@@ -118,6 +118,342 @@
     "updateNow": "Обновить",
     "installLatest": "Установить последний",
     "installed": "Установлен backend: {backend}",
-    "noBackends": "Нет совместимых backend"
+    "noBackends": "Нет совместимых backend",
+    "scheduler": {
+      "title": "Планировщик",
+      "description": "Настройки очереди, keep-alive и восстановления VRAM",
+      "keepAliveSecs": "Keep-alive (сек)",
+      "maxLoadedModels": "Макс. загруженных моделей (0=авто)",
+      "maxQueue": "Макс. очередь",
+      "queueWaitTimeoutMs": "Таймаут ожидания в очереди (мс)",
+      "vramRecoveryTimeoutMs": "Таймаут восстановления VRAM (мс)",
+      "vramRecoveryPollMs": "Интервал опроса VRAM (мс)",
+      "vramRecoveryThreshold": "Порог восстановления VRAM",
+      "expirationTickMs": "Тик проверки истечения (мс)",
+      "save": "Сохранить настройки планировщика",
+      "saved": "Настройки планировщика сохранены"
+    }
+  },
+  "v2": {
+    "common": {
+      "cancel": "Отмена",
+      "confirm": "Подтвердить"
+    },
+    "page": {
+      "title": "Настройки",
+      "basic": "Базовый",
+      "expert": "Эксперт",
+      "developer_mode": "Режим разработчика"
+    },
+    "sidebar": {
+      "changed": "Изменено {count}"
+    },
+    "search": {
+      "placeholder": "Поиск по настройкам…",
+      "empty": "Ничего не найдено.",
+      "results": "Результаты",
+      "developer_only": "Только для разработчика"
+    },
+    "sections": {
+      "general": {
+        "title": "Общие",
+        "description": "Основное поведение приложения и UI по умолчанию."
+      },
+      "models_storage": {
+        "title": "Модели и хранилище",
+        "description": "Папки моделей, кэш и параметры обнаружения."
+      },
+      "performance": {
+        "title": "Производительность",
+        "description": "Параметры загрузки и использования памяти."
+      },
+      "chat_presets": {
+        "title": "Чат и пресеты",
+        "description": "Поведение чата по умолчанию и переиспользуемые профили."
+      },
+      "privacy_data": {
+        "title": "Приватность и данные",
+        "description": "Управление локальными данными, экспорт и очистка."
+      },
+      "developer": {
+        "title": "Разработчик",
+        "description": "Сетевые настройки и OpenAI-совместимый API."
+      },
+      "about": {
+        "title": "О приложении",
+        "description": "Информация о сборке и ссылки."
+      }
+    },
+    "general": {
+      "locale": {
+        "title": "Язык",
+        "description": "Язык интерфейса приложения.",
+        "en": "English",
+        "ru": "Русский",
+        "pt_br": "Português (Brasil)"
+      },
+      "theme": {
+        "title": "Тема",
+        "description": "Режим оформления приложения.",
+        "system": "Системная",
+        "light": "Светлая",
+        "dark": "Тёмная"
+      },
+      "auto_update": {
+        "title": "Автообновления",
+        "description": "Автоматически проверять и устанавливать обновления."
+      },
+      "launch_on_startup": {
+        "title": "Запуск с системой",
+        "description": "Запускать Oxide Lab при старте ОС."
+      },
+      "search_history": {
+        "title": "История поиска",
+        "description": "Хранить локальную историю поиска в настройках."
+      }
+    },
+    "models_storage": {
+      "models_dir": {
+        "title": "Папка моделей",
+        "description": "Путь для локальных GGUF-моделей.",
+        "placeholder": "C:\\Models"
+      },
+      "cache_dir": {
+        "title": "Папка кэша",
+        "description": "Путь для временных загрузок и кэш-файлов.",
+        "placeholder": "C:\\OxideCache"
+      },
+      "model_selector_search": {
+        "title": "Поиск в выборе модели",
+        "description": "Включить поиск в основном селекторе модели."
+      },
+      "links": {
+        "models": "Открыть библиотеку моделей",
+        "api": "Открыть страницу API"
+      }
+    },
+    "performance": {
+      "auto": "авто",
+      "manual_thread_limit": {
+        "title": "Ручной лимит потоков",
+        "description": "Оставьте пустым для автоматического режима."
+      },
+      "n_gpu_layers": {
+        "title": "GPU-слои",
+        "description": "Количество слоёв модели, выгружаемых в GPU."
+      },
+      "ctx_size": {
+        "title": "Размер контекста",
+        "description": "Максимальный контекст промпта в токенах."
+      },
+      "batch_size": {
+        "title": "Batch Size",
+        "description": "Размер батча инференса."
+      },
+      "ubatch_size": {
+        "title": "UBatch Size",
+        "description": "Размер микро-батча."
+      },
+      "threads": {
+        "title": "Потоки",
+        "description": "CPU-потоки runtime."
+      },
+      "threads_batch": {
+        "title": "Потоки батча",
+        "description": "Потоки планировщика батча."
+      },
+      "flash_attn": {
+        "title": "Flash Attention",
+        "description": "Режим flash attention в runtime.",
+        "auto": "авто",
+        "on": "вкл",
+        "off": "выкл"
+      },
+      "memory_mode": {
+        "title": "Режим памяти",
+        "description": "Стратегия памяти для планировщика.",
+        "low": "низкий",
+        "medium": "средний",
+        "high": "высокий"
+      },
+      "vram_budget": {
+        "title": "Бюджет VRAM",
+        "description": "Предиктивный бюджет памяти до загрузки модели.",
+        "safe": "Безопасно",
+        "warn": "Предупреждение",
+        "risk": "Риск",
+        "predicted": "Прогноз: {predicted} GB / {total} GB",
+        "current": "Текущее использование: {used} GB",
+        "recommended": "Рекомендованные GPU-слои: {count}"
+      }
+    },
+    "chat_presets": {
+      "preset_label": "Пресет",
+      "select": "Выберите пресет",
+      "copy_suffix": "Копия",
+      "builtin": "Встроенный",
+      "apply_later_notice": "Пресет будет применён, когда открыт экран чата.",
+      "default_preset": {
+        "title": "Пресет по умолчанию",
+        "description": "Пресет для новых чатов по умолчанию."
+      },
+      "name": {
+        "title": "Название",
+        "description": "Отображаемое имя пресета."
+      },
+      "system_prompt": {
+        "title": "Системный промпт",
+        "description": "Системный промпт по умолчанию для пресета."
+      },
+      "temperature": {
+        "title": "Temperature",
+        "description": "Креативность / случайность."
+      },
+      "top_p": {
+        "title": "Top-P",
+        "description": "Порог кумулятивной вероятности."
+      },
+      "top_k": {
+        "title": "Top-K",
+        "description": "Размер shortlist токенов."
+      },
+      "repeat_penalty": {
+        "title": "Repeat Penalty",
+        "description": "Штраф за повторяющиеся токены."
+      },
+      "max_tokens": {
+        "title": "Max Tokens",
+        "description": "Лимит токенов в ответе."
+      },
+      "context": {
+        "title": "Контекст",
+        "description": "Контекст по умолчанию для пресета."
+      },
+      "actions": {
+        "new": "Новый пресет",
+        "import": "Импорт JSON",
+        "export": "Экспорт JSON",
+        "apply": "Применить к текущему чату",
+        "delete": "Удалить"
+      }
+    },
+    "privacy_data": {
+      "export_dialog_title": "Экспорт данных пользователя Oxide",
+      "clear_title": "Подтверждение очистки данных",
+      "clear_confirm": "Очистить данные области \"{scope}\"? Действие нельзя отменить.",
+      "telemetry": {
+        "title": "Телеметрия",
+        "description": "Отчёты об использовании."
+      },
+      "crash_reports": {
+        "title": "Крэш-репорты",
+        "description": "Отправлять отчёты о сбоях для улучшения стабильности."
+      },
+      "locations": {
+        "settings": "Настройки",
+        "chats_db": "БД чатов",
+        "profile": "Профиль"
+      },
+      "actions": {
+        "export": "Экспорт данных",
+        "clear_chats": "Очистить чаты",
+        "clear_downloads": "Очистить загрузки",
+        "factory_reset": "Сброс к заводским"
+      }
+    },
+    "developer": {
+      "alerts": {
+        "lan_requires_auth": "LAN-режим требует auth. auth_required будет включён автоматически.",
+        "cors_any_confirm": "CORS \"any\" разрешает все источники и может открыть локальный API. Продолжить?"
+      },
+      "openai_server": {
+        "title": "Включить OpenAI API сервер",
+        "description": "Запуск локального OpenAI-совместимого endpoint."
+      },
+      "bind_host": {
+        "title": "LAN-доступ",
+        "description": "Привязка к 0.0.0.0 для клиентов в LAN."
+      },
+      "port": {
+        "title": "Порт",
+        "description": "TCP-порт сервера (1024-65535)."
+      },
+      "auth_required": {
+        "title": "Требовать API-ключ",
+        "description": "Требовать Bearer-токен для каждого запроса."
+      },
+      "api_keys": {
+        "title": "API-ключи",
+        "description": "Ключи хранятся в хэшированном виде.",
+        "placeholder": "sk-local-...",
+        "add": "Добавить",
+        "configured": "Ключей настроено: {count}"
+      },
+      "cors": {
+        "title": "Режим CORS",
+        "description": "Политика кросс-доменных запросов.",
+        "confirm_title": "Разрешить CORS для любых origin?",
+        "same_origin": "same_origin",
+        "allowlist": "allowlist",
+        "any": "any"
+      },
+      "cors_allowlist": {
+        "title": "CORS allowlist",
+        "description": "Список origin через запятую.",
+        "placeholder": "http://localhost:3000, http://127.0.0.1:5173"
+      },
+      "risk": {
+        "title": "Подсказка о риске",
+        "description": "Включение LAN или слишком мягкого CORS может открыть доступ к локальному endpoint модели."
+      },
+      "actions": {
+        "restart_server": "Перезапустить API сервер"
+      }
+    },
+    "security_status": {
+      "title": "Статус безопасности",
+      "description": "Текущий уровень экспозиции и защиты локального API сервера.",
+      "server": "Сервер",
+      "on": "Вкл",
+      "off": "Выкл",
+      "localhost": "Localhost",
+      "lan": "LAN",
+      "auth": "Auth",
+      "required": "Требуется",
+      "disabled": "Отключена",
+      "cors": "CORS",
+      "endpoint": "Endpoint",
+      "warnings": "Предупреждения безопасности",
+      "unavailable": "Статус недоступен."
+    },
+    "about": {
+      "version": "Версия Oxide Lab: {version}",
+      "version_label": "Версия",
+      "copy_version": "Скопировать",
+      "copied": "Скопировано",
+      "check_updates": "Проверить обновления",
+      "summary": "Локальный AI-чат с приватным запуском моделей.",
+      "legal_title": "Юридическая информация",
+      "copyright": "Copyright © {year} FerrisMind",
+      "privacy_policy": "Политика конфиденциальности",
+      "terms": "Условия использования",
+      "eula": "Лицензионное соглашение",
+      "third_party_licenses": "Открыть лицензии Open Source",
+      "info_title": "Информация",
+      "website": "Сайт проекта",
+      "support": "Поддержка / Помощь",
+      "credits_title": "Благодарности",
+      "credits_body": "Создано с использованием Tauri, Svelte, Rust, llama.cpp, shadcn-svelte и иконок phosphor.",
+      "github": "GitHub",
+      "links": {
+        "updates": "Открыть страницу релизов в браузере",
+        "privacy": "Открыть политику конфиденциальности в браузере",
+        "terms": "Открыть условия использования в браузере",
+        "eula": "Открыть лицензионное соглашение в браузере",
+        "licenses": "Открыть лицензии сторонних библиотек в браузере",
+        "website": "Открыть сайт проекта в браузере",
+        "support": "Открыть страницу поддержки в браузере"
+      }
+    }
   }
 }

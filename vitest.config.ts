@@ -10,7 +10,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/tests/setup.ts'],
-    exclude: [...configDefaults.exclude, 'example/**/*', 'examples/**/*'],
+    exclude: [...configDefaults.exclude, 'example/**/*', 'examples/**/*', 'src-ref/**/*'],
   },
   resolve: isVitest
     ? {

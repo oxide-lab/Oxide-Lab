@@ -118,6 +118,342 @@
     "updateNow": "Atualizar agora",
     "installLatest": "Instalar mais recente",
     "installed": "Backend instalado: {backend}",
-    "noBackends": "Nenhum backend compatível encontrado"
+    "noBackends": "Nenhum backend compatível encontrado",
+    "scheduler": {
+      "title": "Scheduler",
+      "description": "Configurações de fila, keep-alive e recuperação de VRAM",
+      "keepAliveSecs": "Keep-alive (seg)",
+      "maxLoadedModels": "Máx. modelos carregados (0=auto)",
+      "maxQueue": "Máx. fila",
+      "queueWaitTimeoutMs": "Timeout de espera na fila (ms)",
+      "vramRecoveryTimeoutMs": "Timeout de recuperação de VRAM (ms)",
+      "vramRecoveryPollMs": "Intervalo de polling da VRAM (ms)",
+      "vramRecoveryThreshold": "Limite de recuperação de VRAM",
+      "expirationTickMs": "Tick de expiração (ms)",
+      "save": "Salvar configurações do scheduler",
+      "saved": "Configurações do scheduler salvas"
+    }
+  },
+  "v2": {
+    "common": {
+      "cancel": "Cancelar",
+      "confirm": "Confirmar"
+    },
+    "page": {
+      "title": "Configurações",
+      "basic": "Básico",
+      "expert": "Especialista",
+      "developer_mode": "Modo Desenvolvedor"
+    },
+    "sidebar": {
+      "changed": "Alterado {count}"
+    },
+    "search": {
+      "placeholder": "Buscar configurações…",
+      "empty": "Nenhuma configuração encontrada.",
+      "results": "Resultados",
+      "developer_only": "Somente desenvolvedor"
+    },
+    "sections": {
+      "general": {
+        "title": "Geral",
+        "description": "Comportamento principal do app e padrões de UI."
+      },
+      "models_storage": {
+        "title": "Modelos e Armazenamento",
+        "description": "Pastas de modelos, cache e descoberta."
+      },
+      "performance": {
+        "title": "Desempenho",
+        "description": "Controles de carregamento e memória."
+      },
+      "chat_presets": {
+        "title": "Chat e Presets",
+        "description": "Comportamento padrão do chat e perfis reutilizáveis."
+      },
+      "privacy_data": {
+        "title": "Privacidade e Dados",
+        "description": "Controles locais de dados, exportação e limpeza."
+      },
+      "developer": {
+        "title": "Desenvolvedor",
+        "description": "Controles de rede e API compatível com OpenAI."
+      },
+      "about": {
+        "title": "Sobre",
+        "description": "Informações de build e links do projeto."
+      }
+    },
+    "general": {
+      "locale": {
+        "title": "Idioma",
+        "description": "Idioma da interface do aplicativo.",
+        "en": "English",
+        "ru": "Русский",
+        "pt_br": "Português (Brasil)"
+      },
+      "theme": {
+        "title": "Tema",
+        "description": "Modo de aparência do aplicativo.",
+        "system": "Sistema",
+        "light": "Claro",
+        "dark": "Escuro"
+      },
+      "auto_update": {
+        "title": "Atualizações automáticas",
+        "description": "Verificar e aplicar atualizações automaticamente."
+      },
+      "launch_on_startup": {
+        "title": "Iniciar com o sistema",
+        "description": "Iniciar o Oxide Lab junto com o SO."
+      },
+      "search_history": {
+        "title": "Histórico de busca",
+        "description": "Salvar histórico local de busca das configurações."
+      }
+    },
+    "models_storage": {
+      "models_dir": {
+        "title": "Diretório de modelos",
+        "description": "Caminho para modelos GGUF locais.",
+        "placeholder": "C:\\Models"
+      },
+      "cache_dir": {
+        "title": "Diretório de cache",
+        "description": "Caminho para downloads temporários e arquivos de cache.",
+        "placeholder": "C:\\OxideCache"
+      },
+      "model_selector_search": {
+        "title": "Busca no seletor de modelos",
+        "description": "Ativar busca no seletor principal de modelos."
+      },
+      "links": {
+        "models": "Abrir biblioteca de modelos",
+        "api": "Abrir página da API"
+      }
+    },
+    "performance": {
+      "auto": "auto",
+      "manual_thread_limit": {
+        "title": "Limite manual de threads",
+        "description": "Deixe vazio para automático."
+      },
+      "n_gpu_layers": {
+        "title": "Camadas GPU",
+        "description": "Camadas do modelo descarregadas para a GPU."
+      },
+      "ctx_size": {
+        "title": "Tamanho de contexto",
+        "description": "Contexto máximo do prompt em tokens."
+      },
+      "batch_size": {
+        "title": "Batch Size",
+        "description": "Tamanho do batch de inferência."
+      },
+      "ubatch_size": {
+        "title": "UBatch Size",
+        "description": "Tamanho do micro-batch."
+      },
+      "threads": {
+        "title": "Threads",
+        "description": "Threads de CPU do runtime."
+      },
+      "threads_batch": {
+        "title": "Threads de batch",
+        "description": "Threads para agendamento de batch."
+      },
+      "flash_attn": {
+        "title": "Flash Attention",
+        "description": "Modo flash attention do runtime.",
+        "auto": "auto",
+        "on": "on",
+        "off": "off"
+      },
+      "memory_mode": {
+        "title": "Modo de memória",
+        "description": "Estratégia de memória do planner.",
+        "low": "baixo",
+        "medium": "médio",
+        "high": "alto"
+      },
+      "vram_budget": {
+        "title": "Orçamento de VRAM",
+        "description": "Orçamento preditivo de memória antes de carregar o modelo.",
+        "safe": "Seguro",
+        "warn": "Aviso",
+        "risk": "Risco",
+        "predicted": "Previsto {predicted} GB / {total} GB",
+        "current": "Uso atual: {used} GB",
+        "recommended": "Camadas GPU recomendadas: {count}"
+      }
+    },
+    "chat_presets": {
+      "preset_label": "Preset",
+      "select": "Selecionar preset",
+      "copy_suffix": "Cópia",
+      "builtin": "Nativo",
+      "apply_later_notice": "O preset será aplicado quando a tela de chat estiver ativa.",
+      "default_preset": {
+        "title": "Preset padrão",
+        "description": "Preset aplicado por padrão em novos chats."
+      },
+      "name": {
+        "title": "Nome",
+        "description": "Nome visível do preset."
+      },
+      "system_prompt": {
+        "title": "System Prompt",
+        "description": "Prompt de sistema padrão para este preset."
+      },
+      "temperature": {
+        "title": "Temperature",
+        "description": "Criatividade / aleatoriedade."
+      },
+      "top_p": {
+        "title": "Top-P",
+        "description": "Limite de probabilidade cumulativa."
+      },
+      "top_k": {
+        "title": "Top-K",
+        "description": "Tamanho da shortlist de tokens."
+      },
+      "repeat_penalty": {
+        "title": "Repeat Penalty",
+        "description": "Penalidade para tokens repetidos."
+      },
+      "max_tokens": {
+        "title": "Max Tokens",
+        "description": "Limite de tokens para a resposta."
+      },
+      "context": {
+        "title": "Contexto",
+        "description": "Tokens de contexto padrão para este preset."
+      },
+      "actions": {
+        "new": "Novo preset",
+        "import": "Importar JSON",
+        "export": "Exportar JSON",
+        "apply": "Aplicar ao chat atual",
+        "delete": "Excluir"
+      }
+    },
+    "privacy_data": {
+      "export_dialog_title": "Exportar dados do usuário do Oxide",
+      "clear_title": "Confirmar limpeza de dados",
+      "clear_confirm": "Limpar escopo de dados \"{scope}\"? Esta ação não pode ser desfeita.",
+      "telemetry": {
+        "title": "Telemetria",
+        "description": "Relatórios de uso."
+      },
+      "crash_reports": {
+        "title": "Relatórios de falha",
+        "description": "Enviar relatórios de falha para melhorar a estabilidade."
+      },
+      "locations": {
+        "settings": "Configurações",
+        "chats_db": "Banco de chats",
+        "profile": "Perfil"
+      },
+      "actions": {
+        "export": "Exportar dados",
+        "clear_chats": "Limpar chats",
+        "clear_downloads": "Limpar downloads",
+        "factory_reset": "Reset de fábrica"
+      }
+    },
+    "developer": {
+      "alerts": {
+        "lan_requires_auth": "Modo LAN requer autenticação. auth_required será ativado automaticamente.",
+        "cors_any_confirm": "CORS \"any\" permite todas as origens e pode expor sua API local. Continuar?"
+      },
+      "openai_server": {
+        "title": "Ativar servidor OpenAI API",
+        "description": "Iniciar endpoint local compatível com OpenAI."
+      },
+      "bind_host": {
+        "title": "Acesso LAN",
+        "description": "Permite bind em 0.0.0.0 para clientes LAN."
+      },
+      "port": {
+        "title": "Porta",
+        "description": "Porta TCP do servidor (1024-65535)."
+      },
+      "auth_required": {
+        "title": "Exigir autenticação por chave API",
+        "description": "Exigir token Bearer em todas as requisições."
+      },
+      "api_keys": {
+        "title": "Chaves API",
+        "description": "As chaves são armazenadas com hash.",
+        "placeholder": "sk-local-...",
+        "add": "Adicionar",
+        "configured": "{count} chaves configuradas"
+      },
+      "cors": {
+        "title": "Modo CORS",
+        "description": "Política de origem cruzada para requisições API.",
+        "confirm_title": "Permitir CORS de qualquer origem?",
+        "same_origin": "same_origin",
+        "allowlist": "allowlist",
+        "any": "any"
+      },
+      "cors_allowlist": {
+        "title": "Allowlist CORS",
+        "description": "Origens separadas por vírgula.",
+        "placeholder": "http://localhost:3000, http://127.0.0.1:5173"
+      },
+      "risk": {
+        "title": "Aviso de risco",
+        "description": "Ativar LAN ou CORS permissivo pode expor seu endpoint local para outros clientes."
+      },
+      "actions": {
+        "restart_server": "Reiniciar servidor API"
+      }
+    },
+    "security_status": {
+      "title": "Status de segurança",
+      "description": "Exposição e proteção atuais do servidor de API local.",
+      "server": "Servidor",
+      "on": "Ligado",
+      "off": "Desligado",
+      "localhost": "Localhost",
+      "lan": "LAN",
+      "auth": "Auth",
+      "required": "Obrigatória",
+      "disabled": "Desativada",
+      "cors": "CORS",
+      "endpoint": "Endpoint",
+      "warnings": "Avisos de segurança",
+      "unavailable": "Status indisponível."
+    },
+    "about": {
+      "version": "Versão do Oxide Lab: {version}",
+      "version_label": "Versão",
+      "copy_version": "Copiar",
+      "copied": "Copiado",
+      "check_updates": "Verificar atualizações",
+      "summary": "Chat de IA local-first com execução privada de modelos.",
+      "legal_title": "Informações legais",
+      "copyright": "Copyright © {year} FerrisMind",
+      "privacy_policy": "Política de Privacidade",
+      "terms": "Termos de Serviço",
+      "eula": "Contrato de Licença do Usuário Final",
+      "third_party_licenses": "Ver licenças Open Source",
+      "info_title": "Informações",
+      "website": "Site do projeto",
+      "support": "Suporte / Ajuda",
+      "credits_title": "Créditos e Agradecimentos",
+      "credits_body": "Construído com Tauri, Svelte, Rust, llama.cpp, shadcn-svelte e ícones phosphor.",
+      "github": "GitHub",
+      "links": {
+        "updates": "Abrir página de releases no navegador",
+        "privacy": "Abrir política de privacidade no navegador",
+        "terms": "Abrir termos de serviço no navegador",
+        "eula": "Abrir EULA no navegador",
+        "licenses": "Abrir licenças de terceiros no navegador",
+        "website": "Abrir site do projeto no navegador",
+        "support": "Abrir página de suporte no navegador"
+      }
+    }
   }
 }

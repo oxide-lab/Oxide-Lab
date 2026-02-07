@@ -51,4 +51,3 @@ pub fn simd_caps() -> (bool, bool, bool, bool) {
     let f16c = avx;
     (avx, neon, simd128, f16c)
 }
-

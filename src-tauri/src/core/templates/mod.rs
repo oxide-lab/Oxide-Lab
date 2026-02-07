@@ -37,4 +37,3 @@ pub fn get_all() -> Vec<TemplateEntry> {
         qwen2::TEMPLATE,
     ]
 }
-

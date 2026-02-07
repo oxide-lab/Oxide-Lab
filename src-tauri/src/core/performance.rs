@@ -486,4 +486,3 @@ macro_rules! measure_performance {
         result
     }};
 }
-

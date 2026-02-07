@@ -236,4 +236,3 @@ pub fn preflight_chat_messages(req: &GenerateRequest) -> Result<Vec<ChatMessage>
         content: req.prompt.clone(),
     }])
 }
-

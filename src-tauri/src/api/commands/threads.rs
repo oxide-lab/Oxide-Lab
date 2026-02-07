@@ -1,7 +1,9 @@
 use crate::core::state::{ModelState, SharedState};
+use crate::core::settings_v2::SettingsV2State;
 
 use std::env;
 use tauri::AppHandle;
+use tauri::Manager;
 
 const RAYON_ENV_VAR: &str = "RAYON_NUM_THREADS";
 
@@ -35,6 +37,14 @@ pub fn set_rayon_thread_limit(
     apply_rayon_thread_limit(limit);
     let mut guard = state.lock().map_err(|e| e.to_string())?;
     guard.rayon_thread_limit = limit;
-    ModelState::save_thread_limit(&app, limit).map_err(|e| e.to_string())
-}
+    ModelState::save_thread_limit(&app, limit).map_err(|e| e.to_string())?;
 
+    if let Some(settings_state) = app.try_state::<SettingsV2State>() {
+        let mut settings_guard = settings_state.inner.lock().map_err(|e| e.to_string())?;
+        let mut settings = settings_guard.get();
+        settings.performance.manual_thread_limit = limit;
+        settings_guard.set(settings)?;
+    }
+
+    Ok(())
+}

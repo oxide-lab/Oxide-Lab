@@ -118,6 +118,342 @@
     "updateNow": "Update now",
     "installLatest": "Install latest",
     "installed": "Installed backend: {backend}",
-    "noBackends": "No compatible backends found"
+    "noBackends": "No compatible backends found",
+    "scheduler": {
+      "title": "Scheduler",
+      "description": "Queueing, keep-alive and VRAM recovery settings",
+      "keepAliveSecs": "Keep-alive (sec)",
+      "maxLoadedModels": "Max loaded models (0=auto)",
+      "maxQueue": "Max queue",
+      "queueWaitTimeoutMs": "Queue wait timeout (ms)",
+      "vramRecoveryTimeoutMs": "VRAM recovery timeout (ms)",
+      "vramRecoveryPollMs": "VRAM recovery poll (ms)",
+      "vramRecoveryThreshold": "VRAM recovery threshold",
+      "expirationTickMs": "Expiration tick (ms)",
+      "save": "Save scheduler settings",
+      "saved": "Scheduler settings saved"
+    }
+  },
+  "v2": {
+    "common": {
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    },
+    "page": {
+      "title": "Settings",
+      "basic": "Basic",
+      "expert": "Expert",
+      "developer_mode": "Developer Mode"
+    },
+    "sidebar": {
+      "changed": "Changed {count}"
+    },
+    "search": {
+      "placeholder": "Search settings…",
+      "empty": "No settings found.",
+      "results": "Results",
+      "developer_only": "Developer only"
+    },
+    "sections": {
+      "general": {
+        "title": "General",
+        "description": "Core application behavior and UI defaults."
+      },
+      "models_storage": {
+        "title": "Models & Storage",
+        "description": "Default model folders, cache locations, and discovery behavior."
+      },
+      "performance": {
+        "title": "Performance",
+        "description": "Runtime loading and memory controls."
+      },
+      "chat_presets": {
+        "title": "Chat & Presets",
+        "description": "Default chat behavior and reusable prompt/sampling profiles."
+      },
+      "privacy_data": {
+        "title": "Privacy & Data",
+        "description": "Local data controls, exports, and deletion actions."
+      },
+      "developer": {
+        "title": "Developer",
+        "description": "Network and OpenAI-compatible API controls."
+      },
+      "about": {
+        "title": "About",
+        "description": "Build information and project links."
+      }
+    },
+    "general": {
+      "locale": {
+        "title": "Language",
+        "description": "Interface language for the application.",
+        "en": "English",
+        "ru": "Russian",
+        "pt_br": "Portuguese (Brazil)"
+      },
+      "theme": {
+        "title": "Theme",
+        "description": "Appearance mode for the app shell.",
+        "system": "System",
+        "light": "Light",
+        "dark": "Dark"
+      },
+      "auto_update": {
+        "title": "Auto Updates",
+        "description": "Automatically check and apply updates."
+      },
+      "launch_on_startup": {
+        "title": "Launch on Startup",
+        "description": "Start Oxide Lab when your OS starts."
+      },
+      "search_history": {
+        "title": "Search History",
+        "description": "Store local settings search history."
+      }
+    },
+    "models_storage": {
+      "models_dir": {
+        "title": "Models Directory",
+        "description": "Path for local GGUF models.",
+        "placeholder": "C:\\Models"
+      },
+      "cache_dir": {
+        "title": "Cache Directory",
+        "description": "Path for temporary downloads and cache files.",
+        "placeholder": "C:\\OxideCache"
+      },
+      "model_selector_search": {
+        "title": "Model Search in Picker",
+        "description": "Enable search in the main model selector."
+      },
+      "links": {
+        "models": "Open Model Library",
+        "api": "Open API Page"
+      }
+    },
+    "performance": {
+      "auto": "auto",
+      "manual_thread_limit": {
+        "title": "Manual Thread Limit",
+        "description": "Leave empty for automatic."
+      },
+      "n_gpu_layers": {
+        "title": "GPU Layers",
+        "description": "Model layers offloaded to GPU."
+      },
+      "ctx_size": {
+        "title": "Context Size",
+        "description": "Maximum prompt context in tokens."
+      },
+      "batch_size": {
+        "title": "Batch Size",
+        "description": "Inference batch size."
+      },
+      "ubatch_size": {
+        "title": "UBatch Size",
+        "description": "Micro-batch size."
+      },
+      "threads": {
+        "title": "Threads",
+        "description": "Runtime CPU threads."
+      },
+      "threads_batch": {
+        "title": "Threads Batch",
+        "description": "Batch scheduling threads."
+      },
+      "flash_attn": {
+        "title": "Flash Attention",
+        "description": "Flash attention runtime mode.",
+        "auto": "auto",
+        "on": "on",
+        "off": "off"
+      },
+      "memory_mode": {
+        "title": "Memory Mode",
+        "description": "Planner memory strategy.",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "vram_budget": {
+        "title": "VRAM Budget",
+        "description": "Predictive memory budget before model load.",
+        "safe": "Safe",
+        "warn": "Warning",
+        "risk": "Risk",
+        "predicted": "Predicted {predicted} GB / {total} GB",
+        "current": "Current usage: {used} GB",
+        "recommended": "Recommended GPU layers: {count}"
+      }
+    },
+    "chat_presets": {
+      "preset_label": "Preset",
+      "select": "Select preset",
+      "copy_suffix": "Copy",
+      "builtin": "Built-in",
+      "apply_later_notice": "Preset will be applied when chat view is active.",
+      "default_preset": {
+        "title": "Default Preset",
+        "description": "Preset used by default for new chats."
+      },
+      "name": {
+        "title": "Name",
+        "description": "Visible preset name."
+      },
+      "system_prompt": {
+        "title": "System Prompt",
+        "description": "Default system prompt for this preset."
+      },
+      "temperature": {
+        "title": "Temperature",
+        "description": "Creativity / randomness."
+      },
+      "top_p": {
+        "title": "Top-P",
+        "description": "Cumulative probability threshold."
+      },
+      "top_k": {
+        "title": "Top-K",
+        "description": "Token shortlist size."
+      },
+      "repeat_penalty": {
+        "title": "Repeat Penalty",
+        "description": "Penalty for repeated tokens."
+      },
+      "max_tokens": {
+        "title": "Max Tokens",
+        "description": "Generation limit for response tokens."
+      },
+      "context": {
+        "title": "Context",
+        "description": "Default context tokens for this preset."
+      },
+      "actions": {
+        "new": "New Preset",
+        "import": "Import JSON",
+        "export": "Export JSON",
+        "apply": "Apply to Current Chat",
+        "delete": "Delete"
+      }
+    },
+    "privacy_data": {
+      "export_dialog_title": "Export Oxide user data",
+      "clear_title": "Confirm data clear",
+      "clear_confirm": "Clear data scope \"{scope}\"? This action cannot be undone.",
+      "telemetry": {
+        "title": "Telemetry",
+        "description": "Usage telemetry reports."
+      },
+      "crash_reports": {
+        "title": "Crash Reports",
+        "description": "Send crash reports to improve stability."
+      },
+      "locations": {
+        "settings": "Settings",
+        "chats_db": "Chats DB",
+        "profile": "Profile"
+      },
+      "actions": {
+        "export": "Export Data",
+        "clear_chats": "Clear Chats",
+        "clear_downloads": "Clear Downloads",
+        "factory_reset": "Factory Reset"
+      }
+    },
+    "developer": {
+      "alerts": {
+        "lan_requires_auth": "LAN mode requires auth. Enabling auth_required automatically.",
+        "cors_any_confirm": "CORS \"any\" allows all origins and can expose your local API. Continue?"
+      },
+      "openai_server": {
+        "title": "Enable OpenAI API Server",
+        "description": "Start local OpenAI-compatible endpoint."
+      },
+      "bind_host": {
+        "title": "LAN Access",
+        "description": "Enable binding to 0.0.0.0 for LAN clients."
+      },
+      "port": {
+        "title": "Port",
+        "description": "Server TCP port (1024-65535)."
+      },
+      "auth_required": {
+        "title": "Require API Key Auth",
+        "description": "Require Bearer token for every request."
+      },
+      "api_keys": {
+        "title": "API Keys",
+        "description": "Keys are hashed before being stored.",
+        "placeholder": "sk-local-...",
+        "add": "Add",
+        "configured": "{count} keys configured"
+      },
+      "cors": {
+        "title": "CORS Mode",
+        "description": "Cross-origin policy for API requests.",
+        "confirm_title": "Allow CORS from any origin?",
+        "same_origin": "same_origin",
+        "allowlist": "allowlist",
+        "any": "any"
+      },
+      "cors_allowlist": {
+        "title": "CORS Allowlist",
+        "description": "Comma-separated origins.",
+        "placeholder": "http://localhost:3000, http://127.0.0.1:5173"
+      },
+      "risk": {
+        "title": "Risk hint",
+        "description": "Enabling LAN or permissive CORS can expose your local model endpoint to other clients."
+      },
+      "actions": {
+        "restart_server": "Restart API Server"
+      }
+    },
+    "security_status": {
+      "title": "Security Status",
+      "description": "Current local API server exposure and protection state.",
+      "server": "Server",
+      "on": "On",
+      "off": "Off",
+      "localhost": "Localhost",
+      "lan": "LAN",
+      "auth": "Auth",
+      "required": "Required",
+      "disabled": "Disabled",
+      "cors": "CORS",
+      "endpoint": "Endpoint",
+      "warnings": "Security warnings",
+      "unavailable": "Status unavailable."
+    },
+    "about": {
+      "version": "Oxide Lab version: {version}",
+      "version_label": "Version",
+      "copy_version": "Copy",
+      "copied": "Copied",
+      "check_updates": "Check for Updates",
+      "summary": "Local-first AI chat with private model execution.",
+      "legal_title": "Legal",
+      "copyright": "Copyright © {year} FerrisMind",
+      "privacy_policy": "Privacy Policy",
+      "terms": "Terms of Service",
+      "eula": "End User License Agreement",
+      "third_party_licenses": "View Open Source Licenses",
+      "info_title": "Information",
+      "website": "Website",
+      "support": "Support / Help",
+      "credits_title": "Credits & Acknowledgments",
+      "credits_body": "Built with Tauri, Svelte, Rust, llama.cpp, shadcn-svelte, and phosphor icons.",
+      "github": "GitHub",
+      "links": {
+        "updates": "Open releases page in browser",
+        "privacy": "Open privacy policy in browser",
+        "terms": "Open terms of service in browser",
+        "eula": "Open end user license agreement in browser",
+        "licenses": "Open third-party licenses in browser",
+        "website": "Open project website in browser",
+        "support": "Open support page in browser"
+      }
+    }
   }
 }

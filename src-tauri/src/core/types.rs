@@ -68,6 +68,41 @@ pub enum LlamaEmbeddingsStrategy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlamaSchedulerConfig {
+    #[serde(default = "default_keep_alive_secs")]
+    pub keep_alive_secs: u64,
+    #[serde(default = "default_max_loaded_models")]
+    pub max_loaded_models: u32,
+    #[serde(default = "default_max_queue")]
+    pub max_queue: u32,
+    #[serde(default = "default_queue_wait_timeout_ms")]
+    pub queue_wait_timeout_ms: u64,
+    #[serde(default = "default_vram_recovery_timeout_ms")]
+    pub vram_recovery_timeout_ms: u64,
+    #[serde(default = "default_vram_recovery_poll_ms")]
+    pub vram_recovery_poll_ms: u64,
+    #[serde(default = "default_vram_recovery_threshold")]
+    pub vram_recovery_threshold: f32,
+    #[serde(default = "default_expiration_tick_ms")]
+    pub expiration_tick_ms: u64,
+}
+
+impl Default for LlamaSchedulerConfig {
+    fn default() -> Self {
+        Self {
+            keep_alive_secs: default_keep_alive_secs(),
+            max_loaded_models: default_max_loaded_models(),
+            max_queue: default_max_queue(),
+            queue_wait_timeout_ms: default_queue_wait_timeout_ms(),
+            vram_recovery_timeout_ms: default_vram_recovery_timeout_ms(),
+            vram_recovery_poll_ms: default_vram_recovery_poll_ms(),
+            vram_recovery_threshold: default_vram_recovery_threshold(),
+            expiration_tick_ms: default_expiration_tick_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlamaRuntimeConfig {
     #[serde(default)]
     pub server_path: Option<String>,
@@ -93,6 +128,8 @@ pub struct LlamaRuntimeConfig {
     pub extra_env: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub embeddings_strategy: LlamaEmbeddingsStrategy,
+    #[serde(default)]
+    pub scheduler: LlamaSchedulerConfig,
 }
 
 const fn default_ngl() -> i32 {
@@ -116,6 +153,30 @@ const fn default_n_predict() -> i32 {
 fn default_flash_attn() -> String {
     "auto".to_string()
 }
+const fn default_keep_alive_secs() -> u64 {
+    300
+}
+const fn default_max_loaded_models() -> u32 {
+    0
+}
+const fn default_max_queue() -> u32 {
+    128
+}
+const fn default_queue_wait_timeout_ms() -> u64 {
+    15_000
+}
+const fn default_vram_recovery_timeout_ms() -> u64 {
+    5_000
+}
+const fn default_vram_recovery_poll_ms() -> u64 {
+    250
+}
+const fn default_vram_recovery_threshold() -> f32 {
+    0.75
+}
+const fn default_expiration_tick_ms() -> u64 {
+    1_000
+}
 
 impl Default for LlamaRuntimeConfig {
     fn default() -> Self {
@@ -132,6 +193,7 @@ impl Default for LlamaRuntimeConfig {
             flash_attn: default_flash_attn(),
             extra_env: std::collections::HashMap::new(),
             embeddings_strategy: LlamaEmbeddingsStrategy::SeparateSession,
+            scheduler: LlamaSchedulerConfig::default(),
         }
     }
 }
@@ -239,4 +301,3 @@ pub struct Attachment {
     pub path: Option<String>,
     pub bytes_b64: Option<String>,
 }
-

@@ -12,7 +12,7 @@
     ConversationEmptyState,
   } from '$lib/components/ai-elements/conversation';
   import Sparkle from 'phosphor-svelte/lib/Sparkle';
-  import { t } from '$lib/i18n';
+  import { t, locale } from '$lib/i18n';
   import { chatState } from '$lib/stores/chat';
   import UserMessage from './UserMessage.svelte';
   import AssistantMessage from './AssistantMessage.svelte';
@@ -33,6 +33,9 @@
   // Derived value for placeholder only state
   let placeholderOnly = $derived(showModelNotice && messages.length === 0);
 
+  // Current locale guard to avoid calling $t before translations are loaded
+  let currentLocale = $derived($locale);
+
   // Action handlers
   function handleCopy(content: string) {
     navigator.clipboard.writeText(content);
@@ -51,14 +54,14 @@
   <ConversationEmptyState class="min-h-0">
     <Sparkle size={36} weight="duotone" class="text-muted-foreground/50" />
     <p class="text-sm text-muted-foreground/80">
-      {$t('chat.notice.selectModel') || 'Select a model to start chatting'}
+      {currentLocale ? $t('chat.notice.selectModel') : 'Select a model to start chatting'}
     </p>
   </ConversationEmptyState>
 {:else if messages.length === 0}
   <ConversationEmptyState class="min-h-0">
     <Sparkle size={36} weight="duotone" class="text-muted-foreground/50" />
     <p class="text-sm text-muted-foreground/80">
-      {$t('chat.notice.startConversation') || 'Start a conversation'}
+      {currentLocale ? $t('chat.notice.startConversation') : 'Start a conversation'}
     </p>
   </ConversationEmptyState>
 {:else}

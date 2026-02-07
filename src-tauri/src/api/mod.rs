@@ -4,6 +4,7 @@ pub mod local_models;
 pub mod model_cards;
 pub mod model_loading;
 pub mod model_manager;
+pub mod openai;
 pub mod openai_server;
 pub mod performance_api;
 pub mod prefix_cache_api;
@@ -19,4 +20,3 @@ pub use performance_api::{
     clear_performance_metrics, get_average_duration, get_memory_usage, get_performance_metrics,
     get_startup_metrics, get_system_usage,
 };
-

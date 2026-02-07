@@ -6,6 +6,8 @@ use crate::core::types::{
 use crate::inference::engine::{self, EngineSessionKind, ResolvedModelSource};
 use crate::inference::llamacpp::http_client::preflight_chat_messages;
 use crate::inference::llamacpp::state::LlamaCppState;
+use crate::inference::scheduler::{RequestPriority, VramScheduler};
+use tauri::{Emitter, Manager};
 
 fn to_snapshot(info: &crate::inference::engine::EngineSessionInfo) -> LlamaSessionSnapshot {
     LlamaSessionSnapshot {
@@ -49,6 +51,7 @@ pub async fn load_model(
 
     let manager = engine::default_session_manager(app.clone(), llama_state);
     let source = manager.resolve_model_source(&req)?;
+    let scheduler = app.state::<VramScheduler>().inner().clone();
 
     emit_load_progress(
         &app,
@@ -59,11 +62,9 @@ pub async fn load_model(
         None,
     );
 
-    manager.stop_all_sessions(None).await?;
-    let chat_session = manager
-        .start_session(EngineSessionKind::Chat, &source, &runtime_cfg)
+    let chat_session = scheduler
+        .preload_chat(source.clone(), runtime_cfg.clone())
         .await?;
-    let chat_session = manager.ensure_health(chat_session, &runtime_cfg).await?;
 
     emit_load_progress(
         &app,
@@ -75,8 +76,6 @@ pub async fn load_model(
     );
 
     let mut guard = state_arc.lock().map_err(|e| e.to_string())?;
-    guard.scheduler.unload_model();
-    guard.scheduler.load_model(source.model_id.clone());
     guard.context_length = source.context_length.max(1);
     guard.model_path = Some(source.model_path.clone());
     guard.hub_repo_id = match &req {
@@ -116,16 +115,30 @@ pub async fn generate_stream(
     let model_id = active_model_id.ok_or_else(|| "No active model loaded".to_string())?;
     let model_path = model_path.ok_or_else(|| "Active model path is missing".to_string())?;
 
+    let scheduler = app.state::<VramScheduler>().inner().clone();
     let manager = engine::default_session_manager(app.clone(), llama_state);
     let source = source_from_state(model_id.clone(), model_path, context_length);
-
-    let chat_session = manager
-        .start_session(EngineSessionKind::Chat, &source, &runtime_cfg)
-        .await?;
-    let chat_session = manager.ensure_health(chat_session, &runtime_cfg).await?;
+    let acquired = scheduler
+        .acquire(
+            EngineSessionKind::Chat,
+            source,
+            runtime_cfg.clone(),
+            RequestPriority::High,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    if acquired.waited_ms > 1_000 {
+        let _ = app.emit(
+            "scheduler_queue_wait",
+            serde_json::json!({
+                "waited_ms": acquired.waited_ms,
+                "queue_position": acquired.queue_position,
+            }),
+        );
+    }
+    let chat_session = acquired.lease.session().clone();
 
     if let Ok(mut guard) = state_arc.lock() {
-        guard.scheduler.touch_model();
         guard.active_backend = ActiveBackend::Llamacpp;
         guard.active_model_id = Some(model_id);
         guard.active_llama_session = Some(to_snapshot(&chat_session));
@@ -133,7 +146,9 @@ pub async fn generate_stream(
 
     let msgs = preflight_chat_messages(&req)?;
     req.messages = Some(msgs);
-    manager.chat_stream(&app, &chat_session, req).await
+    let result = manager.chat_stream(&app, &chat_session, req).await;
+    drop(acquired.lease);
+    result
 }
 
 pub async fn unload_model(
@@ -143,20 +158,20 @@ pub async fn unload_model(
 ) -> Result<(), String> {
     emit_load_progress(&app, "unload_start", 0, None, false, None);
 
+    let scheduler = app.state::<VramScheduler>().inner().clone();
     let active_model_id = {
         let guard = state_arc.lock().map_err(|e| e.to_string())?;
         guard.active_model_id.clone()
     };
 
-    let manager = engine::default_session_manager(app.clone(), llama_state);
+    let _ = llama_state;
     if let Some(model_id) = active_model_id.as_deref() {
-        manager.stop_model_sessions(model_id).await?;
+        scheduler.force_unload_model(model_id).await?;
     } else {
-        manager.stop_all_sessions(None).await?;
+        scheduler.force_unload_all().await?;
     }
 
     let mut guard = state_arc.lock().map_err(|e| e.to_string())?;
-    guard.scheduler.unload_model();
     guard.context_length = 4096;
     guard.model_path = None;
     guard.hub_repo_id = None;
@@ -169,4 +184,3 @@ pub async fn unload_model(
     emit_load_progress(&app, "unload_complete", 100, Some("complete"), true, None);
     Ok(())
 }
-

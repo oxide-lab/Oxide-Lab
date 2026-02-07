@@ -1,7 +1,5 @@
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
-#[cfg(debug_assertions)]
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::api::commands::threads::{apply_rayon_thread_limit, default_rayon_thread_limit};
 use crate::core::device::select_device;
@@ -60,7 +58,6 @@ pub fn run() {
 
     let shared = build_shared_state();
     let llama_cpp_state = crate::inference::llamacpp::state::LlamaCppState::new();
-    let llama_cpp_state_for_exit = llama_cpp_state.clone();
     let performance_monitor = {
         let guard = shared.lock().expect("Failed to lock shared state");
         guard.performance_monitor.clone()
@@ -167,6 +164,16 @@ pub fn run() {
             crate::api::get_locale,
             crate::api::set_locale,
             crate::api::openai_server::get_server_config,
+            crate::api::get_app_settings_v2,
+            crate::api::patch_app_settings_v2,
+            crate::api::reset_app_settings_v2,
+            crate::api::get_data_locations,
+            crate::api::export_user_data,
+            crate::api::clear_user_data,
+            crate::api::get_openai_server_status,
+            crate::api::set_openai_server_config,
+            crate::api::restart_openai_server,
+            crate::api::search_settings_v2,
             crate::api::prefix_cache_api::get_prefix_cache_info,
             crate::api::prefix_cache_api::set_prefix_cache_enabled,
             crate::api::prefix_cache_api::clear_prefix_cache,
@@ -175,6 +182,8 @@ pub fn run() {
             crate::api::set_backend_preference,
             crate::api::get_llama_runtime_config,
             crate::api::set_llama_runtime_config,
+            crate::api::get_loaded_models,
+            crate::api::get_scheduler_stats,
         ])
         .setup(move |app| {
             // Hybrid responsiveness: keep the window/event-loop thread slightly prioritized on Windows,
@@ -182,117 +191,64 @@ pub fn run() {
             let _ = set_current_thread_above_normal();
 
             let handle = app.handle();
-            match ModelState::load_thread_limit(handle) {
-                Ok(limit) => {
-                    // Leave 1 core free by default to keep UI responsive during heavy loads.
-                    // If user explicitly configured a limit, always respect it.
-                    let effective_limit = limit.or_else(|| Some(default_rayon_thread_limit()));
-                    apply_rayon_thread_limit(effective_limit);
-                    if let Some(threads) = effective_limit {
-                        match init_global_low_priority_pool(threads) {
-                            Ok(true) => {}
-                            Ok(false) => log_load_warn!("global rayon pool already initialized; low-priority start handler not applied"),
-                            Err(e) => log_load_warn!("failed to initialize global rayon pool: {}", e),
-                        }
-                    }
-                    if let Ok(mut guard) = shared.lock() {
-                        guard.rayon_thread_limit = limit;
-                    }
-                }
+            let settings_store = match crate::core::settings_v2::SettingsV2Store::load(&handle) {
+                Ok(store) => store,
                 Err(err) => {
-                    eprintln!("Failed to load saved Rayon thread limit: {}", err);
+                    log::error!("Failed to initialize settings_v2 store: {}", err);
+                    return Err(std::io::Error::other(err).into());
+                }
+            };
+            let settings_snapshot = settings_store.get();
+
+            if let Ok(locale) = settings_snapshot.general.locale.parse::<crate::i18n::Locale>() {
+                crate::i18n::set_locale(locale);
+            }
+
+            // Leave 1 core free by default to keep UI responsive during heavy loads.
+            // If user explicitly configured a limit, always respect it.
+            let configured_limit = settings_snapshot.performance.manual_thread_limit;
+            let effective_limit = configured_limit.or_else(|| Some(default_rayon_thread_limit()));
+            apply_rayon_thread_limit(effective_limit);
+            if let Some(threads) = effective_limit {
+                match init_global_low_priority_pool(threads) {
+                    Ok(true) => {}
+                    Ok(false) => log_load_warn!(
+                        "global rayon pool already initialized; low-priority start handler not applied"
+                    ),
+                    Err(e) => log_load_warn!("failed to initialize global rayon pool: {}", e),
                 }
             }
-            match ModelState::load_llama_runtime(handle) {
-                Ok(Some(cfg)) => {
-                    if let Ok(mut guard) = shared.lock() {
-                        guard.llama_runtime = cfg;
-                    }
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    eprintln!("Failed to load llama runtime config: {}", err);
-                }
+
+            if let Ok(mut guard) = shared.lock() {
+                guard.rayon_thread_limit = configured_limit;
+                guard.llama_runtime = settings_snapshot.performance.llama_runtime.clone();
             }
+
+            app.manage(crate::core::settings_v2::SettingsV2State::new(
+                settings_store,
+            ));
             spawn_startup_tracker(app.handle().clone(), performance_monitor.clone());
 
-            // Start the model scheduler keep-alive task
-            let scheduler_state = shared.clone();
-            let scheduler_llama_state = llama_cpp_state.clone();
-            let scheduler_app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let app = scheduler_app_handle;
-                // Проверяем каждую минуту (настраивается)
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-                // Первый тик происходит немедленно, пропускаем его
-                interval.tick().await;
-
-                loop {
-                    interval.tick().await;
-                    let expired_model_id = if let Ok(mut guard) = scheduler_state.lock() {
-                        guard.scheduler.check_expiration()
-                    } else {
-                        log::error!("Scheduler keep-alive task: failed to lock state");
-                        None
-                    };
-
-                    if let Some(unloaded_id) = expired_model_id {
-                        let manager = crate::inference::engine::default_session_manager(
-                            app.clone(),
-                            scheduler_llama_state.clone(),
-                        );
-                        if let Err(e) = manager.stop_model_sessions(&unloaded_id).await {
-                            log::error!(
-                                "Scheduler keep-alive task: failed to unload llama sessions for {}: {}",
-                                unloaded_id,
-                                e
-                            );
-                        }
-
-                        if let Ok(mut guard) = scheduler_state.lock() {
-                            if guard.active_model_id.as_deref() == Some(unloaded_id.as_str()) {
-                                guard.context_length = 4096;
-                                guard.model_path = None;
-                                guard.hub_repo_id = None;
-                                guard.hub_revision = None;
-                                guard.chat_template = None;
-                                guard.active_backend = crate::core::types::ActiveBackend::None;
-                                guard.active_model_id = None;
-                                guard.active_llama_session = None;
-                            }
-                        } else {
-                            log::error!(
-                                "Scheduler keep-alive task: failed to lock state for cleanup"
-                            );
-                        }
-
-                        if let Err(e) = app.emit("model_unloaded", &unloaded_id) {
-                            log::error!("Failed to emit model_unloaded event: {}", e);
-                        }
-                    }
-                }
+            // Startup cleanup to keep process ownership consistent after crashes/restarts.
+            let startup_handle = app.handle().clone();
+            tauri::async_runtime::block_on(async move {
+                let _ = oxide_llamacpp::cleanup::cleanup_llama_processes(startup_handle).await;
             });
 
-            // Start OpenAI-compatible API server
-            let openai_state = shared.clone();
-            let openai_llama_state = llama_cpp_state.clone();
-            let openai_app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                use crate::api::openai_server::OPENAI_PORT;
-                match crate::api::openai_server::start_server(
-                    openai_app_handle,
-                    openai_state,
-                    openai_llama_state,
-                    OPENAI_PORT,
-                )
-                .await
-                {
-                    Ok(_shutdown_tx) => {
-                        log::info!("OpenAI API server started on port {}", OPENAI_PORT);
-                    }
-                    Err(e) => {
-                        log::error!("Failed to start OpenAI API server: {}", e);
-                    }
+            // Initialize and store the scheduler (single source of runtime sessions ownership).
+            let scheduler = crate::inference::scheduler::VramScheduler::new(
+                app.handle().clone(),
+                llama_cpp_state.clone(),
+            );
+            app.manage(scheduler);
+
+            let openai_controller =
+                crate::api::openai::OpenAiServerController::new(app.handle().clone(), shared.clone());
+            app.manage(openai_controller.clone());
+            let openai_cfg = settings_snapshot.developer.openai_server.clone();
+            tauri::async_runtime::block_on(async move {
+                if let Err(err) = openai_controller.apply_config(openai_cfg).await {
+                    log::error!("Failed to apply OpenAI server config: {}", err);
                 }
             });
 
@@ -307,12 +263,20 @@ pub fn run() {
 
     app.run(move |_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } = event {
-            let manager = crate::inference::engine::default_session_manager(
-                _handle.clone(),
-                llama_cpp_state_for_exit.clone(),
-            );
-            let _ = tauri::async_runtime::block_on(async { manager.stop_all_sessions(None).await });
+            if let Some(openai) = _handle.try_state::<crate::api::openai::OpenAiServerController>() {
+                let controller = openai.inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    controller.stop().await;
+                });
+            }
+            if let Some(state) = _handle.try_state::<crate::inference::scheduler::VramScheduler>() {
+                let scheduler = state.inner().clone();
+                let _ = tauri::async_runtime::block_on(async { scheduler.shutdown().await });
+            } else {
+                tauri::async_runtime::block_on(async {
+                    let _ = oxide_llamacpp::cleanup::cleanup_llama_processes(_handle.clone()).await;
+                });
+            }
         }
     });
 }
-

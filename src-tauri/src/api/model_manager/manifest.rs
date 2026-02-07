@@ -85,4 +85,3 @@ fn canonicalize_quantization_label(raw: &str) -> String {
     }
     value
 }
-

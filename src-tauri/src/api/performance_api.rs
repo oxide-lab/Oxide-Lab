@@ -74,4 +74,3 @@ pub async fn get_system_usage(state: tauri::State<'_, SharedState>) -> Result<Sy
     let usage = monitor.get_system_usage().await;
     Ok(usage)
 }
-

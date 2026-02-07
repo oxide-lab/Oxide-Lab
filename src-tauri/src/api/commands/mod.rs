@@ -8,6 +8,7 @@ pub mod metadata;
 pub mod model;
 pub mod precision;
 pub mod prompts;
+pub mod settings_v2;
 pub mod threads;
 
 pub use backend::*;
@@ -20,5 +21,5 @@ pub use metadata::*;
 pub use model::*;
 pub use precision::*;
 pub use prompts::*;
+pub use settings_v2::*;
 pub use threads::*;
-

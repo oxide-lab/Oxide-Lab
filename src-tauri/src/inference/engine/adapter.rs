@@ -40,4 +40,3 @@ pub trait EngineAdapter: Send + Sync {
         input: serde_json::Value,
     ) -> Result<serde_json::Value, String>;
 }
-

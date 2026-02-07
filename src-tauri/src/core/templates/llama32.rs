@@ -99,4 +99,3 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["<|eot_id|>"],
     force_bos: false,
 };
-

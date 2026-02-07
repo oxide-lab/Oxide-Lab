@@ -77,4 +77,3 @@ pub fn clear_prefix_cache(state: tauri::State<'_, SharedState>) -> Result<(), St
     guard.prefix_cache.clear();
     Ok(())
 }
-

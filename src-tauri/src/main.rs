@@ -4,4 +4,3 @@
 fn main() {
     oxide_lib::run()
 }
-

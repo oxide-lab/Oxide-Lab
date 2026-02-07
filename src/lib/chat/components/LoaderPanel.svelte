@@ -11,10 +11,12 @@
   import { Checkbox } from '$lib/components/ui/checkbox';
   import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
+  import * as Select from '$lib/components/ui/select';
   import { cn } from '../../utils';
   import Cpu from 'phosphor-svelte/lib/Cpu';
   import GpuCard from 'phosphor-svelte/lib/GraphicsCard';
   import Check from 'phosphor-svelte/lib/Check';
+  import Sparkle from 'phosphor-svelte/lib/Sparkle';
 
   interface Props {
     format?: 'gguf' | 'hub_gguf';
@@ -53,6 +55,10 @@
     min_p_value?: number;
     repeat_penalty_enabled?: boolean;
     repeat_penalty_value?: number;
+    presets?: { id: string; name: string }[];
+    selectedPresetId?: string | null;
+    onPresetSelect?: (presetId: string) => void;
+    onPresetApply?: () => void;
     onDeviceToggle?: (enabled: boolean) => void;
     class?: string;
   }
@@ -94,6 +100,10 @@
     min_p_value = $bindable(0.05),
     repeat_penalty_enabled = $bindable(false),
     repeat_penalty_value = $bindable(1.1),
+    presets = [],
+    selectedPresetId = $bindable(null),
+    onPresetSelect,
+    onPresetApply,
     onDeviceToggle,
     class: className = '',
   }: Props = $props();
@@ -122,6 +132,43 @@
 </script>
 
 <section class={cn('loader-panel space-y-6', className)}>
+  {#if presets.length > 0}
+    <div class="space-y-3">
+      <div class="flex items-center justify-between">
+        <Label class="text-sm font-medium flex items-center gap-1">
+          <Sparkle class="size-4" />
+          {$t('settings.v2.chat_presets.preset_label')}
+        </Label>
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => onPresetApply?.()}
+          disabled={!selectedPresetId}
+        >
+          {$t('settings.v2.chat_presets.actions.apply')}
+        </Button>
+      </div>
+      <Select.Root
+        type="single"
+        value={selectedPresetId ?? undefined}
+        onValueChange={(next) => {
+          if (!next) return;
+          selectedPresetId = next;
+          onPresetSelect?.(next);
+        }}
+      >
+        <Select.Trigger class="w-full">
+          {presets.find((preset) => preset.id === selectedPresetId)?.name ?? $t('settings.v2.chat_presets.select')}
+        </Select.Trigger>
+        <Select.Content>
+          {#each presets as preset (preset.id)}
+            <Select.Item value={preset.id}>{preset.name}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    </div>
+  {/if}
+
   <!-- Device Selector -->
   <div class="space-y-3">
     <Label class="text-sm font-medium">{$t('common.loader.device') || 'Device'}</Label>

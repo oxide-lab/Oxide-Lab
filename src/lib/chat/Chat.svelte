@@ -23,6 +23,8 @@
   import { performanceService } from '$lib/services/performance-service';
   import { inferenceMetricsStore } from '$lib/stores/inference-metrics';
   import type { InferenceMetrics } from '$lib/types/performance';
+  import { settingsV2Store } from '$lib/stores/settings-v2';
+  import type { ChatPreset } from '$lib/types/settings-v2';
 
 
   // State
@@ -83,6 +85,7 @@
   let split_prompt = $state<boolean>(savedState.split_prompt);
   let verbose_prompt = $state<boolean>(savedState.verbose_prompt);
   let tracing = $state<boolean>(savedState.tracing);
+  let preset_id = $state<string | null>(savedState.preset_id ?? null);
 
   // Create controller with context
   const controller = createChatController({
@@ -358,6 +361,12 @@
   let canStopGeneration = $derived($chatState.busy && $chatState.isLoaded);
   // Use $chatState.isLoaded because store subscriptions are properly tracked by Svelte 5
   let showComposer = $derived($chatState.isLoaded || hasMessages);
+  let presetOptions = $derived(
+    ($settingsV2Store?.chat_presets.presets ?? []).map((preset) => ({
+      id: preset.id,
+      name: preset.name,
+    })),
+  );
 
   // Keep shared chatState in sync so header and other views get instant truth
   // Note: isLoaded and busy are NOT synced here - they are managed directly in actions.ts
@@ -378,6 +387,7 @@
       loadingStage,
       loadingProgress,
       unloadingProgress,
+      preset_id,
     }));
   });
 
@@ -387,6 +397,37 @@
 
   function toggleChatHistoryVisibility() {
     showChatHistory.update((value) => !value);
+  }
+
+  function applySelectedPreset() {
+    if (!preset_id) return;
+    applyPresetById(preset_id);
+  }
+
+  function applyPresetValues(preset: ChatPreset) {
+    preset_id = preset.id;
+    use_custom_params = true;
+    temperature = preset.sampling.temperature;
+    temperature_enabled = true;
+    top_k_enabled = true;
+    top_k_value = preset.sampling.top_k;
+    top_p_enabled = true;
+    top_p_value = preset.sampling.top_p;
+    min_p_enabled = true;
+    min_p_value = preset.sampling.min_p;
+    repeat_penalty_enabled = true;
+    repeat_penalty_value = preset.sampling.repeat_penalty;
+    ctx_limit_value = preset.context;
+  }
+
+  function applyPresetById(presetId: string, source: 'settings' | 'chat' = 'chat') {
+    const snapshot = settingsV2Store.getSnapshot();
+    const preset = snapshot?.chat_presets.presets.find((item) => item.id === presetId);
+    if (!preset) return;
+    applyPresetValues(preset);
+    if (source === 'settings') {
+      localStorage.removeItem('chat.quickPreset');
+    }
   }
 
   /**
@@ -443,6 +484,7 @@
       pickModel: controller.pickModel,
       loadModelFromManager,
       reloadSelectedModel,
+      applyPresetById,
       loadGGUF: controller.loadGGUF,
       unloadGGUF: controller.unloadGGUF,
       cancelLoading: controller.cancelLoading,
@@ -478,6 +520,27 @@
           messages = session.messages;
       }
     } catch { /* ignore */ }
+
+    try {
+      if (!settingsV2Store.getSnapshot()) {
+        await settingsV2Store.load();
+      }
+      const snapshot = settingsV2Store.getSnapshot();
+      if (snapshot) {
+        const fromSettings = localStorage.getItem('chat.quickPreset');
+        const targetPresetId = fromSettings || preset_id || snapshot.chat_presets.default_preset_id;
+        const shouldApplyDefaults =
+          !preset_id &&
+          !use_custom_params &&
+          messages.length === 0 &&
+          Boolean(targetPresetId);
+        if (fromSettings || shouldApplyDefaults) {
+          applyPresetById(targetPresetId, fromSettings ? 'settings' : 'chat');
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to sync chat defaults from settings:', err);
+    }
 
     // Initialize stream listener
     try {
@@ -547,6 +610,7 @@
       split_prompt,
       verbose_prompt,
       tracing,
+      preset_id,
     });
 
     controller.destroy();
@@ -668,6 +732,10 @@
             bind:min_p_value
             bind:repeat_penalty_enabled
             bind:repeat_penalty_value
+            bind:selectedPresetId={preset_id}
+            presets={presetOptions}
+            onPresetSelect={(presetId) => (preset_id = presetId)}
+            onPresetApply={applySelectedPreset}
             onDeviceToggle={(val) => controller.setDeviceByToggle(val)}
           />
         </div>

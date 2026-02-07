@@ -1,6 +1,9 @@
 use crate::core::state::SharedState;
 use crate::core::types::{ActiveBackend, LoadRequest};
 use crate::generate::cancel::{CANCEL_LOADING, cancel_model_loading_cmd};
+use crate::inference::engine::EngineSessionKind;
+use crate::inference::scheduler::VramScheduler;
+use tauri::Manager;
 
 #[tauri::command]
 pub async fn load_model(
@@ -49,8 +52,26 @@ pub async fn unload_model(
 }
 
 #[tauri::command]
-pub fn is_model_loaded(state: tauri::State<'_, SharedState>) -> Result<bool, String> {
+pub fn is_model_loaded(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SharedState>,
+) -> Result<bool, String> {
     let guard = state.lock().map_err(|e| e.to_string())?;
-    Ok(matches!(guard.active_backend, ActiveBackend::Llamacpp) && guard.active_model_id.is_some())
-}
+    if !matches!(guard.active_backend, ActiveBackend::Llamacpp) {
+        return Ok(false);
+    }
+    let active = match &guard.active_model_id {
+        Some(v) => v.clone(),
+        None => return Ok(false),
+    };
+    drop(guard);
 
+    let scheduler = app
+        .try_state::<VramScheduler>()
+        .ok_or_else(|| "scheduler is not initialized".to_string())?;
+    let snap = scheduler.snapshot();
+    Ok(snap
+        .loaded_sessions
+        .iter()
+        .any(|s| s.model_id == active && s.kind == EngineSessionKind::Chat))
+}

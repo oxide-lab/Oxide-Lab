@@ -22,4 +22,3 @@ pub fn default_session_manager(
     )));
     EngineSessionManager::new(registry, EngineId::Llamacpp)
 }
-

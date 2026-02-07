@@ -1,7 +1,6 @@
 use crate::core::performance::PerformanceMonitor;
 use crate::core::precision::{Precision, PrecisionPolicy};
 use crate::core::prefix_cache::{PrefixCache, PrefixCacheConfig};
-use crate::core::scheduler::{ModelScheduler, SchedulerConfig};
 use crate::core::types::{
     ActiveBackend, BackendPreference, DevicePreference, LlamaRuntimeConfig, LlamaSessionSnapshot,
 };
@@ -13,7 +12,6 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 pub struct ModelState {
-    pub(crate) scheduler: ModelScheduler,
     pub(crate) device_pref: DevicePreference,
     pub(crate) context_length: usize,
     pub(crate) model_path: Option<String>,
@@ -34,7 +32,6 @@ pub struct ModelState {
 impl ModelState {
     pub fn new(device_pref: DevicePreference) -> Self {
         Self {
-            scheduler: ModelScheduler::new(SchedulerConfig::default()),
             device_pref,
             context_length: 4096,
             model_path: None,
@@ -119,8 +116,8 @@ impl ModelState {
     pub fn save_llama_runtime(app: &AppHandle, config: &LlamaRuntimeConfig) -> Result<(), String> {
         let profile_dir = Self::ensure_profile_dir(app)?;
         let path = profile_dir.join("llama_runtime.json");
-        let file =
-            File::create(&path).map_err(|e| format!("Failed to create llama runtime file: {}", e))?;
+        let file = File::create(&path)
+            .map_err(|e| format!("Failed to create llama runtime file: {}", e))?;
         serde_json::to_writer(file, config)
             .map_err(|e| format!("Failed to serialize llama runtime config: {}", e))?;
         Ok(())
@@ -142,4 +139,3 @@ impl ModelState {
 }
 
 pub type SharedState = Arc<Mutex<ModelState>>;
-

@@ -7,6 +7,7 @@
 import { derived, get, writable } from 'svelte/store';
 import type { ModelCardSummary, ModelCardsResponse } from '$lib/types/model-cards';
 import { ModelCardsService } from '$lib/services/model-cards';
+import { SimSearch } from '$lib/utils/simsearch';
 
 type FilterState = {
     searchText: string;
@@ -29,6 +30,17 @@ export const modelCardsStatus = writable<string | null>(null);
 // Derived: filtered model cards based on current filters
 export const filteredModelCards = derived([modelCards, modelCardFilters], ([$cards, $filters]) => {
     const query = $filters.searchText.trim().toLowerCase();
+    let matchedIds: Set<string> | null = null;
+    if (query) {
+        const index = new SimSearch(
+            $cards.map((card) => ({
+                id: card.id,
+                text: [card.name, card.description, card.hf_repo_id, card.tags.join(' ')].join(' '),
+            })),
+        );
+        matchedIds = new Set(index.search(query, Math.max($cards.length, 50)).map((hit) => hit.id));
+    }
+
     return $cards.filter((card) => {
         // Filter by family
         if ($filters.family && card.family !== $filters.family) {
@@ -44,13 +56,8 @@ export const filteredModelCards = derived([modelCards, modelCardFilters], ([$car
             }
         }
         // Filter by search text
-        if (query) {
-            const haystack = [card.name, card.description, card.hf_repo_id, card.tags.join(' ')]
-                .join(' ')
-                .toLowerCase();
-            if (!haystack.includes(query)) {
-                return false;
-            }
+        if (matchedIds && !matchedIds.has(card.id)) {
+            return false;
         }
         return true;
     });

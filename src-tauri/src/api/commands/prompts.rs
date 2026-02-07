@@ -22,4 +22,3 @@ pub fn render_prompt(
     let guard = state.lock().map_err(|e| e.to_string())?;
     crate::api::template::render_prompt(&guard.chat_template, messages)
 }
-

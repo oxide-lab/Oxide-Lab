@@ -15,6 +15,7 @@ import type {
     SortField,
     SortOrder,
 } from '$lib/types/local-models';
+import { SimSearch } from '$lib/utils/simsearch';
 
 export class LocalModelsService {
     /**
@@ -316,6 +317,25 @@ export class LocalModelsService {
      */
     static filterModels(models: ModelInfo[], options: FilterOptions): ModelInfo[] {
         const searchText = options.searchText?.trim().toLowerCase() ?? '';
+        let matchedIds: Set<string> | null = null;
+        if (searchText) {
+            const index = new SimSearch(
+                models.map((model) => ({
+                    id: model.path,
+                    text: [
+                        model.name,
+                        model.model_name ?? '',
+                        model.architecture ?? '',
+                        model.quantization ?? '',
+                        model.source_repo_name ?? '',
+                        model.source_quantization ?? '',
+                        model.parameter_count ?? '',
+                    ].join(' '),
+                })),
+            );
+            matchedIds = new Set(index.search(searchText, Math.max(models.length, 100)).map((hit) => hit.id));
+        }
+
         return models.filter((model) => {
             if (options.architecture && model.architecture !== options.architecture) {
                 return false;
@@ -335,21 +355,8 @@ export class LocalModelsService {
                 }
             }
 
-            if (searchText) {
-                const haystack = [
-                    model.name,
-                    model.model_name ?? '',
-                    model.architecture ?? '',
-                    model.quantization ?? '',
-                    model.source_repo_name ?? '',
-                    model.source_quantization ?? '',
-                    model.parameter_count ?? '',
-                ]
-                    .join(' ')
-                    .toLowerCase();
-                if (!haystack.includes(searchText)) {
-                    return false;
-                }
+            if (matchedIds && !matchedIds.has(model.path)) {
+                return false;
             }
 
             return true;

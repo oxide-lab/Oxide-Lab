@@ -28,4 +28,3 @@ impl GpuKernelConfig {
 pub fn select_dtype_default<T>(_device: &T) -> Precision {
     Precision::Auto
 }
-

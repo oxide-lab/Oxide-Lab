@@ -623,4 +623,3 @@ pub fn update_model_manifest(
 
     save_manifest(&target, &manifest)
 }
-

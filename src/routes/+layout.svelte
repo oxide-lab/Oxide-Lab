@@ -11,7 +11,6 @@
   import { onMount, tick } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { openUrl } from '@tauri-apps/plugin-opener';
   import { derived } from 'svelte/store';
 
   // Phosphor Icons
@@ -23,13 +22,22 @@
   import Check from 'phosphor-svelte/lib/CheckCircle';
   import GithubLogo from 'phosphor-svelte/lib/GithubLogo';
   import ArrowClockwise from 'phosphor-svelte/lib/ArrowClockwise';
+  import SlidersHorizontal from 'phosphor-svelte/lib/SlidersHorizontal';
+  import Cube from 'phosphor-svelte/lib/Cube';
+  import Gauge from 'phosphor-svelte/lib/Gauge';
+  import ChatsCircle from 'phosphor-svelte/lib/ChatsCircle';
+  import Shield from 'phosphor-svelte/lib/Shield';
+  import Code from 'phosphor-svelte/lib/Code';
+  import Info from 'phosphor-svelte/lib/Info';
 
   // UI Components
   import AppSidebar from '$lib/components/app-sidebar.svelte';
   import * as SidebarUI from '$lib/components/ui/sidebar/index';
+  import * as Breadcrumb from '$lib/components/ui/breadcrumb';
   import { Button } from '$lib/components/ui/button';
   import { Spinner } from '$lib/components/ui/spinner';
   import * as Popover from '$lib/components/ui/popover';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import * as Command from '$lib/components/ui/command';
   import * as Tabs from '$lib/components/ui/tabs';
   import DownloadManagerModal from '$lib/components/DownloadManagerModal.svelte';
@@ -43,10 +51,16 @@
   import { chatState } from '$lib/stores/chat';
   import { folderPath, models, scanFolder } from '$lib/stores/local-models';
   import type { ModelInfo } from '$lib/types/local-models';
+  import { settingsV2Store } from '$lib/stores/settings-v2';
+  import { settingsSearchStore } from '$lib/stores/settings-search';
+  import type { SettingsSectionId } from '$lib/types/settings-v2';
 
 
   // Pages for mount-all pattern
   import Chat from '$lib/chat/Chat.svelte';
+
+  // Guard for translations — avoid calling $t before locale is initialized
+  let currentLocale = $derived($locale);
 
   const { children } = $props();
 
@@ -56,8 +70,10 @@
   let comboboxTrigger = $state<HTMLButtonElement | null>(null);
   let showDownloadManager = $state(false);
   let showAbout = $state(false);
+  let showCommandPalette = $state(false);
   let appVersion = $state('0.15.0');
   let modalElement = $state<HTMLDivElement | null>(null);
+  let viewportWidth = $state(1024);
 
   const appWindow = getCurrentWindow();
 
@@ -83,11 +99,46 @@
   const isReloadAvailable = derived([pendingModelPath, currentModelPath], ([$pending, $current]) =>
     Boolean($pending && $pending !== $current),
   );
+  const settingsSnapshot = settingsV2Store;
+
+  const settingsSectionLabelMap: Record<SettingsSectionId, string> = {
+    general: 'settings.v2.sections.general.title',
+    models_storage: 'settings.v2.sections.models_storage.title',
+    performance: 'settings.v2.sections.performance.title',
+    chat_presets: 'settings.v2.sections.chat_presets.title',
+    privacy_data: 'settings.v2.sections.privacy_data.title',
+    developer: 'settings.v2.sections.developer.title',
+    about: 'settings.v2.sections.about.title',
+  };
+  const settingsSectionOrder: SettingsSectionId[] = [
+    'general',
+    'models_storage',
+    'performance',
+    'chat_presets',
+    'privacy_data',
+    'developer',
+    'about',
+  ];
+  const settingsSectionIconMap: Record<SettingsSectionId, any> = {
+    general: SlidersHorizontal,
+    models_storage: Cube,
+    performance: Gauge,
+    chat_presets: ChatsCircle,
+    privacy_data: Shield,
+    developer: Code,
+    about: Info,
+  };
 
   // Load local models on demand to keep startup responsive.
   $effect(() => {
     if (!isModelPickerOpen || !$folderPath || $models.length > 0) return;
     void scanFolder($folderPath).catch((err) => console.warn('Failed to scan local models', err));
+  });
+
+  $effect(() => {
+    if (page.url.pathname !== '/settings') return;
+    if ($settingsSnapshot) return;
+    void settingsV2Store.load();
   });
 
   // Redirect experimental pages when features disabled
@@ -111,10 +162,16 @@
   }
 
   function formatModelLabel(model: ModelInfo | null | undefined) {
-    if (!model) return $t('common.model.selectModel') || 'Select model';
+    if (!model) return currentLocale ? $t('common.model.selectModel') || 'Select model' : 'Select model';
     const publisher = model.metadata?.author ?? model.source_repo_id?.split('/')[0] ?? 'local';
     const title = model.name ?? model.source_repo_name ?? 'Unnamed';
     return `${publisher}/${title}`;
+  }
+
+  function getSettingsSectionFromQuery(): SettingsSectionId {
+    const section = page.url.searchParams.get('section') as SettingsSectionId | null;
+    if (!section || !(section in settingsSectionLabelMap)) return 'general';
+    return section;
   }
 
   function handleReloadModel() {
@@ -162,12 +219,54 @@
     }
   }
 
+  function openSettingsShortcut() {
+    void goto('/settings');
+    showCommandPalette = false;
+  }
+
+  function openSettingsSectionShortcut(section: string, settingId?: string) {
+    const params = new URLSearchParams({ section });
+    if (settingId) params.set('setting', settingId);
+    void goto(`/settings?${params.toString()}`);
+    showCommandPalette = false;
+  }
+
+  function openModelsShortcut() {
+    void goto('/models');
+    showCommandPalette = false;
+  }
+
+  function openApiShortcut() {
+    void goto('/api');
+    showCommandPalette = false;
+  }
+
+  function handleGlobalShortcut(event: KeyboardEvent) {
+    const isMeta = event.metaKey || event.ctrlKey;
+    if (!isMeta) return;
+    const key = event.key.toLowerCase();
+    if (key === ',') {
+      event.preventDefault();
+      openSettingsShortcut();
+      return;
+    }
+    if (key === 'k') {
+      event.preventDefault();
+      showCommandPalette = !showCommandPalette;
+    }
+  }
+
+  function handleViewportResize() {
+    viewportWidth = window.innerWidth;
+  }
+
   function handleBackdropKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       toggleAbout();
     }
   }
+
 
   async function loadAppVersion() {
     try {
@@ -245,10 +344,12 @@
 
     // Setup window state
     isMaximized = await appWindow.isMaximized();
+    handleViewportResize();
     unlistenFn = await appWindow.onResized(() => {
       appWindow.isMaximized().then((maximized: boolean) => {
         isMaximized = maximized;
       });
+      handleViewportResize();
     });
 
     const { listen } = await import('@tauri-apps/api/event');
@@ -273,11 +374,40 @@
         });
     });
 
+    const unlistenSchedulerSnapshot = await listen<{
+      loaded_models: string[];
+      queue_len: number;
+      inflight: number;
+      timestamp: number;
+    }>('scheduler_snapshot', (event) => {
+      (window as any).__oxideSchedulerSnapshot = event.payload;
+    });
+
+    const unlistenQueueWait = await listen<{ waited_ms: number; queue_position?: number }>(
+      'scheduler_queue_wait',
+      (event) => {
+        const waited = Math.round((event.payload?.waited_ms ?? 0) / 1000);
+        const pos = event.payload?.queue_position;
+        toast.info($t('common.loader.loading') || 'Request queued', {
+          description:
+            pos != null
+              ? `Queue position: ${pos}, waited ${waited}s`
+              : `Waited ${waited}s in scheduler queue`,
+        });
+      },
+    );
+
     // Merge unlisten functions
     const originalUnlisten = unlistenFn;
+    window.addEventListener('keydown', handleGlobalShortcut);
+    window.addEventListener('resize', handleViewportResize);
     unlistenFn = () => {
         originalUnlisten();
         unlistenUnload();
+        unlistenSchedulerSnapshot();
+        unlistenQueueWait();
+        window.removeEventListener('keydown', handleGlobalShortcut);
+        window.removeEventListener('resize', handleViewportResize);
     };
   });
 
@@ -293,13 +423,61 @@
 </script>
 
 <SidebarUI.Provider bind:open={isSidebarOpen}>
-  <AppSidebar onOpenDownloads={() => (showDownloadManager = true)} onOpenAbout={toggleAbout} />
+  <AppSidebar onOpenDownloads={() => (showDownloadManager = true)} />
 
   <SidebarUI.Inset class="app-shell">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="app-header-wrapper" onmousedown={startDragging}>
       <header class="flex items-center justify-between px-2 h-14 bg-background">
         <div class="flex-1 flex items-center justify-start gap-2 sm:gap-4">
+          {#if page.url.pathname === '/settings'}
+            <div class="settings-breadcrumbs" data-no-drag>
+              <Breadcrumb.Root>
+                <Breadcrumb.List>
+                  <Breadcrumb.Item>
+                    <Breadcrumb.Link
+                      href="/settings?section=general"
+                      class="text-base font-semibold text-foreground"
+                      onclick={(event) => {
+                        event.preventDefault();
+                        openSettingsSectionShortcut('general');
+                      }}
+                    >
+                      {$t('settings.v2.page.title')}
+                    </Breadcrumb.Link>
+                  </Breadcrumb.Item>
+
+                  {#if viewportWidth < 1024}
+                    {@const CurrentSectionIcon = settingsSectionIconMap[getSettingsSectionFromQuery()]}
+                    <Breadcrumb.Separator />
+                    <Breadcrumb.Item>
+                      <DropdownMenu.Root>
+                        <DropdownMenu.Trigger>
+                          {#snippet child({ props })}
+                            <Button {...props} variant="ghost" size="sm" class="h-7 gap-1 px-2">
+                              <CurrentSectionIcon class="size-3.5" />
+                              {$t(settingsSectionLabelMap[getSettingsSectionFromQuery()])}
+                              <CaretDown size={12} />
+                            </Button>
+                          {/snippet}
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Content align="start" sideOffset={6} class="w-56 z-[1400]">
+                          {#each settingsSectionOrder as sectionId (sectionId)}
+                            {@const SectionIcon = settingsSectionIconMap[sectionId]}
+                            <DropdownMenu.Item onSelect={() => openSettingsSectionShortcut(sectionId)}>
+                              <SectionIcon class="size-4" />
+                              {$t(settingsSectionLabelMap[sectionId])}
+                            </DropdownMenu.Item>
+                          {/each}
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Root>
+                    </Breadcrumb.Item>
+                  {/if}
+                </Breadcrumb.List>
+              </Breadcrumb.Root>
+            </div>
+          {/if}
+
           {#if page.url.pathname === '/'}
             <Popover.Root bind:open={isModelPickerOpen}>
               <Popover.Trigger bind:ref={comboboxTrigger} data-no-drag>
@@ -406,31 +584,37 @@
           {/if}
         </div>
 
-        <div class="flex items-center gap-1">
-          <Button variant="ghost" size="icon" class="win-btn" onclick={() => appWindow.minimize()}>
-            <Minus size={16} weight="bold" />
-          </Button>
-          <Button variant="ghost" size="icon" class="win-btn" onclick={toggleMaximize}>
-            {#if isMaximized}
-              <ArrowsIn size={16} weight="bold" />
-            {:else}
-              <ArrowsOut size={16} weight="bold" />
-            {/if}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="win-btn win-btn-close"
-            onclick={() => appWindow.close()}
-          >
-            <X size={16} weight="bold" />
-          </Button>
+        <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1">
+            <Button variant="ghost" size="icon" class="win-btn" onclick={() => appWindow.minimize()}>
+              <Minus size={16} weight="bold" />
+            </Button>
+            <Button variant="ghost" size="icon" class="win-btn" onclick={toggleMaximize}>
+              {#if isMaximized}
+                <ArrowsIn size={16} weight="bold" />
+              {:else}
+                <ArrowsOut size={16} weight="bold" />
+              {/if}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="win-btn win-btn-close"
+              onclick={() => appWindow.close()}
+            >
+              <X size={16} weight="bold" />
+            </Button>
+          </div>
         </div>
       </header>
     </div>
 
     <div class="app-body">
-      <main class="app-main" class:models-compact={page.url.pathname === '/models'}>
+      <main
+        class="app-main"
+        class:models-compact={page.url.pathname === '/models'}
+        class:settings-page={page.url.pathname === '/settings'}
+      >
         <div class="view-switch">
           <!-- Chat page always mounted -->
           <div class="page-container" class:active={page.url.pathname === '/'}>
@@ -439,7 +623,7 @@
 
           <!-- Other pages rendered via slot -->
           {#if page.url.pathname !== '/'}
-            <div class="page-container active">
+            <div class="page-container active custom-scrollbar">
               {@render children()}
             </div>
           {/if}
@@ -478,7 +662,7 @@
         <div class="about-actions">
           <button
             class="github-btn"
-            onclick={() => openUrl('https://github.com/FerrisMind/Oxide-Lab')}
+            onclick={() => window.open('https://github.com/FerrisMind/Oxide-Lab', '_blank')}
             aria-label="GitHub"
           >
             <GithubLogo size={16} />
@@ -503,6 +687,29 @@
   {#if showDownloadManager}
     <DownloadManagerModal onClose={() => (showDownloadManager = false)} />
   {/if}
+
+  <Command.Dialog
+    bind:open={showCommandPalette}
+    title="Command Palette"
+    description="Quick navigation and settings jump"
+  >
+    <Command.Input placeholder="Search commands..." />
+    <Command.List>
+      <Command.Empty>No commands found.</Command.Empty>
+      <Command.Group heading="Navigation">
+        <Command.Item onSelect={openSettingsShortcut}>Open Settings</Command.Item>
+        <Command.Item onSelect={openModelsShortcut}>Open Models</Command.Item>
+        <Command.Item onSelect={openApiShortcut}>Open API</Command.Item>
+      </Command.Group>
+      <Command.Group heading="Settings Jump">
+        {#each settingsSearchStore.registry.slice(0, 14) as item (item.id)}
+          <Command.Item onSelect={() => openSettingsSectionShortcut(item.section, item.id)}>
+            {item.title}
+          </Command.Item>
+        {/each}
+      </Command.Group>
+    </Command.List>
+  </Command.Dialog>
 
   {#if page.url.pathname === '/'}
     <div hidden>{@render children()}</div>
@@ -679,6 +886,14 @@
     border-color: var(--primary);
   }
 
+  .settings-breadcrumbs {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    margin-left: 12px;
+    -webkit-app-region: no-drag;
+  }
+
   /* Page Tabs */
   .page-tabs {
     display: flex;
@@ -731,6 +946,7 @@
   .app-body {
     flex: 1;
     min-height: 0;
+    min-width: 0;
     display: flex;
     overflow: hidden;
     background: var(--background);
@@ -738,9 +954,15 @@
 
   .app-main {
     flex: 1;
+    min-width: 0;
     display: flex;
     overflow: hidden;
     padding: 0 0.5rem 0.5rem;
+  }
+
+  .app-main.settings-page {
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .view-switch {
@@ -748,6 +970,7 @@
     display: flex;
     flex: 1;
     min-height: 0;
+    min-width: 0;
     width: 100%;
     height: 100%;
   }
@@ -760,34 +983,16 @@
     height: 100%;
     display: flex;
     flex-direction: column;
+    min-width: 0;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
     transition:
       opacity 0.15s ease,
       visibility 0.15s ease;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     background: var(--background);
-    scrollbar-width: thin;
-    scrollbar-color: var(--muted-foreground) transparent;
-  }
-
-  .page-container::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  .page-container::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .page-container::-webkit-scrollbar-thumb {
-    background-color: var(--border);
-    border-radius: 9999px;
-  }
-
-  .page-container::-webkit-scrollbar-thumb:hover {
-    background-color: var(--muted-foreground);
   }
 
   .page-container.active {
@@ -874,4 +1079,5 @@
   .close-btn:hover {
     opacity: 0.9;
   }
+
 </style>

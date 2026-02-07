@@ -9,4 +9,3 @@ pub mod i18n;
 pub mod inference;
 
 pub use app::run;
-

@@ -2,13 +2,13 @@ use super::adapter::EngineAdapter;
 use super::types::{EngineId, EngineSessionInfo, EngineSessionKind, ResolvedModelSource};
 use crate::core::types::{GenerateRequest, LlamaRuntimeConfig, LlamaSessionKind, LoadRequest};
 use crate::inference::llamacpp::{http_client, state::LlamaCppState};
+use oxide_llamacpp::args::LlamacppConfig;
+use oxide_llamacpp::commands;
+use oxide_llamacpp::state::SessionInfo as PluginSessionInfo;
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use oxide_llamacpp::args::LlamacppConfig;
-use oxide_llamacpp::commands;
-use oxide_llamacpp::state::SessionInfo as PluginSessionInfo;
 use tauri::Manager;
 
 const START_RETRIES: usize = 5;
@@ -253,8 +253,10 @@ impl LlamaCppAdapter {
             return Ok(path.to_string_lossy().to_string());
         }
 
-        Err("llama-server binary not found (runtime config, env, resources, example/bin, PATH)"
-            .to_string())
+        Err(
+            "llama-server binary not found (runtime config, env, resources, example/bin, PATH)"
+                .to_string(),
+        )
     }
 
     fn build_config(runtime_cfg: &LlamaRuntimeConfig) -> LlamacppConfig {
@@ -501,4 +503,3 @@ impl EngineAdapter for LlamaCppAdapter {
         http_client::create_embeddings(session, model, input).await
     }
 }
-

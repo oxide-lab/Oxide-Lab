@@ -28,4 +28,3 @@ pub const TEMPLATE: TemplateEntry = TemplateEntry {
     stop_tokens: &["### Instruction:", "### Response"],
     force_bos: false,
 };
-

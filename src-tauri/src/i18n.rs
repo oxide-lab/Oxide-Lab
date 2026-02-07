@@ -168,4 +168,3 @@ macro_rules! t {
         $crate::i18n::t($key)
     };
 }
-

@@ -671,4 +671,3 @@ impl ModelCardFormat {
         }
     }
 }
-

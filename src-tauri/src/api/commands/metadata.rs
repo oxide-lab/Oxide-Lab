@@ -57,4 +57,3 @@ pub fn gguf_list_metadata_keys(
     }
     read_gguf_metadata_keys(p)
 }
-

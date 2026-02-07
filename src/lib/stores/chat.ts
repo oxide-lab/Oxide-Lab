@@ -69,6 +69,9 @@ export type ChatPersistedState = {
     split_prompt: boolean;
     verbose_prompt: boolean;
     tracing: boolean;
+
+    // Presets
+    preset_id: string | null;
 };
 
 export function getDefaultChatState(): ChatPersistedState {
@@ -118,6 +121,8 @@ export function getDefaultChatState(): ChatPersistedState {
         split_prompt: false,
         verbose_prompt: false,
         tracing: false,
+
+        preset_id: null,
     };
 }
 

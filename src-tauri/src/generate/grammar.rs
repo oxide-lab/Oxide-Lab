@@ -221,4 +221,3 @@ mod tests {
         assert!(validate_json("not json").is_err());
     }
 }
-

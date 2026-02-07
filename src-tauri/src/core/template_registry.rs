@@ -254,4 +254,3 @@ mod tests {
         assert_eq!(failed, 0, "Some templates failed to compile");
     }
 }
-

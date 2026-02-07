@@ -193,6 +193,13 @@
 }
 
 @layer base {
+    html,
+    body,
+    #svelte {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
     * {
         @apply border-border;
     }
@@ -221,13 +228,14 @@
 
 /* Custom styled scrollbar */
 .custom-scrollbar {
+    scrollbar-gutter: stable;
     scrollbar-width: thin;
-    scrollbar-color: var(--muted-foreground) transparent;
+    scrollbar-color: var(--border) transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
@@ -249,17 +257,28 @@
     height: 0;
 }
 
+.custom-scrollbar::-webkit-scrollbar-button:single-button,
+.custom-scrollbar::-webkit-scrollbar-button:vertical:decrement,
+.custom-scrollbar::-webkit-scrollbar-button:vertical:increment,
+.custom-scrollbar::-webkit-scrollbar-button:horizontal:decrement,
+.custom-scrollbar::-webkit-scrollbar-button:horizontal:increment {
+    display: none;
+    width: 0;
+    height: 0;
+    background: transparent;
+}
+
 /* Dark mode optimized scrollbar */
 .dark .custom-scrollbar {
-    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
 
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.16);
 }
 
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(255, 255, 255, 0.28);
 }
 
 /* Table scroll - scrollbar starts below sticky header */

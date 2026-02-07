@@ -8,7 +8,7 @@ pub mod precision;
 pub mod prefix_cache;
 pub mod prompt;
 pub mod rayon_pool;
-pub mod scheduler;
+pub mod settings_v2;
 pub mod state;
 pub mod template_registry;
 pub mod templates;
@@ -16,4 +16,3 @@ pub mod thread_priority;
 pub mod types;
 
 pub use rayon_pool::INFERENCE_POOL;
-

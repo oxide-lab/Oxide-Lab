@@ -1,6 +1,7 @@
 use std::fs::{File, create_dir_all};
 use std::io::{Read, Write};
 use tauri::Manager;
+use crate::core::settings_v2::SettingsV2State;
 
 #[tauri::command]
 pub fn get_experimental_features_enabled(app: tauri::AppHandle) -> Result<bool, String> {
@@ -44,6 +45,12 @@ pub fn set_experimental_features_enabled(
         .map_err(|e| format!("Failed to serialize experimental features: {e}"))?;
     file.write_all(data.as_bytes())
         .map_err(|e| format!("Failed to write experimental features file: {e}"))?;
+
+    if let Some(settings_state) = app.try_state::<SettingsV2State>() {
+        let mut guard = settings_state.inner.lock().map_err(|e| e.to_string())?;
+        let mut settings = guard.get();
+        settings.general.developer_mode = enabled;
+        guard.set(settings)?;
+    }
     Ok(())
 }
-
