@@ -38,6 +38,7 @@ fn test_generate_request_with_chat_messages() {
         stop_sequences: None,
         tool_choice: None,
         retrieval: None,
+        mcp: None,
     };
 
     assert_eq!(req.prompt, "Direct prompt");
@@ -70,6 +71,7 @@ fn test_generate_request_without_chat_messages() {
         stop_sequences: None,
         tool_choice: None,
         retrieval: None,
+        mcp: None,
     };
 
     assert_eq!(req.prompt, "Direct prompt");

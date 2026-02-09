@@ -33,6 +33,7 @@
     ClearDataScope,
     DataLocations,
     SettingsSectionId,
+    WebRagSettings,
   } from '$lib/types/settings-v2';
   import GearFine from 'phosphor-svelte/lib/GearFine';
   import Cube from 'phosphor-svelte/lib/Cube';
@@ -389,7 +390,7 @@
               <SettingsSectionWebRag
                 value={$settings.web_rag}
                 highlightedSettingId={highlightedSettingId}
-                onChange={(next) => settings.updateSection('web_rag', next)}
+                onChange={(next: WebRagSettings) => settings.updateSection('web_rag', next)}
               />
             {/if}
 

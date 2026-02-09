@@ -2,7 +2,7 @@ import type { AppSettingsV2, OpenAiServerStatus } from '$lib/types/settings-v2';
 
 export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSettingsV2 {
   const base: AppSettingsV2 = {
-    schema_version: 3,
+    schema_version: 4,
     general: {
       locale: 'en',
       theme: 'system',
@@ -84,13 +84,14 @@ export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSetting
       },
     },
     web_rag: {
-      web_search: {
-        default_mode: 'lite',
-        pro_beta_enabled: false,
-        max_snippets: 8,
-        max_snippet_chars: 500,
-        max_pages: 5,
-        max_retrieval_tokens: 1200,
+      url_fetch: {
+        enabled_by_default: false,
+        max_urls: 6,
+        max_chars_per_page: 5000,
+        max_total_tokens: 1200,
+        per_url_timeout_ms: 12000,
+        total_timeout_ms: 30000,
+        max_body_bytes: 1500000,
       },
       local_rag: {
         beta_enabled: false,
@@ -104,6 +105,13 @@ export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSetting
         api_key: '',
         model: '',
         timeout_ms: 20000,
+      },
+      mcp: {
+        enabled: false,
+        default_permission_mode: 'per_call',
+        max_tool_rounds: 4,
+        tool_call_timeout_ms: 20000,
+        servers: [],
       },
     },
   };
@@ -138,9 +146,9 @@ export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSetting
     web_rag: {
       ...base.web_rag,
       ...(overrides?.web_rag ?? {}),
-      web_search: {
-        ...base.web_rag.web_search,
-        ...(overrides?.web_rag?.web_search ?? {}),
+      url_fetch: {
+        ...base.web_rag.url_fetch,
+        ...(overrides?.web_rag?.url_fetch ?? {}),
       },
       local_rag: {
         ...base.web_rag.local_rag,
@@ -149,6 +157,10 @@ export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSetting
       embeddings_provider: {
         ...base.web_rag.embeddings_provider,
         ...(overrides?.web_rag?.embeddings_provider ?? {}),
+      },
+      mcp: {
+        ...base.web_rag.mcp,
+        ...(overrides?.web_rag?.mcp ?? {}),
       },
     },
   };

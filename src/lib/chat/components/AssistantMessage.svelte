@@ -4,9 +4,17 @@
    * Displays an assistant message with reasoning, markdown content, and actions.
    */
   import { onMount } from 'svelte';
-  import type { ChatMessage } from '$lib/chat/types';
+  import type {
+    ChatMessage,
+    McpToolCallView,
+  } from '$lib/chat/types';
   import { Reasoning, ReasoningContent } from '$lib/components/ai-elements/reasoning';
   import { Markdown } from '$lib/components/ai-elements/markdown';
+  import Tool from '$lib/components/ai-elements/tool/Tool.svelte';
+  import ToolHeader from '$lib/components/ai-elements/tool/ToolHeader.svelte';
+  import ToolInput from '$lib/components/ai-elements/tool/ToolInput.svelte';
+  import ToolOutput from '$lib/components/ai-elements/tool/ToolOutput.svelte';
+  import * as Collapsible from '$lib/components/ui/collapsible';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import Copy from 'phosphor-svelte/lib/Copy';
@@ -19,7 +27,6 @@
     message: ChatMessage;
     index: number;
     isStreaming?: boolean;
-    isLastMessage?: boolean;
     isFaded?: boolean;
     onCopy?: (content: string) => void;
     onRegenerate?: (index: number) => void;
@@ -29,7 +36,6 @@
     message,
     index,
     isStreaming = false,
-    isLastMessage = false,
     isFaded = false,
     onCopy,
     onRegenerate,
@@ -47,6 +53,7 @@
   let showActions = $derived(!isStreaming && message.content);
   let retrievalSources = $derived(message.sources ?? []);
   let retrievalWarnings = $derived(message.retrievalWarnings ?? []);
+  let inlineToolCalls = $derived((message.mcpToolCalls ?? []) as McpToolCallView[]);
 
   function closeActionTooltips() {
     copyTooltipOpen = false;
@@ -138,6 +145,20 @@
     />
   {/if}
 
+  {#if inlineToolCalls.length > 0}
+    <div class="mt-3 space-y-2">
+      {#each inlineToolCalls as item (item.call_id)}
+        <Tool class="mb-0 shadow-sm" open={item.state !== 'output-available'}>
+          <ToolHeader type={`${item.server_id}/${item.tool_name}`} state={item.state} />
+          <Collapsible.Content>
+            <ToolInput input={item.input ?? { call_id: item.call_id }} />
+            <ToolOutput output={item.output} errorText={item.errorText} />
+          </Collapsible.Content>
+        </Tool>
+      {/each}
+    </div>
+  {/if}
+
   {#if retrievalWarnings.length > 0}
     <div class="mt-3 space-y-2">
       {#each retrievalWarnings as warning, warningIdx (`${warningIdx}-${warning}`)}
@@ -187,7 +208,6 @@
     <div
       class={cn(
         'message-actions mt-2 flex gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100',
-        isLastMessage && 'opacity-100',
       )}
     >
       <Tooltip.Provider>

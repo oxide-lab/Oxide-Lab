@@ -79,7 +79,6 @@
             message={m}
             index={i}
             {isStreaming}
-            {isLastMessage}
             onCopy={handleCopy}
             onRegenerate={handleRegenerate}
           />

@@ -69,15 +69,14 @@ export interface DeveloperSettings {
   openai_server: OpenAiServerConfig;
 }
 
-export type WebRetrievalDefaultMode = 'off' | 'lite' | 'pro';
-
-export interface WebSearchSettings {
-  default_mode: WebRetrievalDefaultMode;
-  pro_beta_enabled: boolean;
-  max_snippets: number;
-  max_snippet_chars: number;
-  max_pages: number;
-  max_retrieval_tokens: number;
+export interface UrlFetchSettings {
+  enabled_by_default: boolean;
+  max_urls: number;
+  max_chars_per_page: number;
+  max_total_tokens: number;
+  per_url_timeout_ms: number;
+  total_timeout_ms: number;
+  max_body_bytes: number;
 }
 
 export interface LocalRagSettings {
@@ -95,10 +94,33 @@ export interface EmbeddingsProviderSettings {
   timeout_ms: number;
 }
 
+export type McpPermissionMode = 'per_call' | 'allow_this_session' | 'allow_this_server';
+export type McpTransportType = 'stdio' | 'streamable_http';
+
+export interface McpServerConfig {
+  id: string;
+  enabled: boolean;
+  transport: McpTransportType;
+  command?: string | null;
+  args: string[];
+  url?: string | null;
+  headers: Record<string, string>;
+  env: Record<string, string>;
+}
+
+export interface McpSettings {
+  enabled: boolean;
+  default_permission_mode: McpPermissionMode;
+  max_tool_rounds: number;
+  tool_call_timeout_ms: number;
+  servers: McpServerConfig[];
+}
+
 export interface WebRagSettings {
-  web_search: WebSearchSettings;
+  url_fetch: UrlFetchSettings;
   local_rag: LocalRagSettings;
   embeddings_provider: EmbeddingsProviderSettings;
+  mcp: McpSettings;
 }
 
 export interface AppSettingsV2 {

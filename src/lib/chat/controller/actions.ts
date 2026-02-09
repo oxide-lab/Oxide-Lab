@@ -23,6 +23,61 @@ export function createActions(ctx: ChatControllerCtx) {
             }));
     }
 
+    function normalizedRetrievalUrls(): string[] {
+        const dedup = new Set<string>();
+        for (const raw of ctx.retrieval_urls ?? []) {
+            const url = String(raw ?? '').trim();
+            if (!url) continue;
+            dedup.add(url);
+        }
+        return Array.from(dedup);
+    }
+
+    async function resolveUrlCandidatesBeforeSend(text: string): Promise<boolean> {
+        if (!ctx.retrieval_url_enabled) return true;
+
+        const existing = normalizedRetrievalUrls();
+        if (existing.length > 0) {
+            if (existing.length !== (ctx.retrieval_urls ?? []).length) {
+                ctx.retrieval_urls = existing;
+            }
+            return true;
+        }
+
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const candidates = await invoke<string[]>('extract_url_candidates', {
+                messages: toBackendMessages(ctx.messages),
+                prompt: text,
+            });
+            const normalized = Array.from(
+                new Set((candidates ?? []).map((value) => String(value ?? '').trim()).filter(Boolean)),
+            );
+            if (normalized.length === 0) return true;
+            ctx.retrieval_urls = normalized;
+
+            const { ask } = await import('@tauri-apps/plugin-dialog');
+            const preview = normalized.slice(0, 6).map((url) => `- ${url}`).join('\n');
+            const tail =
+                normalized.length > 6
+                    ? `\n...and ${normalized.length - 6} more`
+                    : '';
+            const approved = await ask(
+                `Found URL candidates for retrieval:\n\n${preview}${tail}\n\nUse them for this request?`,
+                {
+                    title: 'Confirm URL retrieval',
+                    kind: 'info',
+                    okLabel: 'Use URLs',
+                    cancelLabel: 'Cancel',
+                },
+            );
+            return approved === true;
+        } catch (err) {
+            console.warn('[retrieval] failed to extract URL candidates', err);
+            return true;
+        }
+    }
+
     function isModelLoadDebugEnabled() {
         try {
             return localStorage.getItem('oxide.debugModelLoad') === '1';
@@ -327,6 +382,9 @@ export function createActions(ctx: ChatControllerCtx) {
             return;
         }
 
+        const canContinue = await resolveUrlCandidatesBeforeSend(text);
+        if (!canContinue) return;
+
         // Add user message to database
         const { chatHistory } = await import('$lib/stores/chat-history');
 
@@ -358,6 +416,7 @@ export function createActions(ctx: ChatControllerCtx) {
             isThinking: false,
             sources: [],
             retrievalWarnings: [],
+            mcpToolCalls: [],
         });
         ctx.messages = msgs;
 
@@ -415,11 +474,15 @@ export function createActions(ctx: ChatControllerCtx) {
                     tracing: !!ctx.tracing,
                     retrieval: {
                         web: {
-                            mode: ctx.retrieval_web_mode,
+                            enabled: ctx.retrieval_url_enabled,
+                            urls: normalizedRetrievalUrls(),
                         },
                         local: {
                             enabled: ctx.retrieval_local_enabled,
                         },
+                    },
+                    mcp: {
+                        enabled: ctx.mcp_enabled,
                     },
                 },
             });
@@ -522,6 +585,7 @@ export function createActions(ctx: ChatControllerCtx) {
             isThinking: false,
             sources: [],
             retrievalWarnings: [],
+            mcpToolCalls: [],
         });
         ctx.messages = msgs;
 
@@ -586,6 +650,7 @@ export function createActions(ctx: ChatControllerCtx) {
             isThinking: false,
             sources: [],
             retrievalWarnings: [],
+            mcpToolCalls: [],
         });
         ctx.messages = msgs;
 
@@ -633,11 +698,15 @@ export function createActions(ctx: ChatControllerCtx) {
                     edit_index: editIndex,
                     retrieval: {
                         web: {
-                            mode: ctx.retrieval_web_mode,
+                            enabled: ctx.retrieval_url_enabled,
+                            urls: normalizedRetrievalUrls(),
                         },
                         local: {
                             enabled: ctx.retrieval_local_enabled,
                         },
+                    },
+                    mcp: {
+                        enabled: ctx.mcp_enabled,
                     },
                 },
             });

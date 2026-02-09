@@ -6,6 +6,7 @@ use std::time::Duration;
 pub struct WebFetchOptions {
     pub timeout: Duration,
     pub max_body_bytes: usize,
+    pub max_chars: usize,
 }
 
 impl Default for WebFetchOptions {
@@ -13,12 +14,13 @@ impl Default for WebFetchOptions {
         Self {
             timeout: Duration::from_secs(12),
             max_body_bytes: 1_500_000,
+            max_chars: 5_000,
         }
     }
 }
 
 fn ua() -> &'static str {
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 }
 
 fn is_ipv6_documentation(v6: Ipv6Addr) -> bool {
@@ -85,6 +87,38 @@ fn is_allowed_mime(mime: &str) -> bool {
     lower.starts_with("text/html") || lower.starts_with("text/plain")
 }
 
+fn parse_charset(content_type: &str) -> Option<&str> {
+    content_type
+        .split(';')
+        .skip(1)
+        .find_map(|part| {
+            let (key, value) = part.split_once('=')?;
+            if key.trim().eq_ignore_ascii_case("charset") {
+                Some(value.trim().trim_matches('"'))
+            } else {
+                None
+            }
+        })
+        .filter(|v| !v.is_empty())
+}
+
+fn decode_body(bytes: &[u8], mime: &str) -> String {
+    if let Some(charset) = parse_charset(mime)
+        && let Some(enc) = encoding_rs::Encoding::for_label(charset.as_bytes())
+    {
+        let (cow, _, _) = enc.decode(bytes);
+        return cow.into_owned();
+    }
+    String::from_utf8_lossy(bytes).to_string()
+}
+
+fn trim_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    text.chars().take(max_chars).collect()
+}
+
 pub async fn fetch_page_text(url: &str, options: &WebFetchOptions) -> Result<String, String> {
     let parsed = Url::parse(url).map_err(|e| format!("invalid url: {e}"))?;
     match parsed.scheme() {
@@ -124,12 +158,14 @@ pub async fn fetch_page_text(url: &str, options: &WebFetchOptions) -> Result<Str
         return Err("response body is too large".to_string());
     }
 
-    let raw = String::from_utf8_lossy(&bytes).to_string();
-    if mime.starts_with("text/html") {
-        return html2text::from_read(raw.as_bytes(), 120)
-            .map_err(|e| format!("html extraction failed: {e}"));
-    }
-    Ok(raw)
+    let raw = decode_body(&bytes, &mime);
+    let extracted = if mime.to_ascii_lowercase().starts_with("text/html") {
+        html2text::from_read(raw.as_bytes(), 120)
+            .map_err(|e| format!("html extraction failed: {e}"))?
+    } else {
+        raw
+    };
+    Ok(trim_chars(extracted.trim(), options.max_chars.max(200)))
 }
 
 #[cfg(test)]

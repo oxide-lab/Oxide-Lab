@@ -1,20 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum RetrievalWebMode {
-    #[default]
-    Off,
-    Lite,
-    Pro,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RetrievalWebRequest {
     #[serde(default)]
-    pub mode: RetrievalWebMode,
+    pub enabled: bool,
     #[serde(default)]
-    pub query: Option<String>,
+    pub urls: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -31,6 +22,14 @@ pub struct RetrievalRequest {
     pub local: Option<RetrievalLocalRequest>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpRequest {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub max_tool_rounds: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetrievalSource {
     pub source_type: String,
@@ -45,6 +44,11 @@ pub struct RetrievalSource {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RetrievalContextEvent {
     pub sources: Vec<RetrievalSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RetrievalUrlCandidatesEvent {
+    pub urls: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

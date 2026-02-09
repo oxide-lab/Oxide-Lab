@@ -278,6 +278,8 @@ pub struct GenerateRequest {
     pub tool_choice: Option<ToolChoice>,
     #[serde(default)]
     pub retrieval: Option<crate::retrieval::types::RetrievalRequest>,
+    #[serde(default)]
+    pub mcp: Option<crate::retrieval::types::McpRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

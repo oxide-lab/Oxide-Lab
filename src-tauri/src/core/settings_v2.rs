@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use tauri::Manager;
 
-pub const SETTINGS_V2_SCHEMA_VERSION: u32 = 3;
+pub const SETTINGS_V2_SCHEMA_VERSION: u32 = 4;
 pub const DEFAULT_OPENAI_PORT: u16 = 11434;
 pub const CLEAR_DATA_CONFIRM_TOKEN: &str = "CONFIRM_CLEAR_DATA";
 
@@ -222,34 +222,27 @@ pub struct DeveloperSettings {
     pub openai_server: OpenAiServerConfig,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum WebRetrievalDefaultMode {
-    #[default]
-    Lite,
-    Off,
-    Pro,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WebSearchSettings {
-    pub default_mode: WebRetrievalDefaultMode,
-    pub max_snippets: usize,
-    pub max_snippet_chars: usize,
-    pub max_retrieval_tokens: usize,
-    pub max_pages: usize,
-    pub pro_beta_enabled: bool,
+pub struct UrlFetchSettings {
+    pub enabled_by_default: bool,
+    pub max_urls: usize,
+    pub max_chars_per_page: usize,
+    pub max_total_tokens: usize,
+    pub per_url_timeout_ms: u64,
+    pub total_timeout_ms: u64,
+    pub max_body_bytes: usize,
 }
 
-impl Default for WebSearchSettings {
+impl Default for UrlFetchSettings {
     fn default() -> Self {
         Self {
-            default_mode: WebRetrievalDefaultMode::Lite,
-            max_snippets: 8,
-            max_snippet_chars: 420,
-            max_retrieval_tokens: 900,
-            max_pages: 5,
-            pro_beta_enabled: false,
+            enabled_by_default: false,
+            max_urls: 6,
+            max_chars_per_page: 5_000,
+            max_total_tokens: 1_200,
+            per_url_timeout_ms: 12_000,
+            total_timeout_ms: 30_000,
+            max_body_bytes: 1_500_000,
         }
     }
 }
@@ -302,11 +295,75 @@ impl EmbeddingsProviderSettings {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum McpPermissionMode {
+    #[default]
+    PerCall,
+    AllowThisSession,
+    AllowThisServer,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum McpTransportType {
+    #[default]
+    Stdio,
+    StreamableHttp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpServerConfig {
+    pub id: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub transport: McpTransportType,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub default_permission_mode: McpPermissionMode,
+    pub max_tool_rounds: usize,
+    pub tool_call_timeout_ms: u64,
+    #[serde(default)]
+    pub servers: Vec<McpServerConfig>,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            default_permission_mode: McpPermissionMode::PerCall,
+            max_tool_rounds: 4,
+            tool_call_timeout_ms: 20_000,
+            servers: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WebRagSettings {
-    pub web_search: WebSearchSettings,
+    #[serde(default, alias = "web_search")]
+    pub url_fetch: UrlFetchSettings,
+    #[serde(default)]
     pub local_rag: LocalRagSettings,
+    #[serde(default)]
     pub embeddings_provider: EmbeddingsProviderSettings,
+    #[serde(default)]
+    pub mcp: McpSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -435,8 +492,33 @@ impl SettingsV2Store {
 
         let mut settings = if path.exists() {
             match fs::read_to_string(&path) {
-                Ok(raw) => match serde_json::from_str::<AppSettingsV2>(&raw) {
-                    Ok(parsed) => parsed,
+                Ok(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
+                    Ok(parsed_value) => {
+                        match migrate_settings_to_v4(parsed_value, &profile_dir, &path) {
+                            Ok(migrated) => match serde_json::from_value::<AppSettingsV2>(migrated)
+                            {
+                                Ok(parsed) => parsed,
+                                Err(err) => {
+                                    let _ = fs::copy(&path, &backup_path);
+                                    log::warn!(
+                                        "settings_v2.json decode error; backing up to {:?}: {}",
+                                        backup_path,
+                                        err
+                                    );
+                                    Self::migrate_from_legacy(app)?
+                                }
+                            },
+                            Err(err) => {
+                                let _ = fs::copy(&path, &backup_path);
+                                log::warn!(
+                                    "settings_v2.json migration error; backing up to {:?}: {}",
+                                    backup_path,
+                                    err
+                                );
+                                Self::migrate_from_legacy(app)?
+                            }
+                        }
+                    }
                     Err(err) => {
                         let _ = fs::copy(&path, &backup_path);
                         log::warn!(
@@ -725,6 +807,123 @@ impl SettingsV2Store {
     }
 }
 
+fn migrate_settings_to_v4(
+    mut root: serde_json::Value,
+    profile_dir: &Path,
+    source_path: &Path,
+) -> Result<serde_json::Value, String> {
+    let schema_version = root
+        .get("schema_version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    if schema_version >= SETTINGS_V2_SCHEMA_VERSION {
+        return Ok(root);
+    }
+
+    let backup_path = profile_dir.join("settings_v2.backup.pre_v4.json");
+    let backup_raw = serde_json::to_string_pretty(&root)
+        .map_err(|e| format!("Failed to serialize pre-v4 backup payload: {e}"))?;
+    fs::write(&backup_path, backup_raw)
+        .map_err(|e| format!("Failed to write v4 backup {}: {e}", backup_path.display()))?;
+    log::info!(
+        "URL_FETCH_DEBUG migration backup created at {} from {}",
+        backup_path.display(),
+        source_path.display()
+    );
+
+    if !root.is_object() {
+        root = serde_json::to_value(AppSettingsV2::default())
+            .map_err(|e| format!("Failed to build default settings payload: {e}"))?;
+    }
+    let root_obj = root
+        .as_object_mut()
+        .ok_or_else(|| "settings root must be an object".to_string())?;
+
+    let mut next_web_rag = serde_json::to_value(WebRagSettings::default())
+        .map_err(|e| format!("Failed to build web_rag defaults: {e}"))?;
+    if let Some(existing_web_rag) = root_obj.get("web_rag") {
+        merge_json_value(&mut next_web_rag, existing_web_rag);
+        if let Some(old_web_search) = existing_web_rag.get("web_search") {
+            map_legacy_web_search_to_url_fetch(&mut next_web_rag, old_web_search);
+        }
+    }
+    root_obj.insert("web_rag".to_string(), next_web_rag);
+    root_obj.insert(
+        "schema_version".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(SETTINGS_V2_SCHEMA_VERSION)),
+    );
+
+    log::info!("URL_FETCH_DEBUG migrated settings schema to v4");
+    Ok(root)
+}
+
+fn merge_json_value(target: &mut serde_json::Value, source: &serde_json::Value) {
+    match (target, source) {
+        (serde_json::Value::Object(target_map), serde_json::Value::Object(source_map)) => {
+            for (key, source_value) in source_map {
+                match target_map.get_mut(key) {
+                    Some(target_value) => merge_json_value(target_value, source_value),
+                    None => {
+                        target_map.insert(key.clone(), source_value.clone());
+                    }
+                }
+            }
+        }
+        (target_slot, source_value) => {
+            *target_slot = source_value.clone();
+        }
+    }
+}
+
+fn map_legacy_web_search_to_url_fetch(
+    web_rag_value: &mut serde_json::Value,
+    legacy_web_search: &serde_json::Value,
+) {
+    let Some(web_rag_map) = web_rag_value.as_object_mut() else {
+        return;
+    };
+    let Some(url_fetch_value) = web_rag_map.get_mut("url_fetch") else {
+        return;
+    };
+    let Some(url_fetch_map) = url_fetch_value.as_object_mut() else {
+        return;
+    };
+
+    let default_mode = legacy_web_search
+        .get("default_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("off");
+    url_fetch_map.insert(
+        "enabled_by_default".to_string(),
+        serde_json::Value::Bool(!matches!(default_mode, "off")),
+    );
+
+    if let Some(max_pages) = legacy_web_search.get("max_pages").and_then(|v| v.as_u64()) {
+        url_fetch_map.insert(
+            "max_urls".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(max_pages)),
+        );
+    }
+    if let Some(max_snippet_chars) = legacy_web_search
+        .get("max_snippet_chars")
+        .and_then(|v| v.as_u64())
+    {
+        url_fetch_map.insert(
+            "max_chars_per_page".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(max_snippet_chars.max(240))),
+        );
+    }
+    if let Some(max_retrieval_tokens) = legacy_web_search
+        .get("max_retrieval_tokens")
+        .and_then(|v| v.as_u64())
+    {
+        url_fetch_map.insert(
+            "max_total_tokens".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(max_retrieval_tokens.max(64))),
+        );
+    }
+}
+
 fn remove_file_if_exists(path: &Path, cleared_files: &mut Vec<String>) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => {
@@ -795,9 +994,10 @@ pub fn openai_status_from_config(config: &OpenAiServerConfig, running: bool) -> 
 pub fn validate_settings(settings: &AppSettingsV2) -> Result<Vec<String>, String> {
     let mut warnings = Vec::new();
     let cfg = &settings.developer.openai_server;
-    let web = &settings.web_rag.web_search;
+    let web = &settings.web_rag.url_fetch;
     let local = &settings.web_rag.local_rag;
     let embeddings = &settings.web_rag.embeddings_provider;
+    let mcp = &settings.web_rag.mcp;
 
     if cfg.port < 1024 {
         return Err("OpenAI server port must be in range 1024..65535".to_string());
@@ -823,14 +1023,25 @@ pub fn validate_settings(settings: &AppSettingsV2) -> Result<Vec<String>, String
         warnings.push("No presets configured; restoring built-in presets".to_string());
     }
 
-    if web.max_snippets == 0 || web.max_snippets > 25 {
-        return Err("web_rag.web_search.max_snippets must be between 1 and 25".to_string());
+    if web.max_urls == 0 || web.max_urls > 50 {
+        return Err("web_rag.url_fetch.max_urls must be between 1 and 50".to_string());
     }
-    if web.max_pages == 0 || web.max_pages > 10 {
-        return Err("web_rag.web_search.max_pages must be between 1 and 10".to_string());
+    if web.max_chars_per_page < 200 {
+        return Err("web_rag.url_fetch.max_chars_per_page must be >= 200".to_string());
     }
-    if web.max_retrieval_tokens < 64 {
-        return Err("web_rag.web_search.max_retrieval_tokens must be >= 64".to_string());
+    if web.max_total_tokens < 64 {
+        return Err("web_rag.url_fetch.max_total_tokens must be >= 64".to_string());
+    }
+    if web.per_url_timeout_ms < 500 || web.per_url_timeout_ms > 180_000 {
+        return Err(
+            "web_rag.url_fetch.per_url_timeout_ms must be between 500 and 180000".to_string(),
+        );
+    }
+    if web.total_timeout_ms < web.per_url_timeout_ms {
+        return Err("web_rag.url_fetch.total_timeout_ms must be >= per_url_timeout_ms".to_string());
+    }
+    if web.max_body_bytes < 8_192 {
+        return Err("web_rag.url_fetch.max_body_bytes must be >= 8192".to_string());
     }
     if local.chunk_overlap_chars >= local.chunk_size_chars {
         return Err(
@@ -854,11 +1065,56 @@ pub fn validate_settings(settings: &AppSettingsV2) -> Result<Vec<String>, String
             _ => return Err("Embeddings base_url must use http or https".to_string()),
         }
     }
-    if (web.pro_beta_enabled || local.beta_enabled) && embeddings.model.trim().is_empty() {
+    if local.beta_enabled && embeddings.model.trim().is_empty() {
         warnings.push(
-            "Embeddings model is not configured; Search Pro/Local RAG will be unavailable"
+            "Embeddings model is not configured; Local RAG retrieval will be unavailable"
                 .to_string(),
         );
+    }
+
+    if mcp.max_tool_rounds == 0 || mcp.max_tool_rounds > 16 {
+        return Err("web_rag.mcp.max_tool_rounds must be between 1 and 16".to_string());
+    }
+    if mcp.tool_call_timeout_ms < 1_000 || mcp.tool_call_timeout_ms > 300_000 {
+        return Err("web_rag.mcp.tool_call_timeout_ms must be between 1000 and 300000".to_string());
+    }
+    for server in &mcp.servers {
+        if server.id.trim().is_empty() {
+            return Err("web_rag.mcp.servers[].id must not be empty".to_string());
+        }
+        match server.transport {
+            McpTransportType::Stdio => {
+                if server
+                    .command
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .is_empty()
+                {
+                    return Err(format!(
+                        "web_rag.mcp.servers[{}].command must be set for stdio transport",
+                        server.id
+                    ));
+                }
+            }
+            McpTransportType::StreamableHttp => {
+                let raw_url = server.url.as_deref().unwrap_or_default().trim();
+                if raw_url.is_empty() {
+                    return Err(format!(
+                        "web_rag.mcp.servers[{}].url must be set for streamable_http transport",
+                        server.id
+                    ));
+                }
+                let parsed = reqwest::Url::parse(raw_url)
+                    .map_err(|e| format!("Invalid web_rag.mcp.servers[{}].url: {e}", server.id))?;
+                if !matches!(parsed.scheme(), "http" | "https") {
+                    return Err(format!(
+                        "web_rag.mcp.servers[{}].url must use http or https",
+                        server.id
+                    ));
+                }
+            }
+        }
     }
 
     Ok(warnings)

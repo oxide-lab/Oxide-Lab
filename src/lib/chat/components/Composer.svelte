@@ -29,7 +29,7 @@
   import { cn } from '../../utils';
   import { t } from '$lib/i18n';
   import { chatState } from '$lib/stores/chat';
-  import type { RetrievalWebMode } from '$lib/chat/types';
+  import { Input } from '$lib/components/ui/input';
 
   type AttachDetail = {
     filename: string;
@@ -56,11 +56,10 @@
     busy?: boolean;
     isLoaded?: boolean;
     canStop?: boolean;
-    retrievalMode?: RetrievalWebMode;
+    retrievalUrlEnabled?: boolean;
+    retrievalUrls?: string[];
     retrievalLocalEnabled?: boolean;
-    retrievalProEnabled?: boolean;
-    retrievalLocalBetaEnabled?: boolean;
-    retrievalEmbeddingsConfigured?: boolean;
+    mcpEnabled?: boolean;
     supports_text?: boolean;
     supports_image?: boolean;
     supports_audio?: boolean;
@@ -70,8 +69,10 @@
     hasMessages?: boolean;
     onSend?: () => void;
     onStop?: () => void;
-    onRetrievalModeChange?: (mode: RetrievalWebMode) => void;
+    onRetrievalUrlToggle?: (enabled: boolean) => void;
+    onRetrievalUrlsChange?: (urls: string[]) => void;
     onRetrievalLocalToggle?: (enabled: boolean) => void;
+    onMcpToggle?: (enabled: boolean) => void;
     onClear?: () => void;
     onAttach?: (detail: AttachDetail) => void;
     onToggleLoaderPanel?: () => void;
@@ -83,11 +84,10 @@
     busy = false,
     isLoaded = false,
     canStop = false,
-    retrievalMode = 'lite',
+    retrievalUrlEnabled = false,
+    retrievalUrls = [],
     retrievalLocalEnabled = false,
-    retrievalProEnabled = false,
-    retrievalLocalBetaEnabled = false,
-    retrievalEmbeddingsConfigured = false,
+    mcpEnabled = false,
     supports_text = true,
     supports_image = false,
     supports_audio: _supports_audio = false,
@@ -97,8 +97,10 @@
     hasMessages = false,
     onSend,
     onStop,
-    onRetrievalModeChange,
+    onRetrievalUrlToggle,
+    onRetrievalUrlsChange,
     onRetrievalLocalToggle,
+    onMcpToggle,
     onClear,
     onAttach,
     onToggleLoaderPanel,
@@ -114,14 +116,6 @@
   // Build accept string for file input
   const accept = $derived(buildAccept());
   const sendDisabled = $derived(!isLoaded || (!busy && !prompt.trim()));
-  const proDisabled = $derived(!retrievalProEnabled || !retrievalEmbeddingsConfigured);
-  const proDisabledReason = $derived(
-    !retrievalProEnabled
-      ? 'Search Pro is disabled in settings'
-      : !retrievalEmbeddingsConfigured
-        ? 'Configure embeddings provider in settings first'
-        : '',
-  );
 
   function buildAccept() {
     const extensions: string[] = [];
@@ -195,15 +189,36 @@
     }
   }
 
-  function setRetrievalMode(mode: RetrievalWebMode) {
+  function parseUrls(raw: string): string[] {
+    const parts = raw
+      .split(/[\n,]/g)
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const dedup = new Set<string>();
+    for (const url of parts) {
+      dedup.add(url);
+    }
+    return Array.from(dedup);
+  }
+
+  function toggleUrlRetrieval() {
     if (busy) return;
-    if (mode === 'pro' && proDisabled) return;
-    onRetrievalModeChange?.(mode);
+    onRetrievalUrlToggle?.(!retrievalUrlEnabled);
+  }
+
+  function updateUrlList(value: string) {
+    if (busy) return;
+    onRetrievalUrlsChange?.(parseUrls(value));
   }
 
   function toggleLocalRetrieval() {
     if (busy) return;
     onRetrievalLocalToggle?.(!retrievalLocalEnabled);
+  }
+
+  function toggleMcp() {
+    if (busy) return;
+    onMcpToggle?.(!mcpEnabled);
   }
 </script>
 
@@ -236,6 +251,16 @@
           : $t('chat.composer.placeholderNotLoaded') || 'Load a model to start chatting'}
         class="composer-input custom-scrollbar"
       />
+      {#if retrievalUrlEnabled}
+        <div class="px-3 pb-2">
+          <Input
+            value={(retrievalUrls ?? []).join('\n')}
+            placeholder="https://example.com/article"
+            oninput={(event) => updateUrlList((event.currentTarget as HTMLInputElement).value)}
+          />
+          <p class="pt-1 text-[11px] text-muted-foreground">One URL per line (or comma-separated)</p>
+        </div>
+      {/if}
 
       <!-- Toolbar -->
       <div class="flex justify-between items-center gap-2 p-2">
@@ -245,59 +270,41 @@
               type="button"
               class={cn(
                 'h-7 rounded-full px-2 text-xs transition-colors',
-                retrievalMode === 'off'
+                retrievalUrlEnabled
                   ? 'bg-background text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               )}
               disabled={busy || !isLoaded}
-              onclick={() => setRetrievalMode('off')}
+              onclick={toggleUrlRetrieval}
             >
-              Off
+              URLs
             </button>
             <button
               type="button"
               class={cn(
                 'h-7 rounded-full px-2 text-xs transition-colors',
-                retrievalMode === 'lite'
+                retrievalLocalEnabled
                   ? 'bg-background text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               )}
               disabled={busy || !isLoaded}
-              onclick={() => setRetrievalMode('lite')}
+              onclick={toggleLocalRetrieval}
             >
-              Lite
+              Docs
             </button>
             <button
               type="button"
               class={cn(
                 'h-7 rounded-full px-2 text-xs transition-colors',
-                retrievalMode === 'pro'
+                mcpEnabled
                   ? 'bg-background text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
-                proDisabled && 'cursor-not-allowed opacity-50',
               )}
-              title={proDisabledReason}
-              disabled={busy || !isLoaded || proDisabled}
-              onclick={() => setRetrievalMode('pro')}
+              disabled={busy || !isLoaded}
+              onclick={toggleMcp}
             >
-              Pro
+              Tools
             </button>
-            {#if retrievalLocalBetaEnabled}
-              <button
-                type="button"
-                class={cn(
-                  'h-7 rounded-full px-2 text-xs transition-colors',
-                  retrievalLocalEnabled
-                    ? 'bg-background text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-                disabled={busy || !isLoaded || !retrievalEmbeddingsConfigured}
-                title={!retrievalEmbeddingsConfigured ? 'Configure embeddings provider in settings first' : ''}
-                onclick={toggleLocalRetrieval}
-              >
-                Local
-              </button>
-            {/if}
           </div>
 
           <!-- Attach button -->

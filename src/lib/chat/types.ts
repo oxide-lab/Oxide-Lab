@@ -4,7 +4,55 @@
 
 export type Role = 'user' | 'assistant';
 
-export type RetrievalWebMode = 'off' | 'lite' | 'pro';
+export type RetrievalUrlCandidateEvent = {
+    urls?: string[];
+};
+
+export type McpPermissionDecision = 'allow_once' | 'allow_this_session' | 'allow_this_server' | 'deny';
+
+export type McpToolPermissionRequestEvent = {
+    request_id: string;
+    server_id: string;
+    tool_name: string;
+    arguments?: Record<string, unknown> | null;
+};
+
+export type McpToolCallStartedEvent = {
+    call_id: string;
+    server_id: string;
+    tool_name: string;
+    arguments?: Record<string, unknown> | null;
+};
+
+export type McpToolCallFinishedEvent = {
+    call_id: string;
+    server_id: string;
+    tool_name: string;
+    result?: unknown;
+};
+
+export type McpToolCallErrorEvent = {
+    call_id: string;
+    server_id: string;
+    tool_name: string;
+    error?: string;
+};
+
+export type McpToolUiState =
+    | 'input-streaming'
+    | 'input-available'
+    | 'output-available'
+    | 'output-error';
+
+export type McpToolCallView = {
+    call_id: string;
+    server_id: string;
+    tool_name: string;
+    state: McpToolUiState;
+    input?: Record<string, unknown> | null;
+    output?: unknown;
+    errorText?: string;
+};
 
 export type RetrievalSource = {
     source_type: string;
@@ -50,4 +98,5 @@ export type ChatMessage = {
     attachments?: Attachment[];
     sources?: RetrievalSource[];
     retrievalWarnings?: string[];
+    mcpToolCalls?: McpToolCallView[];
 };

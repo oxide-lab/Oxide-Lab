@@ -90,19 +90,23 @@
   const pendingModelPath = derived(chatState, ($chatState) => $chatState.pendingModelPath);
   const isModelLoading = derived(chatState, ($chatState) => $chatState.isLoadingModel);
   const modelLoadingStage = derived(chatState, ($chatState) => $chatState.loadingStage);
-  const currentModel = derived(
-    [quickModels, currentModelPath],
-    ([$quickModels, $currentModelPath]) =>
-      $quickModels.find((model: ModelInfo) => model.path === $currentModelPath),
+  const isCurrentModelLoaded = derived(chatState, ($chatState) => Boolean($chatState.isLoaded));
+  const selectedModelPath = derived(
+    [pendingModelPath, currentModelPath],
+    ([$pending, $current]) => $pending || $current,
   );
-  const currentDisplayName = derived(currentModel, ($currentModel) =>
-    formatModelLabel($currentModel),
+  const selectedModel = derived(
+    [quickModels, selectedModelPath],
+    ([$quickModels, $selectedModelPath]) =>
+      $quickModels.find((model: ModelInfo) => model.path === $selectedModelPath),
   );
-  const isReloadAvailable = derived([pendingModelPath, currentModelPath], ([$pending, $current]) =>
-    Boolean($pending && $pending !== $current),
+  const currentDisplayName = derived(selectedModel, ($selectedModel) =>
+    formatModelLabel($selectedModel),
   );
-  const isCurrentModelLoaded = derived(chatState, ($chatState) =>
-    Boolean($chatState.isLoaded && $chatState.modelPath),
+  const isReloadAvailable = derived(
+    [pendingModelPath, currentModelPath, isCurrentModelLoaded],
+    ([$pending, $current, $isCurrentModelLoaded]) =>
+      Boolean($isCurrentModelLoaded && $pending && $pending !== $current),
   );
   const canUnloadCurrentModel = derived(chatState, ($chatState) =>
     Boolean(
@@ -400,8 +404,6 @@
       chatState.update((s) => ({
         ...s,
         isLoaded: false,
-        modelPath: '', // Force selector reset
-        pendingModelPath: '',
         errorText: '',
         // Clear loading state too just in case
         isLoadingModel: false,
@@ -572,7 +574,7 @@
                             weight="bold"
                             class={cn(
                               'model-combobox-check',
-                              model.path !== $currentModelPath && 'model-combobox-check--hidden',
+                              model.path !== $selectedModelPath && 'model-combobox-check--hidden',
                             )}
                           />
                           <div class="model-combobox-item-body">
@@ -602,9 +604,9 @@
                 class="model-reload-btn"
                 onclick={handleReloadModel}
                 aria-label={$t('common.model.reloadModel') || 'Reload model'}
+                title={$t('common.model.reloadModel') || 'Reload model'}
               >
                 <Repeat size={16} weight="bold" />
-                {$t('common.model.reloadModel') || 'Reload'}
               </button>
             {:else if $isCurrentModelLoaded}
               <button
@@ -613,6 +615,7 @@
                 onclick={() => void handleUnloadAndClearCache()}
                 disabled={isUnloadActionRunning || !$canUnloadCurrentModel}
                 aria-label="Unload model and clear cache"
+                title="Unload model and clear cache"
               >
                 {#if isUnloadActionRunning}
                   <Spinner size={14} />
@@ -934,13 +937,14 @@
   .model-reload-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0.5rem;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
     border-radius: 0.5rem;
     border: 1px solid var(--border);
     background: transparent;
     color: inherit;
-    font-size: 0.85rem;
     cursor: pointer;
     transition: all 0.2s ease;
   }

@@ -1,4 +1,5 @@
 use crate::api::model_loading::emit_load_progress;
+use crate::core::settings_v2::SettingsV2State;
 use crate::core::state::SharedState;
 use crate::core::types::{
     ActiveBackend, GenerateRequest, LlamaSessionKind, LlamaSessionSnapshot, LoadRequest,
@@ -155,6 +156,91 @@ pub async fn generate_stream(
                 message: format!("Retrieval pipeline failed: {err}"),
             },
         );
+    }
+    let mcp_requested = req.mcp.as_ref().map(|m| m.enabled).unwrap_or(false);
+    if mcp_requested
+        && let (Some(settings_state), Some(mcp_state)) = (
+            app.try_state::<SettingsV2State>(),
+            app.try_state::<crate::mcp::McpRuntimeState>(),
+        )
+    {
+        let mcp_settings = {
+            let guard = settings_state.inner.lock().map_err(|e| e.to_string())?;
+            guard.get_ref().web_rag.mcp.clone()
+        };
+        if mcp_settings.enabled {
+            match crate::mcp::runtime::list_tools(mcp_state.inner()).await {
+                Ok(tools) if tools.is_empty() => {
+                    let warning =
+                        "MCP requested, but no active MCP tools are available for this request.";
+                    let _ = app.emit(
+                        "tooling_log",
+                        serde_json::json!({
+                            "category": "MCP_DEBUG",
+                            "message": "MCP requested but no active tools are available; using standard streaming",
+                            "details": {},
+                        }),
+                    );
+                    let _ = app.emit(
+                        "retrieval_warning",
+                        crate::retrieval::types::RetrievalWarningEvent {
+                            message: warning.to_string(),
+                        },
+                    );
+                }
+                Ok(_) => {
+                    match crate::mcp::agent::run_agent_loop(
+                        &app,
+                        &chat_session,
+                        req.clone(),
+                        mcp_state.inner(),
+                        &mcp_settings,
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            drop(acquired.lease);
+                            return Ok(());
+                        }
+                        Err(err) => {
+                            let _ = app.emit(
+                                "tooling_log",
+                                serde_json::json!({
+                                    "category": "MCP_DEBUG",
+                                    "message": "MCP agent loop failed; falling back to standard streaming",
+                                    "details": { "error": err },
+                                }),
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    let warning =
+                        format!("MCP tool discovery failed; using standard streaming: {err}");
+                    let _ = app.emit(
+                        "tooling_log",
+                        serde_json::json!({
+                            "category": "MCP_DEBUG",
+                            "message": "MCP tool discovery failed; using standard streaming",
+                            "details": { "error": err },
+                        }),
+                    );
+                    let _ = app.emit(
+                        "retrieval_warning",
+                        crate::retrieval::types::RetrievalWarningEvent { message: warning },
+                    );
+                }
+            }
+        } else {
+            let _ = app.emit(
+                "tooling_log",
+                serde_json::json!({
+                    "category": "MCP_DEBUG",
+                    "message": "MCP was requested but disabled in settings",
+                    "details": {},
+                }),
+            );
+        }
     }
     let result = manager.chat_stream(&app, &chat_session, req).await;
     drop(acquired.lease);

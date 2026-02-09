@@ -1,4 +1,5 @@
 use crate::core::settings_v2::SettingsV2State;
+use crate::core::types::ChatMessage;
 use crate::retrieval::local_rag::{
     LocalRagIndexResult, LocalRagSourceRecord, LocalRagStats, add_source, clear_index,
     list_sources, open_source_folder, remove_source, stats,
@@ -63,4 +64,16 @@ pub async fn rag_test_embeddings_provider(app: tauri::AppHandle) -> Result<(), S
 #[tauri::command]
 pub fn rag_open_source_folder(app: tauri::AppHandle, source_id: String) -> Result<String, String> {
     open_source_folder(&app, &source_id)
+}
+
+#[tauri::command]
+pub fn extract_url_candidates(
+    messages: Vec<ChatMessage>,
+    prompt: String,
+    max_urls: Option<usize>,
+) -> Result<Vec<String>, String> {
+    let limit = max_urls.unwrap_or(10).clamp(1, 50);
+    Ok(crate::retrieval::orchestrator::extract_url_candidates(
+        &messages, &prompt, limit,
+    ))
 }

@@ -9,7 +9,7 @@
   import { Input } from '$lib/components/ui/input';
   import * as Select from '$lib/components/ui/select';
   import SettingRow from '$lib/components/settings/SettingRow.svelte';
-  import type { WebRagSettings } from '$lib/types/settings-v2';
+  import type { McpServerConfig, WebRagSettings } from '$lib/types/settings-v2';
 
   type LocalRagSourceRecord = {
     id: string;
@@ -26,6 +26,13 @@
     chunks_count: number;
   };
 
+  type McpToolDescriptor = {
+    server_id: string;
+    name: string;
+    description?: string | null;
+    input_schema: unknown;
+  };
+
   interface Props {
     value: WebRagSettings;
     highlightedSettingId?: string | null;
@@ -33,18 +40,30 @@
   }
 
   let { value, highlightedSettingId = null, onChange }: Props = $props();
-
   let sourcePath = $state('');
   let sources = $state<LocalRagSourceRecord[]>([]);
   let stats = $state<LocalRagStats | null>(null);
   let sourceBusy = $state(false);
   let statusText = $state('');
 
-  function updateWebSearch(patch: Partial<WebRagSettings['web_search']>) {
+  let mcpServerId = $state('');
+  let mcpServerTransport = $state<'stdio' | 'streamable_http'>('stdio');
+  let mcpServerCommand = $state('');
+  let mcpServerArgs = $state('');
+  let mcpServerUrl = $state('');
+  let mcpServerHeadersJson = $state('{}');
+  let mcpServerEnvJson = $state('{}');
+  let mcpTools = $state<McpToolDescriptor[]>([]);
+  let selectedMcpTool = $state('');
+  let mcpArgsJson = $state('{}');
+  let mcpRunBusy = $state(false);
+  let mcpRunResult = $state('');
+
+  function updateUrlFetch(patch: Partial<WebRagSettings['url_fetch']>) {
     onChange({
       ...value,
-      web_search: {
-        ...value.web_search,
+      url_fetch: {
+        ...value.url_fetch,
         ...patch,
       },
     });
@@ -74,6 +93,108 @@
     });
   }
 
+  function updateMcp(patch: Partial<WebRagSettings['mcp']>) {
+    onChange({
+      ...value,
+      mcp: {
+        ...value.mcp,
+        ...patch,
+      },
+    });
+  }
+
+  function addMcpServer() {
+    const id = mcpServerId.trim();
+    if (!id) return;
+    const args = mcpServerArgs
+      .split(' ')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const headers = parseStringMapJson(mcpServerHeadersJson, 'MCP headers');
+    if (!headers) return;
+    const env = parseStringMapJson(mcpServerEnvJson, 'MCP env');
+    if (!env) return;
+    if (
+      mcpServerTransport === 'streamable_http' &&
+      mcpServerUrl.trim().includes('mcp.context7.com') &&
+      !hasContext7Auth(headers)
+    ) {
+      statusText =
+        'Context7 requires headers with CONTEXT7_API_KEY or Authorization for streamable_http transport.';
+      return;
+    }
+    const server: McpServerConfig = {
+      id,
+      enabled: true,
+      transport: mcpServerTransport,
+      command: mcpServerTransport === 'stdio' ? mcpServerCommand.trim() : null,
+      args,
+      url: mcpServerTransport === 'streamable_http' ? mcpServerUrl.trim() : null,
+      headers,
+      env,
+    };
+    updateMcp({
+      servers: [...value.mcp.servers.filter((entry) => entry.id !== id), server],
+    });
+    mcpServerId = '';
+    mcpServerCommand = '';
+    mcpServerArgs = '';
+    mcpServerUrl = '';
+    mcpServerHeadersJson = '{}';
+    mcpServerEnvJson = '{}';
+  }
+
+  function hasContext7Auth(headers: Record<string, string>) {
+    return Object.keys(headers).some((key) => {
+      const normalized = key.trim().toLowerCase();
+      return (
+        normalized === 'context7_api_key' ||
+        normalized === 'authorization' ||
+        normalized === 'context7-api-key' ||
+        normalized === 'x-context7-api-key' ||
+        normalized === 'x-api-key'
+      );
+    });
+  }
+
+  function parseStringMapJson(raw: string, label: string): Record<string, string> | null {
+    const trimmed = raw.trim();
+    if (!trimmed) return {};
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        statusText = `${label} must be a JSON object`;
+        return null;
+      }
+      const out: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value !== 'string') {
+          statusText = `${label} values must be strings`;
+          return null;
+        }
+        out[String(key)] = value;
+      }
+      return out;
+    } catch (err) {
+      statusText = `Invalid ${label} JSON: ${String(err)}`;
+      return null;
+    }
+  }
+
+  function removeMcpServer(id: string) {
+    updateMcp({
+      servers: value.mcp.servers.filter((entry) => entry.id !== id),
+    });
+  }
+
+  function toggleMcpServer(id: string, enabled: boolean) {
+    updateMcp({
+      servers: value.mcp.servers.map((entry) =>
+        entry.id === id ? { ...entry, enabled } : entry,
+      ),
+    });
+  }
+
   async function refreshSources() {
     try {
       const [sourceRows, ragStats] = await Promise.all([
@@ -89,9 +210,7 @@
 
   async function pickFolder() {
     const selected = await openDialog({ directory: true, multiple: false, title: 'Select source folder' });
-    if (typeof selected === 'string') {
-      sourcePath = selected;
-    }
+    if (typeof selected === 'string') sourcePath = selected;
   }
 
   async function pickFile() {
@@ -101,9 +220,7 @@
       title: 'Select source file',
       filters: [{ name: 'Documents', extensions: ['txt', 'md', 'pdf'] }],
     });
-    if (typeof selected === 'string') {
-      sourcePath = selected;
-    }
+    if (typeof selected === 'string') sourcePath = selected;
   }
 
   async function addSource() {
@@ -182,6 +299,112 @@
     }
   }
 
+  async function restartMcpServers() {
+    try {
+      await invoke('mcp_restart_servers');
+      await refreshMcpTools();
+      statusText = 'MCP servers restarted';
+    } catch (err) {
+      statusText = `Failed to restart MCP servers: ${String(err)}`;
+    }
+  }
+
+  async function refreshMcpTools() {
+    try {
+      const tools = await invoke<McpToolDescriptor[]>('mcp_list_tools');
+      mcpTools = tools;
+      if (tools.length > 0 && !selectedMcpTool) {
+        selectedMcpTool = `${tools[0].server_id}::${tools[0].name}`;
+      }
+    } catch (err) {
+      mcpTools = [];
+      statusText = `Failed to list MCP tools: ${String(err)}`;
+    }
+  }
+
+  function selectedMcpRoute() {
+    const [serverId, toolName] = selectedMcpTool.split('::');
+    if (!serverId || !toolName) return null;
+    return { serverId, toolName };
+  }
+
+  async function runMcpTool() {
+    const route = selectedMcpRoute();
+    if (!route || mcpRunBusy) return;
+    let parsedArgs: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(mcpArgsJson || '{}');
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsedArgs = parsed as Record<string, unknown>;
+      } else {
+        statusText = 'Tool arguments must be a JSON object';
+        return;
+      }
+    } catch (err) {
+      statusText = `Invalid JSON args: ${String(err)}`;
+      return;
+    }
+
+    mcpRunBusy = true;
+    statusText = `Running MCP tool ${route.serverId}/${route.toolName}...`;
+    let stopPermissionListener: (() => void) | null = null;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      stopPermissionListener = await listen<{ request_id?: string }>(
+        'mcp_tool_permission_request',
+        async (event) => {
+          const requestId = event.payload?.request_id;
+          if (!requestId) return;
+          try {
+            await invoke('mcp_resolve_tool_permission', {
+              requestId,
+              decision: 'allow_once',
+            });
+          } catch {
+            /* ignore manual-run permission race */
+          }
+        },
+      );
+      const result = await invoke<unknown>('mcp_call_tool', {
+        serverId: route.serverId,
+        toolName: route.toolName,
+        arguments: parsedArgs,
+      });
+      mcpRunResult = JSON.stringify(result, null, 2);
+      statusText = 'MCP tool call completed';
+    } catch (err) {
+      mcpRunResult = '';
+      statusText = `MCP tool call failed: ${String(err)}`;
+    } finally {
+      if (stopPermissionListener) {
+        try {
+          stopPermissionListener();
+        } catch {
+          /* ignore */
+        }
+      }
+      mcpRunBusy = false;
+    }
+  }
+
+  async function copyMcpResult() {
+    if (!mcpRunResult) return;
+    await navigator.clipboard.writeText(mcpRunResult);
+    statusText = 'Tool result copied to clipboard';
+  }
+
+  function insertMcpResultIntoPrompt() {
+    if (!mcpRunResult) return;
+    window.dispatchEvent(
+      new CustomEvent('oxide:insert-prompt', {
+        detail: {
+          text: `MCP tool result:\n${mcpRunResult}`,
+        },
+      }),
+    );
+    statusText = 'Tool result inserted into composer prompt';
+  }
+
   async function openSourceFolder(sourceId: string) {
     try {
       const folderPath = await invoke<string>('rag_open_source_folder', { sourceId });
@@ -193,52 +416,80 @@
 
   onMount(() => {
     void refreshSources();
+    void refreshMcpTools();
   });
 </script>
 
 <Card.Root>
   <Card.Header>
-    <Card.Title>Web Search + RAG</Card.Title>
+    <Card.Title>URL Fetch + Document RAG + MCP</Card.Title>
     <Card.Description>
-      Configure Lite/Pro web retrieval and Local RAG sources.
+      Configure URL retrieval, local document index, embeddings provider, and MCP tool servers.
     </Card.Description>
   </Card.Header>
   <Card.Content class="space-y-3">
     <SettingRow
-      id="web_rag.web_search.default_mode"
-      title="Default Web Search Mode"
-      description="Composer default retrieval mode."
-      highlighted={highlightedSettingId === 'web_rag.web_search.default_mode'}
-    >
-      <Select.Root
-        type="single"
-        value={value.web_search.default_mode}
-        onValueChange={(next) =>
-          updateWebSearch({
-            default_mode: (next as WebRagSettings['web_search']['default_mode']) ?? 'lite',
-          })}
-      >
-        <Select.Trigger class="w-full">
-          {value.web_search.default_mode.toUpperCase()}
-        </Select.Trigger>
-        <Select.Content>
-          <Select.Item value="off" label="OFF" />
-          <Select.Item value="lite" label="LITE" />
-          <Select.Item value="pro" label="PRO" />
-        </Select.Content>
-      </Select.Root>
-    </SettingRow>
-
-    <SettingRow
-      id="web_rag.web_search.pro_beta_enabled"
-      title="Enable Search Pro (beta)"
-      description="Pro mode requires embeddings provider."
-      highlighted={highlightedSettingId === 'web_rag.web_search.pro_beta_enabled'}
+      id="web_rag.url_fetch.enabled_by_default"
+      title="Enable URL fetch by default"
+      description="Composer starts with URL retrieval toggle enabled."
+      highlighted={highlightedSettingId === 'web_rag.url_fetch.enabled_by_default'}
       controlPosition="start"
     >
       <Checkbox
-        checked={value.web_search.pro_beta_enabled}
-        onCheckedChange={(checked) => updateWebSearch({ pro_beta_enabled: checked === true })}
+        checked={value.url_fetch.enabled_by_default}
+        onCheckedChange={(checked) => updateUrlFetch({ enabled_by_default: checked === true })}
+      />
+    </SettingRow>
+
+    <SettingRow
+      id="web_rag.url_fetch.max_urls"
+      title="Max URLs per request"
+      description="Upper bound for fetched URLs."
+      highlighted={highlightedSettingId === 'web_rag.url_fetch.max_urls'}
+    >
+      <Input
+        type="number"
+        min={1}
+        max={50}
+        value={String(value.url_fetch.max_urls)}
+        onblur={(event) =>
+          updateUrlFetch({
+            max_urls: Math.max(1, Math.min(50, Number((event.currentTarget as HTMLInputElement).value) || 6)),
+          })}
+      />
+    </SettingRow>
+
+    <SettingRow
+      id="web_rag.url_fetch.max_chars_per_page"
+      title="Max chars per page"
+      description="Maximum extracted text length from one URL."
+      highlighted={highlightedSettingId === 'web_rag.url_fetch.max_chars_per_page'}
+    >
+      <Input
+        type="number"
+        min={200}
+        value={String(value.url_fetch.max_chars_per_page)}
+        onblur={(event) =>
+          updateUrlFetch({
+            max_chars_per_page: Math.max(200, Number((event.currentTarget as HTMLInputElement).value) || 5000),
+          })}
+      />
+    </SettingRow>
+
+    <SettingRow
+      id="web_rag.url_fetch.max_total_tokens"
+      title="Max retrieval tokens"
+      description="Upper retrieval context budget before prompt assembly."
+      highlighted={highlightedSettingId === 'web_rag.url_fetch.max_total_tokens'}
+    >
+      <Input
+        type="number"
+        min={64}
+        value={String(value.url_fetch.max_total_tokens)}
+        onblur={(event) =>
+          updateUrlFetch({
+            max_total_tokens: Math.max(64, Number((event.currentTarget as HTMLInputElement).value) || 1200),
+          })}
       />
     </SettingRow>
 
@@ -274,143 +525,6 @@
     </SettingRow>
 
     <SettingRow
-      id="web_rag.local_rag.chunk_size_chars"
-      title="Chunk size (chars)"
-      description="Chunk size for local indexing."
-      highlighted={highlightedSettingId === 'web_rag.local_rag.chunk_size_chars'}
-    >
-      <Input
-        type="number"
-        min={300}
-        max={8000}
-        value={String(value.local_rag.chunk_size_chars)}
-        onblur={(event) =>
-          updateLocalRag({
-            chunk_size_chars: Math.max(
-              300,
-              Math.min(8000, Number((event.currentTarget as HTMLInputElement).value) || 1200),
-            ),
-          })}
-      />
-    </SettingRow>
-
-    <SettingRow
-      id="web_rag.local_rag.chunk_overlap_chars"
-      title="Chunk overlap (chars)"
-      description="Overlap between adjacent chunks."
-      highlighted={highlightedSettingId === 'web_rag.local_rag.chunk_overlap_chars'}
-    >
-      <Input
-        type="number"
-        min={0}
-        max={2000}
-        value={String(value.local_rag.chunk_overlap_chars)}
-        onblur={(event) =>
-          updateLocalRag({
-            chunk_overlap_chars: Math.max(
-              0,
-              Math.min(2000, Number((event.currentTarget as HTMLInputElement).value) || 180),
-            ),
-          })}
-      />
-    </SettingRow>
-
-    <SettingRow
-      id="web_rag.local_rag.max_file_size_mb"
-      title="Max file size (MB)"
-      description="Files above this limit are skipped during indexing."
-      highlighted={highlightedSettingId === 'web_rag.local_rag.max_file_size_mb'}
-    >
-      <Input
-        type="number"
-        min={1}
-        max={1024}
-        value={String(value.local_rag.max_file_size_mb)}
-        onblur={(event) =>
-          updateLocalRag({
-            max_file_size_mb: Math.max(
-              1,
-              Math.min(1024, Number((event.currentTarget as HTMLInputElement).value) || 20),
-            ),
-          })}
-      />
-    </SettingRow>
-
-    <SettingRow
-      id="web_rag.web_search.max_snippets"
-      title="Max snippets (Lite)"
-      description="Maximum snippets fetched from DDG Lite."
-      highlighted={highlightedSettingId === 'web_rag.web_search.max_snippets'}
-    >
-      <Input
-        type="number"
-        min={1}
-        max={25}
-        value={String(value.web_search.max_snippets)}
-        onblur={(event) =>
-          updateWebSearch({
-            max_snippets: Math.max(1, Math.min(25, Number((event.currentTarget as HTMLInputElement).value) || 8)),
-          })}
-      />
-    </SettingRow>
-
-    <SettingRow
-      id="web_rag.web_search.max_pages"
-      title="Max pages (Pro)"
-      description="How many pages to fetch in Pro mode."
-      highlighted={highlightedSettingId === 'web_rag.web_search.max_pages'}
-    >
-      <Input
-        type="number"
-        min={1}
-        max={10}
-        value={String(value.web_search.max_pages)}
-        onblur={(event) =>
-          updateWebSearch({
-            max_pages: Math.max(1, Math.min(10, Number((event.currentTarget as HTMLInputElement).value) || 5)),
-          })}
-      />
-    </SettingRow>
-
-    <SettingRow
-      id="web_rag.web_search.max_snippet_chars"
-      title="Max snippet chars"
-      description="Per-snippet character limit for Lite mode."
-      highlighted={highlightedSettingId === 'web_rag.web_search.max_snippet_chars'}
-    >
-      <Input
-        type="number"
-        min={120}
-        max={2000}
-        value={String(value.web_search.max_snippet_chars)}
-        onblur={(event) =>
-          updateWebSearch({
-            max_snippet_chars: Math.max(
-              120,
-              Math.min(2000, Number((event.currentTarget as HTMLInputElement).value) || 500),
-            ),
-          })}
-      />
-    </SettingRow>
-
-    <SettingRow
-      id="web_rag.web_search.max_retrieval_tokens"
-      title="Max retrieval tokens"
-      description="Upper retrieval context budget before prompt assembly."
-      highlighted={highlightedSettingId === 'web_rag.web_search.max_retrieval_tokens'}
-    >
-      <Input
-        type="number"
-        min={64}
-        value={String(value.web_search.max_retrieval_tokens)}
-        onblur={(event) =>
-          updateWebSearch({
-            max_retrieval_tokens: Math.max(64, Number((event.currentTarget as HTMLInputElement).value) || 1200),
-          })}
-      />
-    </SettingRow>
-
-    <SettingRow
       id="web_rag.embeddings_provider.base_url"
       title="Embeddings API URL"
       description="OpenAI-compatible endpoint (for example http://localhost:11434/v1)."
@@ -438,35 +552,76 @@
     </SettingRow>
 
     <SettingRow
-      id="web_rag.embeddings_provider.api_key"
-      title="Embeddings API key"
-      description="Optional bearer token."
-      highlighted={highlightedSettingId === 'web_rag.embeddings_provider.api_key'}
+      id="web_rag.mcp.enabled"
+      title="Enable MCP tools"
+      description="Allow tool calls through configured MCP servers."
+      highlighted={highlightedSettingId === 'web_rag.mcp.enabled'}
+      controlPosition="start"
     >
-      <Input
-        type="password"
-        value={value.embeddings_provider.api_key}
-        placeholder="sk-..."
-        onblur={(event) => updateEmbeddings({ api_key: (event.currentTarget as HTMLInputElement).value })}
+      <Checkbox
+        checked={value.mcp.enabled}
+        onCheckedChange={(checked) => updateMcp({ enabled: checked === true })}
       />
     </SettingRow>
 
     <SettingRow
-      id="web_rag.embeddings_provider.timeout_ms"
-      title="Embeddings timeout (ms)"
-      description="HTTP timeout for provider requests."
-      highlighted={highlightedSettingId === 'web_rag.embeddings_provider.timeout_ms'}
+      id="web_rag.mcp.default_permission_mode"
+      title="MCP permission mode"
+      description="Default permission strategy for tool calls."
+      highlighted={highlightedSettingId === 'web_rag.mcp.default_permission_mode'}
+    >
+      <Select.Root
+        type="single"
+        value={value.mcp.default_permission_mode}
+        onValueChange={(next) =>
+          updateMcp({
+            default_permission_mode:
+              (next as WebRagSettings['mcp']['default_permission_mode']) ?? 'per_call',
+          })}
+      >
+        <Select.Trigger class="w-full">{value.mcp.default_permission_mode}</Select.Trigger>
+        <Select.Content>
+          <Select.Item value="per_call" label="per_call" />
+          <Select.Item value="allow_this_session" label="allow_this_session" />
+          <Select.Item value="allow_this_server" label="allow_this_server" />
+        </Select.Content>
+      </Select.Root>
+    </SettingRow>
+
+    <SettingRow
+      id="web_rag.mcp.max_tool_rounds"
+      title="MCP max tool rounds"
+      description="Hard stop for agent tool-call loop."
+      highlighted={highlightedSettingId === 'web_rag.mcp.max_tool_rounds'}
+    >
+      <Input
+        type="number"
+        min={1}
+        max={16}
+        value={String(value.mcp.max_tool_rounds)}
+        onblur={(event) =>
+          updateMcp({
+            max_tool_rounds: Math.max(1, Math.min(16, Number((event.currentTarget as HTMLInputElement).value) || 4)),
+          })}
+      />
+    </SettingRow>
+
+    <SettingRow
+      id="web_rag.mcp.tool_call_timeout_ms"
+      title="MCP tool timeout (ms)"
+      description="Per-call timeout for MCP tool execution."
+      highlighted={highlightedSettingId === 'web_rag.mcp.tool_call_timeout_ms'}
     >
       <Input
         type="number"
         min={1000}
-        max={180000}
-        value={String(value.embeddings_provider.timeout_ms)}
+        max={300000}
+        value={String(value.mcp.tool_call_timeout_ms)}
         onblur={(event) =>
-          updateEmbeddings({
-            timeout_ms: Math.max(
+          updateMcp({
+            tool_call_timeout_ms: Math.max(
               1000,
-              Math.min(180000, Number((event.currentTarget as HTMLInputElement).value) || 20000),
+              Math.min(300000, Number((event.currentTarget as HTMLInputElement).value) || 20000),
             ),
           })}
       />
@@ -479,10 +634,133 @@
       <Button variant="outline" size="sm" onclick={refreshSources} disabled={sourceBusy}>
         Refresh sources
       </Button>
+      <Button variant="outline" size="sm" onclick={restartMcpServers} disabled={sourceBusy}>
+        Restart MCP servers
+      </Button>
       <Button variant="destructive" size="sm" onclick={clearIndex} disabled={sourceBusy}>
         Clear index
       </Button>
     </div>
+
+    <Card.Root class="border-dashed">
+      <Card.Header class="space-y-2">
+        <Card.Title class="text-base">MCP servers</Card.Title>
+        <Card.Description>Add minimal server configs for stdio or streamable_http.</Card.Description>
+      </Card.Header>
+      <Card.Content class="space-y-3">
+        <div class="grid gap-2 sm:grid-cols-2">
+          <Input bind:value={mcpServerId} placeholder="Server id" />
+          <Select.Root type="single" value={mcpServerTransport} onValueChange={(v) => (mcpServerTransport = (v as 'stdio' | 'streamable_http') ?? 'stdio')}>
+            <Select.Trigger>{mcpServerTransport}</Select.Trigger>
+            <Select.Content>
+              <Select.Item value="stdio" label="stdio" />
+              <Select.Item value="streamable_http" label="streamable_http" />
+            </Select.Content>
+          </Select.Root>
+          {#if mcpServerTransport === 'stdio'}
+            <Input bind:value={mcpServerCommand} placeholder="Command (npx / uvx / python)" />
+            <Input bind:value={mcpServerArgs} placeholder="Args (space-separated)" />
+          {:else}
+            <Input class="sm:col-span-2" bind:value={mcpServerUrl} placeholder="https://example.com/mcp" />
+          {/if}
+          <Input
+            class="sm:col-span-2"
+            bind:value={mcpServerHeadersJson}
+            placeholder={"Headers JSON, for example: {\"Context7-API-Key\":\"...\"}"}
+          />
+          <Input
+            class="sm:col-span-2"
+            bind:value={mcpServerEnvJson}
+            placeholder={"Env JSON, for example: {\"PATH\":\"...\"}"}
+          />
+        </div>
+        <Button size="sm" onclick={addMcpServer} disabled={!mcpServerId.trim()}>
+          Add MCP server
+        </Button>
+        {#if value.mcp.servers.length === 0}
+          <p class="text-xs text-muted-foreground">No MCP servers configured yet.</p>
+        {:else}
+          <div class="space-y-2">
+            {#each value.mcp.servers as server (server.id)}
+              <div class="rounded-md border border-border/70 bg-background/70 p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="truncate text-sm font-medium">{server.id}</p>
+                  <Checkbox
+                    checked={server.enabled}
+                    onCheckedChange={(checked) => toggleMcpServer(server.id, checked === true)}
+                  />
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  {server.transport === 'stdio'
+                    ? `${server.command ?? ''} ${(server.args ?? []).join(' ')}`
+                    : server.url}
+                </p>
+                {#if Object.keys(server.headers ?? {}).length > 0 || Object.keys(server.env ?? {}).length > 0}
+                  <p class="text-[11px] text-muted-foreground">
+                    headers: {Object.keys(server.headers ?? {}).length} | env: {Object.keys(server.env ?? {}).length}
+                  </p>
+                {/if}
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="destructive" onclick={() => removeMcpServer(server.id)}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root class="border-dashed">
+      <Card.Header class="space-y-2">
+        <Card.Title class="text-base">MCP manual tool runner</Card.Title>
+        <Card.Description>Invoke discovered tools with JSON args for quick validation.</Card.Description>
+      </Card.Header>
+      <Card.Content class="space-y-3">
+        {#if mcpTools.length === 0}
+          <p class="text-xs text-muted-foreground">
+            No tools available. Start MCP servers and click “Restart MCP servers”.
+          </p>
+        {:else}
+          <Select.Root
+            type="single"
+            value={selectedMcpTool}
+            onValueChange={(v) => (selectedMcpTool = String(v ?? ''))}
+          >
+            <Select.Trigger class="w-full">{selectedMcpTool || 'Select tool'}</Select.Trigger>
+            <Select.Content>
+              {#each mcpTools as tool (tool.server_id + '::' + tool.name)}
+                <Select.Item
+                  value={tool.server_id + '::' + tool.name}
+                  label={tool.server_id + ' / ' + tool.name}
+                />
+              {/each}
+            </Select.Content>
+          </Select.Root>
+          <Input bind:value={mcpArgsJson} placeholder="JSON object, for example: query=hello" />
+          <div class="flex flex-wrap gap-2">
+            <Button size="sm" onclick={runMcpTool} disabled={mcpRunBusy || !selectedMcpTool}>
+              Run tool
+            </Button>
+            <Button size="sm" variant="outline" onclick={copyMcpResult} disabled={!mcpRunResult}>
+              Copy result
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onclick={insertMcpResultIntoPrompt}
+              disabled={!mcpRunResult}
+            >
+              Insert into prompt
+            </Button>
+          </div>
+          {#if mcpRunResult}
+            <pre class="max-h-56 overflow-auto rounded-md border border-border/70 bg-background/70 p-3 text-xs">{mcpRunResult}</pre>
+          {/if}
+        {/if}
+      </Card.Content>
+    </Card.Root>
 
     <Card.Root class="border-dashed">
       <Card.Header class="space-y-2">

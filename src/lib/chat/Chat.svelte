@@ -6,6 +6,7 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
+  import { invoke } from '@tauri-apps/api/core';
   import * as Sheet from '$lib/components/ui/sheet';
   import { PaneGroup, Pane, PaneResizer } from 'paneforge';
   import {
@@ -13,8 +14,14 @@
     ConversationContent,
     ConversationScrollButton,
   } from '$lib/components/ai-elements/conversation';
-  import { MessageList, Composer, LoaderPanel, PreviewPanel } from '$lib/chat/components';
-  import type { ChatMessage, RetrievalWebMode } from '$lib/chat/types';
+  import {
+    MessageList,
+    Composer,
+    LoaderPanel,
+    McpPermissionModal,
+    PreviewPanel,
+  } from '$lib/chat/components';
+  import type { ChatMessage, McpPermissionDecision } from '$lib/chat/types';
   import { createChatController } from '$lib/chat/controller';
   import { chatState, chatUiMounted, getDefaultChatState } from '$lib/stores/chat';
   import { currentSession } from '$lib/stores/chat-history';
@@ -24,6 +31,10 @@
   import { inferenceMetricsStore } from '$lib/stores/inference-metrics';
   import type { InferenceMetrics } from '$lib/types/performance';
   import { settingsV2Store } from '$lib/stores/settings-v2';
+  import {
+    clearMcpPendingPermission,
+    mcpPendingPermission,
+  } from '$lib/stores/mcp-tooling';
   import type { ChatPreset } from '$lib/types/settings-v2';
 
 
@@ -85,8 +96,10 @@
   let split_prompt = $state<boolean>(savedState.split_prompt);
   let verbose_prompt = $state<boolean>(savedState.verbose_prompt);
   let tracing = $state<boolean>(savedState.tracing);
-  let retrieval_web_mode = $state<RetrievalWebMode>(savedState.retrieval_web_mode ?? 'lite');
+  let retrieval_url_enabled = $state<boolean>(savedState.retrieval_url_enabled ?? false);
+  let retrieval_urls = $state<string[]>(savedState.retrieval_urls ?? []);
   let retrieval_local_enabled = $state<boolean>(savedState.retrieval_local_enabled ?? false);
+  let mcp_enabled = $state<boolean>(savedState.mcp_enabled ?? false);
   let preset_id = $state<string | null>(savedState.preset_id ?? null);
 
   // Create controller with context
@@ -349,17 +362,29 @@
     set tracing(v) {
       tracing = v;
     },
-    get retrieval_web_mode() {
-      return retrieval_web_mode;
+    get retrieval_url_enabled() {
+      return retrieval_url_enabled;
     },
-    set retrieval_web_mode(v) {
-      retrieval_web_mode = v;
+    set retrieval_url_enabled(v) {
+      retrieval_url_enabled = v;
+    },
+    get retrieval_urls() {
+      return retrieval_urls;
+    },
+    set retrieval_urls(v) {
+      retrieval_urls = v;
     },
     get retrieval_local_enabled() {
       return retrieval_local_enabled;
     },
     set retrieval_local_enabled(v) {
       retrieval_local_enabled = v;
+    },
+    get mcp_enabled() {
+      return mcp_enabled;
+    },
+    set mcp_enabled(v) {
+      mcp_enabled = v;
     },
   });
 
@@ -381,17 +406,13 @@
       name: preset.name,
     })),
   );
-  let retrievalProEnabled = $derived(Boolean($settingsV2Store?.web_rag.web_search.pro_beta_enabled));
   let retrievalLocalBetaEnabled = $derived(Boolean($settingsV2Store?.web_rag.local_rag.beta_enabled));
-  let retrievalEmbeddingsConfigured = $derived(
-    Boolean(
-      $settingsV2Store?.web_rag.embeddings_provider.base_url?.trim() &&
-        $settingsV2Store?.web_rag.embeddings_provider.model?.trim(),
-    ),
-  );
+  let mcpFeatureEnabled = $derived(Boolean($settingsV2Store?.web_rag.mcp.enabled));
+  let insertPromptListener: ((event: Event) => void) | null = null;
 
-  // Keep shared chatState in sync so header and other views get instant truth
-  // Note: isLoaded and busy are NOT synced here - they are managed directly in actions.ts
+  // Keep shared chatState in sync so header and other views get instant truth.
+  // busy/isLoaded are managed in actions.ts and intentionally not overwritten here.
+  // Model fields are synced separately so retrieval/tool toggles never mutate model selection state.
   $effect(() => {
     chatState.update((s) => ({
       ...s,
@@ -402,25 +423,32 @@
       format,
       pendingModelPath,
       pendingFormat,
-      // busy and isLoaded are managed in actions.ts - don't overwrite!
       isLoadingModel,
       isUnloadingModel,
       isCancelling,
       loadingStage,
       loadingProgress,
       unloadingProgress,
-      retrieval_web_mode,
-      retrieval_local_enabled,
       preset_id,
     }));
   });
 
   $effect(() => {
-    if (retrieval_web_mode === 'pro' && (!retrievalProEnabled || !retrievalEmbeddingsConfigured)) {
-      retrieval_web_mode = 'lite';
-    }
+    chatState.update((s) => ({
+      ...s,
+      retrieval_url_enabled,
+      retrieval_urls,
+      retrieval_local_enabled,
+      mcp_enabled,
+    }));
+  });
+
+  $effect(() => {
     if (!retrievalLocalBetaEnabled) {
       retrieval_local_enabled = false;
+    }
+    if (!mcpFeatureEnabled) {
+      mcp_enabled = false;
     }
   });
 
@@ -430,6 +458,20 @@
 
   function toggleChatHistoryVisibility() {
     showChatHistory.update((value) => !value);
+  }
+
+  async function resolveMcpPermission(requestId: string, decision: McpPermissionDecision) {
+    if (!requestId) return;
+    try {
+      await invoke('mcp_resolve_tool_permission', {
+        requestId,
+        decision,
+      });
+    } catch (err) {
+      console.warn('Failed to resolve MCP permission request:', err);
+    } finally {
+      clearMcpPendingPermission(requestId);
+    }
   }
 
   function applySelectedPreset() {
@@ -595,10 +637,23 @@
       },
     );
 
+    insertPromptListener = (event: Event) => {
+      const detail = (event as CustomEvent<{ text?: string }>).detail;
+      const text = detail?.text?.trim();
+      if (!text) return;
+      prompt = prompt ? `${prompt}\n\n${text}` : text;
+    };
+    window.addEventListener('oxide:insert-prompt', insertPromptListener);
+
   });
 
   onDestroy(() => {
     chatUiMounted.set(false);
+    clearMcpPendingPermission();
+    if (insertPromptListener) {
+      window.removeEventListener('oxide:insert-prompt', insertPromptListener);
+      insertPromptListener = null;
+    }
 
     // Persist state
     chatState.set({
@@ -643,8 +698,10 @@
       split_prompt,
       verbose_prompt,
       tracing,
-      retrieval_web_mode,
+      retrieval_url_enabled,
+      retrieval_urls,
       retrieval_local_enabled,
+      mcp_enabled,
       preset_id,
     });
 
@@ -702,16 +759,17 @@
               {busy}
               isLoaded={$chatState.isLoaded}
               canStop={canStopGeneration}
-              retrievalMode={retrieval_web_mode}
+              retrievalUrlEnabled={retrieval_url_enabled}
+              retrievalUrls={retrieval_urls}
               retrievalLocalEnabled={retrieval_local_enabled}
-              retrievalProEnabled={retrievalProEnabled}
-              retrievalLocalBetaEnabled={retrievalLocalBetaEnabled}
-              retrievalEmbeddingsConfigured={retrievalEmbeddingsConfigured}
+              mcpEnabled={mcp_enabled}
               {isLoaderPanelVisible}
               {isChatHistoryVisible}
               {hasMessages}
-              onRetrievalModeChange={(mode) => (retrieval_web_mode = mode)}
+              onRetrievalUrlToggle={(enabled) => (retrieval_url_enabled = enabled)}
+              onRetrievalUrlsChange={(urls) => (retrieval_urls = urls)}
               onRetrievalLocalToggle={(enabled) => (retrieval_local_enabled = enabled)}
+              onMcpToggle={(enabled) => (mcp_enabled = enabled)}
               onSend={sendMessage}
               onStop={stopGenerate}
               onToggleLoaderPanel={toggleLoaderPanelVisibility}
@@ -784,6 +842,7 @@
       </Sheet.Content>
     </Sheet.Root>
 </main>
+<McpPermissionModal request={$mcpPendingPermission} onDecision={resolveMcpPermission} />
 
 <style>
   /* ===== Gradient Overlays (CSS Only - Complex Effects) ===== */

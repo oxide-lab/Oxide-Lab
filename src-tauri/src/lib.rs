@@ -7,6 +7,7 @@ pub mod core;
 pub mod generate;
 pub mod i18n;
 pub mod inference;
+pub mod mcp;
 pub mod retrieval;
 
 pub use app::run;

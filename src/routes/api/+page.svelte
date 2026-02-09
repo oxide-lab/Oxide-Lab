@@ -47,22 +47,10 @@ print(completion.choices[0].message.content)`);
     try {
         const config = await getServerConfig();
         port = config.port;
-        baseUrl = `http://localhost:${port}/v1`;
-        
-        // Ping server to verify responsiveness
-        try {
-            const res = await fetch(`http://localhost:${port}/v1/models`);
-            if (res.ok) {
-                serverRunning = true;
-            } else {
-                serverRunning = false;
-            }
-        } catch (e) {
-            console.warn("Failed to ping local API server", e);
-            serverRunning = false;
-        }
+        serverRunning = config.running === true;
     } catch (e) {
         console.error("Failed to get server config", e);
+        serverRunning = false;
     }
   });
 

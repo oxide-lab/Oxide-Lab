@@ -118,6 +118,7 @@ pub fn run() {
         )
         .manage(shared.clone())
         .manage(llama_cpp_state.clone())
+        .manage(crate::mcp::McpRuntimeState::default())
         .invoke_handler(tauri::generate_handler![
             crate::api::greet,
             get_app_info,
@@ -197,6 +198,17 @@ pub fn run() {
             crate::api::rag_get_stats,
             crate::api::rag_test_embeddings_provider,
             crate::api::rag_open_source_folder,
+            crate::api::extract_url_candidates,
+            crate::api::mcp_get_config,
+            crate::api::mcp_save_config,
+            crate::api::mcp_get_connected_servers,
+            crate::api::mcp_activate_server,
+            crate::api::mcp_deactivate_server,
+            crate::api::mcp_restart_servers,
+            crate::api::mcp_list_tools,
+            crate::api::mcp_call_tool,
+            crate::api::mcp_cancel_tool_call,
+            crate::api::mcp_resolve_tool_permission,
         ])
         .setup(move |app| {
             // Hybrid responsiveness: keep the window/event-loop thread slightly prioritized on Windows,
@@ -265,6 +277,22 @@ pub fn run() {
                 }
             });
 
+            if settings_snapshot.web_rag.mcp.enabled
+                && let Some(mcp_state) = app.try_state::<crate::mcp::McpRuntimeState>()
+            {
+                let mcp_settings = settings_snapshot.web_rag.mcp.clone();
+                let app_handle = app.handle().clone();
+                let mcp_runtime = mcp_state.inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) =
+                        crate::mcp::runtime::restart_servers(&app_handle, &mcp_runtime, &mcp_settings)
+                            .await
+                    {
+                        log::warn!("MCP_DEBUG failed to initialize configured MCP servers: {}", err);
+                    }
+                });
+            }
+
             #[cfg(debug_assertions)]
             if let Some(main_window) = app.get_webview_window("main") {
                 main_window.open_devtools();
@@ -276,6 +304,12 @@ pub fn run() {
 
     app.run(move |_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let Some(mcp_state) = _handle.try_state::<crate::mcp::McpRuntimeState>() {
+                let runtime = mcp_state.inner().clone();
+                tauri::async_runtime::block_on(async move {
+                    let _ = crate::mcp::runtime::shutdown(&runtime).await;
+                });
+            }
             if let Some(openai) = _handle.try_state::<crate::api::openai::OpenAiServerController>()
             {
                 let controller = openai.inner().clone();
