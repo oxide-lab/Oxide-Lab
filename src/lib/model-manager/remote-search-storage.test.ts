@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { RemoteModelInfo } from '$lib/types/local-models';
 import {
   getCachedFallback,
+  getCachedQueryResults,
+  getCachedSearchPage,
   upsertSearchCache,
+  upsertSearchCachePage,
   type RemoteSearchCacheEntry,
 } from '$lib/model-manager/remote-search-storage';
 
@@ -56,5 +59,29 @@ describe('remote-search-storage', () => {
     const fallback = getCachedFallback(cache, 'llama');
     expect(fallback).toHaveLength(1);
     expect(fallback[0]?.repo_id).toBe('a/one');
+  });
+
+  it('stores and reads cache pages by query + offset', () => {
+    const firstPage = [makeModel('a/one'), makeModel('b/two')];
+    const secondPage = [makeModel('c/three')];
+
+    let cache: RemoteSearchCacheEntry[] = [];
+    cache = upsertSearchCachePage(cache, 'qwen', 0, 2, firstPage);
+    cache = upsertSearchCachePage(cache, 'qwen', 2, 2, secondPage);
+
+    const cachedPage0 = getCachedSearchPage(cache, 'qwen', 0);
+    const cachedPage2 = getCachedSearchPage(cache, 'qwen', 2);
+    const flattened = getCachedQueryResults(cache, 'qwen');
+
+    expect(cachedPage0.map((item) => item.repo_id)).toEqual(['a/one', 'b/two']);
+    expect(cachedPage2.map((item) => item.repo_id)).toEqual(['c/three']);
+    expect(flattened.map((item) => item.repo_id)).toEqual(['a/one', 'b/two', 'c/three']);
+  });
+
+  it('keeps legacy upsert API backward-compatible', () => {
+    const legacy = upsertSearchCache([], 'phi', [makeModel('x/one')]);
+    const snapshot = getCachedQueryResults(legacy, 'phi');
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0]?.repo_id).toBe('x/one');
   });
 });

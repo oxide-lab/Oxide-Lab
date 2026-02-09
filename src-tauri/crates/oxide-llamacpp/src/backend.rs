@@ -1093,9 +1093,12 @@ async fn download_archive_with_progress<R: Runtime>(
     Ok(())
 }
 
-fn extract_tar_gz(archive_path: &std::path::Path, output_dir: &std::path::Path) -> Result<(), String> {
-    let file = std::fs::File::open(archive_path)
-        .map_err(|e| format!("Failed to open archive: {}", e))?;
+fn extract_tar_gz(
+    archive_path: &std::path::Path,
+    output_dir: &std::path::Path,
+) -> Result<(), String> {
+    let file =
+        std::fs::File::open(archive_path).map_err(|e| format!("Failed to open archive: {}", e))?;
     let gz = flate2::read::GzDecoder::new(file);
     let mut archive = tar::Archive::new(gz);
     archive
@@ -1130,7 +1133,11 @@ fn extract_zip(archive_path: &std::path::Path, output_dir: &std::path::Path) -> 
 
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                format!("Failed to create parent directory {}: {}", parent.display(), e)
+                format!(
+                    "Failed to create parent directory {}: {}",
+                    parent.display(),
+                    e
+                )
             })?;
         }
 

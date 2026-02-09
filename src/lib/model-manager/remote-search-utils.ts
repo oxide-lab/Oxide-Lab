@@ -14,6 +14,8 @@ export interface RemoteSearchFilters {
   library: string;
   language: string;
   parameter: string;
+  parameterMinB?: number | null;
+  parameterMaxB?: number | null;
   sizeBucket: SizeBucket;
   minDownloads: number;
   sortBy: 'downloads' | 'likes' | 'updated' | 'file_size';
@@ -140,12 +142,6 @@ function parseModelParameterBillions(model: RemoteModelInfo): number | null {
   return value;
 }
 
-function matchesParameterBucket(parameterB: number, bucket: ParameterBucket): boolean {
-  if (bucket.minB !== undefined && parameterB < bucket.minB) return false;
-  if (bucket.maxB !== undefined && parameterB >= bucket.maxB) return false;
-  return true;
-}
-
 function getModelArchitectures(model: RemoteModelInfo): string[] {
   const items = new Set<string>();
 
@@ -205,15 +201,17 @@ export function applyRemoteFilters(
   const selectedLicense = normalize(filters.license);
   const selectedPipelineTag = normalize(filters.pipelineTag);
   const selectedLanguage = normalize(filters.language);
-  const selectedParameter = normalize(filters.parameter);
-
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const minParameterB = typeof filters.parameterMinB === 'number' ? filters.parameterMinB : null;
+  const maxParameterB = typeof filters.parameterMaxB === 'number' ? filters.parameterMaxB : null;
 
   const filtered = models.filter((model) => {
+    const tags = Array.isArray(model?.tags) ? model.tags : [];
+    const isStaticFirstPage = tags.some((tag) => normalizeTag(tag) === 'static:first-page');
     if (filters.format !== 'any' && filters.format !== 'gguf') return false;
     const files = Array.isArray(model?.gguf_files) ? model.gguf_files : [];
-    if (files.length === 0) return false;
-    if (!passesSizeBucket(model, filters.sizeBucket)) return false;
+    if (!isStaticFirstPage && files.length === 0) return false;
+    if (isStaticFirstPage && filters.sizeBucket !== 'any') return false;
+    if (!isStaticFirstPage && !passesSizeBucket(model, filters.sizeBucket)) return false;
     if (model.downloads < filters.minDownloads) return false;
 
     if (architectureSet.size > 0) {
@@ -224,6 +222,7 @@ export function applyRemoteFilters(
     }
 
     if (selectedQuant && selectedQuant !== 'any') {
+      if (isStaticFirstPage) return false;
       const modelQuantizations = files
         .map((file) => normalize(file.quantization ?? ''))
         .filter(Boolean);
@@ -253,17 +252,17 @@ export function applyRemoteFilters(
       }
     }
 
-    if (selectedParameter && selectedParameter !== 'any') {
-      const bucket = PARAMETER_BUCKETS.find((item) => item.value === selectedParameter);
-      if (!bucket) return false;
+    if (minParameterB !== null || maxParameterB !== null) {
       const parameterB = parseModelParameterBillions(model);
-      if (parameterB === null || !matchesParameterBucket(parameterB, bucket)) {
+      if (parameterB === null) {
         return false;
       }
+      if (minParameterB !== null && parameterB < minParameterB) return false;
+      if (maxParameterB !== null && parameterB >= maxParameterB) return false;
     }
 
     if (tagSet.size > 0) {
-      const modelTags = new Set((Array.isArray(model?.tags) ? model.tags : []).map(normalizeTag));
+      const modelTags = new Set(tags.map(normalizeTag));
       for (const requiredTag of tagSet) {
         if (!modelTags.has(requiredTag)) {
           return false;
@@ -271,9 +270,8 @@ export function applyRemoteFilters(
       }
     }
 
-    if (filters.newThisWeek && extractTimestamp(model.last_modified) < weekAgo) {
-      return false;
-    }
+    // Note: newThisWeek is handled server-side via sort order (trending),
+    // not as a client-side post-filter on paginated results.
 
     return true;
   });

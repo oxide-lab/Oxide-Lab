@@ -16,13 +16,30 @@ import type {
     SortOrder,
 } from '$lib/types/local-models';
 import { SimSearch } from '$lib/utils/simsearch';
+import * as HuggingFaceHub from '$lib/services/huggingface-hub';
 
 export interface RemoteModelMetadata {
     parameter_count?: string;
     context_length?: number;
 }
 
+export interface RemoteSearchPageResult {
+    items: RemoteModelInfo[];
+    next_cursor?: string | null;
+}
+
 export class LocalModelsService {
+    private static isExpectedNetworkError(error: unknown): boolean {
+        const message = String(error ?? '').toLowerCase();
+        return (
+            message.includes('error sending request') ||
+            message.includes('network') ||
+            message.includes('timeout') ||
+            message.includes('connection') ||
+            message.includes('offline') ||
+            message.includes('failed to fetch')
+        );
+    }
     /**
      * Scan a directory for local GGUF models.
      */
@@ -94,14 +111,17 @@ export class LocalModelsService {
     static async searchRemote(
         query: string,
         filters: RemoteModelFilters = {},
-    ): Promise<RemoteModelInfo[]> {
+    ): Promise<RemoteSearchPageResult> {
         try {
-
-
-            const { invoke } = await import('@tauri-apps/api/core');
-            return await invoke<RemoteModelInfo[]>('search_huggingface_gguf', { query, filters });
+            const result = await HuggingFaceHub.searchModels(query, filters);
+            return {
+                items: result.items,
+                next_cursor: result.nextCursor,
+            };
         } catch (error) {
-            console.error('Failed to search Hugging Face:', error);
+            if (!this.isExpectedNetworkError(error)) {
+                console.error('Failed to search Hugging Face:', error);
+            }
             throw new Error(`Failed to search Hugging Face: ${error}`);
         }
     }
@@ -111,12 +131,11 @@ export class LocalModelsService {
      */
     static async getModelReadme(repoId: string): Promise<string> {
         try {
-
-
-            const { invoke } = await import('@tauri-apps/api/core');
-            return await invoke<string>('get_model_readme', { repoId });
+            return await HuggingFaceHub.getModelReadme(repoId);
         } catch (error) {
-            console.error('Failed to load model README:', error);
+            if (!this.isExpectedNetworkError(error)) {
+                console.error('Failed to load model README:', error);
+            }
             throw new Error(`Failed to load model README: ${error}`);
         }
     }
@@ -126,12 +145,41 @@ export class LocalModelsService {
      */
     static async getRemoteModelMetadata(repoId: string): Promise<RemoteModelMetadata> {
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            return await invoke<RemoteModelMetadata>('get_hf_model_metadata', { repoId });
+            const metadata = await HuggingFaceHub.getModelMetadata(repoId);
+            return {
+                parameter_count: metadata.parameterCount,
+                context_length: metadata.contextLength,
+            };
         } catch (error) {
-            console.error('Failed to load model metadata:', error);
+            if (!this.isExpectedNetworkError(error)) {
+                console.error('Failed to load model metadata:', error);
+            }
             throw new Error(`Failed to load model metadata: ${error}`);
         }
+    }
+
+    /**
+     * Fetch full remote model info by exact repo id.
+     */
+    static async getRemoteModelInfo(repoId: string): Promise<RemoteModelInfo | null> {
+        try {
+            return await HuggingFaceHub.getModelInfo(repoId);
+        } catch (error) {
+            if (!this.isExpectedNetworkError(error)) {
+                console.error('Failed to load model info:', error);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Fetch total number of Hugging Face search matches for pagination UI.
+     * Note: @huggingface/hub doesn't provide total count, returns null.
+     */
+    static async getRemoteSearchTotal(_query: string): Promise<number | null> {
+        // The @huggingface/hub library doesn't expose total count in search results.
+        // This is a limitation of cursor-based pagination.
+        return null;
     }
 
     /**

@@ -1,16 +1,27 @@
 import { applyFuzzyFallback } from '$lib/model-manager/remote-search-utils';
 import type { RemoteModelInfo } from '$lib/types/local-models';
 
+export interface RemoteSearchCachePage {
+  offset: number;
+  limit: number;
+  updatedAt: number;
+  items: RemoteModelInfo[];
+}
+
 export interface RemoteSearchCacheEntry {
   query: string;
   updatedAt: number;
-  items: RemoteModelInfo[];
+  pages: RemoteSearchCachePage[];
 }
 
 const TRENDING_KEY = '__trending__';
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeQueryKey(query: string): string {
+  return normalize(query) || TRENDING_KEY;
 }
 
 function sanitizeModel(input: unknown): RemoteModelInfo | null {
@@ -66,6 +77,104 @@ function dedupeByRepo(items: unknown[]): RemoteModelInfo[] {
   return result;
 }
 
+function sanitizePage(input: unknown, maxItemsPerPage: number): RemoteSearchCachePage | null {
+  if (!input || typeof input !== 'object') return null;
+  const rawPage = input as Partial<RemoteSearchCachePage>;
+  if (!Array.isArray(rawPage.items)) return null;
+
+  const items = dedupeByRepo(rawPage.items).slice(0, maxItemsPerPage);
+  if (!items.length) return null;
+
+  const offset = typeof rawPage.offset === 'number' && Number.isFinite(rawPage.offset) && rawPage.offset >= 0
+    ? Math.floor(rawPage.offset)
+    : 0;
+  const limit = typeof rawPage.limit === 'number' && Number.isFinite(rawPage.limit) && rawPage.limit > 0
+    ? Math.floor(rawPage.limit)
+    : Math.max(1, items.length);
+  const updatedAt = typeof rawPage.updatedAt === 'number' && Number.isFinite(rawPage.updatedAt)
+    ? rawPage.updatedAt
+    : Date.now();
+
+  return {
+    offset,
+    limit,
+    updatedAt,
+    items,
+  };
+}
+
+function normalizeEntry(
+  input: unknown,
+  maxPagesPerQuery: number,
+  maxItemsPerPage: number,
+): RemoteSearchCacheEntry | null {
+  if (!input || typeof input !== 'object') return null;
+  const rawEntry = input as {
+    query?: unknown;
+    updatedAt?: unknown;
+    pages?: unknown;
+    items?: unknown;
+  };
+
+  if (typeof rawEntry.query !== 'string') return null;
+  const query = normalizeQueryKey(rawEntry.query);
+
+  let pages: RemoteSearchCachePage[] = [];
+  if (Array.isArray(rawEntry.pages)) {
+    pages = rawEntry.pages
+      .map((page) => sanitizePage(page, maxItemsPerPage))
+      .filter((page): page is RemoteSearchCachePage => page !== null);
+  }
+
+  // Backward-compat for legacy { items: RemoteModelInfo[] } cache shape.
+  if (pages.length === 0 && Array.isArray(rawEntry.items)) {
+    const legacy = sanitizePage(
+      {
+        offset: 0,
+        limit: maxItemsPerPage,
+        updatedAt: rawEntry.updatedAt,
+        items: rawEntry.items,
+      },
+      maxItemsPerPage,
+    );
+    if (legacy) {
+      pages = [legacy];
+    }
+  }
+
+  if (!pages.length) return null;
+
+  pages = pages
+    .sort((a, b) => a.offset - b.offset)
+    .slice(0, maxPagesPerQuery);
+
+  const updatedAt = typeof rawEntry.updatedAt === 'number' && Number.isFinite(rawEntry.updatedAt)
+    ? rawEntry.updatedAt
+    : Math.max(...pages.map((page) => page.updatedAt));
+
+  return {
+    query,
+    updatedAt,
+    pages,
+  };
+}
+
+function flattenEntryItems(entry: RemoteSearchCacheEntry, maxItems: number): RemoteModelInfo[] {
+  const out: RemoteModelInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const page of [...entry.pages].sort((a, b) => a.offset - b.offset)) {
+    for (const item of page.items) {
+      if (seen.has(item.repo_id)) continue;
+      seen.add(item.repo_id);
+      out.push(item);
+      if (out.length >= maxItems) return out;
+    }
+  }
+
+  return out;
+}
+
 export function loadSearchHistory(storage: Storage, key: string, maxItems = 10): string[] {
   try {
     const raw = storage.getItem(key);
@@ -93,6 +202,8 @@ export function loadSearchCache(
   storage: Storage,
   key: string,
   maxEntries = 20,
+  maxPagesPerQuery = 8,
+  maxItemsPerPage = 60,
 ): RemoteSearchCacheEntry[] {
   try {
     const raw = storage.getItem(key);
@@ -101,17 +212,8 @@ export function loadSearchCache(
     if (!Array.isArray(parsed)) return [];
 
     return parsed
-      .filter(
-        (entry): entry is RemoteSearchCacheEntry =>
-          entry &&
-          typeof entry.query === 'string' &&
-          typeof entry.updatedAt === 'number' &&
-          Array.isArray(entry.items),
-      )
-      .map((entry) => ({
-        ...entry,
-        items: dedupeByRepo(entry.items),
-      }))
+      .map((entry) => normalizeEntry(entry, maxPagesPerQuery, maxItemsPerPage))
+      .filter((entry): entry is RemoteSearchCacheEntry => entry !== null)
       .slice(0, maxEntries);
   } catch {
     return [];
@@ -134,16 +236,81 @@ export function upsertSearchCache(
   maxEntries = 20,
   maxItemsPerQuery = 50,
 ): RemoteSearchCacheEntry[] {
+  return upsertSearchCachePage(
+    entries,
+    query,
+    0,
+    maxItemsPerQuery,
+    items,
+    maxEntries,
+    1,
+    maxItemsPerQuery,
+  );
+}
+
+export function upsertSearchCachePage(
+  entries: RemoteSearchCacheEntry[],
+  query: string,
+  offset: number,
+  limit: number,
+  items: RemoteModelInfo[],
+  maxEntries = 20,
+  maxPagesPerQuery = 8,
+  maxItemsPerPage = 60,
+): RemoteSearchCacheEntry[] {
   if (!items.length) return entries;
 
-  const cacheKey = normalize(query) || TRENDING_KEY;
+  const cacheKey = normalizeQueryKey(query);
+  const now = Date.now();
+  const nextPage: RemoteSearchCachePage = {
+    offset: Math.max(0, Math.floor(offset)),
+    limit: Math.max(1, Math.floor(limit)),
+    updatedAt: now,
+    items: dedupeByRepo(items).slice(0, maxItemsPerPage),
+  };
+  if (!nextPage.items.length) return entries;
+
+  const previous = entries.find((entry) => entry.query === cacheKey);
+  const mergedPages = [
+    nextPage,
+    ...(previous?.pages ?? []).filter((page) => page.offset !== nextPage.offset),
+  ]
+    .sort((a, b) => a.offset - b.offset)
+    .slice(0, maxPagesPerQuery);
+
   const nextEntry: RemoteSearchCacheEntry = {
     query: cacheKey,
-    updatedAt: Date.now(),
-    items: dedupeByRepo(items).slice(0, maxItemsPerQuery),
+    updatedAt: now,
+    pages: mergedPages,
   };
 
-  return [nextEntry, ...entries.filter((entry) => entry.query !== cacheKey)].slice(0, maxEntries);
+  return [nextEntry, ...entries.filter((entry) => entry.query !== cacheKey)]
+    .slice(0, maxEntries);
+}
+
+export function getCachedSearchPage(
+  entries: RemoteSearchCacheEntry[],
+  query: string,
+  offset: number,
+): RemoteModelInfo[] {
+  const cacheKey = normalizeQueryKey(query);
+  const entry = entries.find((item) => item.query === cacheKey);
+  if (!entry) return [];
+
+  const page = entry.pages.find((item) => item.offset === Math.max(0, Math.floor(offset)));
+  if (!page) return [];
+  return dedupeByRepo(page.items);
+}
+
+export function getCachedQueryResults(
+  entries: RemoteSearchCacheEntry[],
+  query: string,
+  maxItems = 120,
+): RemoteModelInfo[] {
+  const cacheKey = normalizeQueryKey(query);
+  const entry = entries.find((item) => item.query === cacheKey);
+  if (!entry) return [];
+  return flattenEntryItems(entry, maxItems);
 }
 
 export function getCachedFallback(
@@ -155,14 +322,19 @@ export function getCachedFallback(
 
   const normalized = normalize(query);
   if (!normalized) {
-    const trending = entries.find((entry) => entry.query === TRENDING_KEY);
-    return dedupeByRepo(trending?.items ?? entries[0]?.items ?? []);
+    const trending = getCachedQueryResults(entries, TRENDING_KEY, fuzzyLimit);
+    if (trending.length) return trending;
+    return entries.length ? flattenEntryItems(entries[0], fuzzyLimit) : [];
   }
 
-  const exact = entries.find((entry) => entry.query === normalized);
-  if (exact?.items?.length) {
-    return dedupeByRepo(exact.items);
+  const exact = getCachedQueryResults(entries, normalized, fuzzyLimit);
+  if (exact.length) {
+    return exact;
   }
 
-  return applyFuzzyFallback(dedupeByRepo(entries.flatMap((entry) => entry.items)), normalized, fuzzyLimit);
+  return applyFuzzyFallback(
+    dedupeByRepo(entries.flatMap((entry) => flattenEntryItems(entry, fuzzyLimit))),
+    normalized,
+    fuzzyLimit,
+  );
 }

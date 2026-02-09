@@ -10,6 +10,9 @@
   import Paperclip from 'phosphor-svelte/lib/Paperclip';
   import Broom from 'phosphor-svelte/lib/Broom';
   import SlidersHorizontal from 'phosphor-svelte/lib/SlidersHorizontal';
+  import Microphone from 'phosphor-svelte/lib/Microphone';
+  import Globe from 'phosphor-svelte/lib/Globe';
+  import Command from 'phosphor-svelte/lib/Command';
   import { Button } from '$lib/components/ui/button';
   import {
     PromptInput,
@@ -19,7 +22,10 @@
     PromptInputAttachments,
     PromptInputAttachment,
     type PromptInputMessage,
+    type AttachmentsContext,
   } from '$lib/components/ai-elements/prompt-input';
+  import UrlFetchModal from '$lib/components/ui/UrlFetchModal.svelte';
+  import ShortcutsModal from '$lib/components/ui/ShortcutsModal.svelte';
   import { cn } from '../../utils';
   import { t } from '$lib/i18n';
   import { chatState } from '$lib/stores/chat';
@@ -84,8 +90,11 @@
     onToggleChatHistory: _onToggleChatHistory,
   }: Props = $props();
 
+  let attachmentsContext = $state<AttachmentsContext>();
   let attachError: string | null = $state(null);
   let errorTimer: ReturnType<typeof setTimeout> | null = null;
+  let showUrlFetchModal = $state(false);
+  let showShortcutsModal = $state(false);
 
   // Build accept string for file input
   const accept = $derived(buildAccept());
@@ -154,12 +163,24 @@
   function handleError(err: { code: string; message: string }) {
     setError(err.message);
   }
+
+  function handleUrlFiles(files: File[]) {
+    if (attachmentsContext) {
+      attachmentsContext.add(files);
+    } else {
+      console.warn('AttachmentsContext not ready');
+    }
+  }
 </script>
+
+<UrlFetchModal bind:open={showUrlFetchModal} onfiles={handleUrlFiles} />
+<ShortcutsModal bind:open={showShortcutsModal} />
 
 <div class="w-full max-w-2xl lg:max-w-3xl xl:max-w-4xl mx-auto">
   <PromptInput
     class="composer"
     {accept}
+    bind:attachmentsContext
     multiple={false}
     maxFileSize={MAX_FILE_SIZE}
     onSubmit={handleSubmit}
@@ -187,12 +208,7 @@
         <PromptInputTools class="flex gap-0">
           <!-- Attach button -->
           <PromptInputButton
-            onclick={() => {
-              const input = document.querySelector(
-                'input[name="prompt-input-files"]',
-              ) as HTMLInputElement;
-              input?.click();
-            }}
+            onclick={() => attachmentsContext?.openFileDialog()}
             disabled={busy || !isLoaded}
             aria-label={$t('chat.composer.attach') || 'Attach file'}
           >
@@ -207,6 +223,32 @@
             aria-label={$t('chat.composer.loaderSettings') || 'Model settings'}
           >
             <SlidersHorizontal size={16} weight="bold" />
+          </PromptInputButton>
+
+          <!-- URL Fetch button -->
+          <PromptInputButton
+            onclick={() => (showUrlFetchModal = true)}
+            disabled={busy || !isLoaded}
+            aria-label={$t('chat.composer.urlFetch') || 'Add from URL'}
+          >
+            <Globe size={16} weight="bold" />
+          </PromptInputButton>
+
+          <!-- Shortcuts button -->
+          <PromptInputButton
+            onclick={() => (showShortcutsModal = true)}
+            aria-label={$t('chat.composer.shortcuts') || 'Shortcuts'}
+          >
+            <Command size={16} weight="bold" />
+          </PromptInputButton>
+
+          <!-- Voice input button -->
+          <PromptInputButton
+            onclick={() => console.log('Voice input triggered')}
+            disabled={busy || !isLoaded}
+            aria-label={$t('chat.composer.voice') || 'Voice input'}
+          >
+            <Microphone size={16} weight="bold" />
           </PromptInputButton>
 
           <!-- Clear button -->

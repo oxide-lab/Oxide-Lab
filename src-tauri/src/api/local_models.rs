@@ -3,16 +3,19 @@
 use crate::api::model_manager::manifest::{
     DownloadManifest, infer_quantization_from_label, load_manifest, save_manifest,
 };
+use crate::core::settings_v2::SettingsV2State;
 use bytes::{BufMut, BytesMut};
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::borrow::Borrow;
+use std::collections::HashSet;
 use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -168,6 +171,14 @@ pub struct HFModelInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HFSearchPage {
+    #[serde(default)]
+    pub items: Vec<HFModelInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HFModelMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameter_count: Option<String>,
@@ -195,6 +206,8 @@ pub struct ModelFilters {
     pub limit: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -292,12 +305,30 @@ fn parse_gguf_metadata_impl(path: &Path) -> Result<GGUFMetadata, String> {
         metadata_kv_count: parsed.header.metadata.len(),
         parameter_count: as_u64(metadata_value(&parsed, "general.parameter_count")),
         size_label: as_string(metadata_value(&parsed, "general.size_label")),
-        context_length: as_u64(metadata_value(&parsed, &format!("{}.context_length", arch_prefix))),
-        embedding_length: as_u64(metadata_value(&parsed, &format!("{}.embedding_length", arch_prefix))),
-        block_count: as_u64(metadata_value(&parsed, &format!("{}.block_count", arch_prefix))),
-        attention_head_count: as_u64(metadata_value(&parsed, &format!("{}.attention.head_count", arch_prefix))),
-        kv_head_count: as_u64(metadata_value(&parsed, &format!("{}.attention.head_count_kv", arch_prefix))),
-        rope_dimension: as_u64(metadata_value(&parsed, &format!("{}.rope.dimension_count", arch_prefix))),
+        context_length: as_u64(metadata_value(
+            &parsed,
+            &format!("{}.context_length", arch_prefix),
+        )),
+        embedding_length: as_u64(metadata_value(
+            &parsed,
+            &format!("{}.embedding_length", arch_prefix),
+        )),
+        block_count: as_u64(metadata_value(
+            &parsed,
+            &format!("{}.block_count", arch_prefix),
+        )),
+        attention_head_count: as_u64(metadata_value(
+            &parsed,
+            &format!("{}.attention.head_count", arch_prefix),
+        )),
+        kv_head_count: as_u64(metadata_value(
+            &parsed,
+            &format!("{}.attention.head_count_kv", arch_prefix),
+        )),
+        rope_dimension: as_u64(metadata_value(
+            &parsed,
+            &format!("{}.rope.dimension_count", arch_prefix),
+        )),
         tokenizer_model,
         bos_token_id: as_u64(metadata_value(&parsed, "tokenizer.ggml.bos_token_id"))
             .map(|v| v as u32),
@@ -372,24 +403,80 @@ fn build_model_info(path: &Path) -> Result<ModelInfo, String> {
     })
 }
 
-fn collect_gguf_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+fn is_gguf_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.eq_ignore_ascii_case("gguf"))
+        .unwrap_or(false)
+}
+
+fn collect_gguf_files_impl(
+    root: &Path,
+    out: &mut Vec<PathBuf>,
+    visited: &mut HashSet<PathBuf>,
+) -> Result<(), String> {
+    let canonical_root = fs::canonicalize(root).map_err(|e| e.to_string())?;
+    if !visited.insert(canonical_root) {
+        return Ok(());
+    }
+
     let entries = fs::read_dir(root).map_err(|e| e.to_string())?;
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                log::warn!("Failed to read directory entry in {}: {err}", root.display());
+                continue;
+            }
+        };
+
         let p = entry.path();
-        if p.is_dir() {
-            let _ = collect_gguf_files(&p, out);
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(err) => {
+                log::warn!("Failed to read file type for {}: {err}", p.display());
+                continue;
+            }
+        };
+
+        if file_type.is_dir() {
+            if let Err(err) = collect_gguf_files_impl(&p, out, visited) {
+                log::warn!("Failed to scan directory {}: {err}", p.display());
+            }
             continue;
         }
-        let is_gguf = p
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.eq_ignore_ascii_case("gguf"))
-            .unwrap_or(false);
-        if is_gguf {
+
+        if file_type.is_symlink() {
+            match fs::metadata(&p) {
+                Ok(meta) if meta.is_dir() => {
+                    if let Err(err) = collect_gguf_files_impl(&p, out, visited) {
+                        log::warn!("Failed to scan symlinked directory {}: {err}", p.display());
+                    }
+                }
+                Ok(meta) if meta.is_file() => {
+                    if is_gguf_file(&p) {
+                        out.push(p);
+                    }
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    log::warn!("Failed to resolve symlink {}: {err}", p.display());
+                }
+            }
+            continue;
+        }
+
+        if file_type.is_file() && is_gguf_file(&p) {
             out.push(p);
         }
     }
+
     Ok(())
+}
+
+fn collect_gguf_files(root: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let mut visited = HashSet::new();
+    collect_gguf_files_impl(root, out, &mut visited)
 }
 
 fn scan_models_folder_impl(folder_path: &str) -> Result<Vec<ModelInfo>, String> {
@@ -545,10 +632,7 @@ fn normalize_language_value(raw: &str) -> Option<String> {
         value = stripped.trim().to_string();
     }
 
-    if !value
-        .chars()
-        .all(|c| c.is_ascii_alphabetic() || c == '-')
-    {
+    if !value.chars().all(|c| c.is_ascii_alphabetic() || c == '-') {
         return None;
     }
 
@@ -569,18 +653,18 @@ fn get_entry_languages(entry: &HfModelApiEntry) -> Vec<String> {
         .into_iter()
         .chain(get_card_data_string_list(entry, "languages"))
     {
-        if let Some(normalized) = normalize_language_value(&language) {
-            if !items.iter().any(|existing| existing == &normalized) {
-                items.push(normalized);
-            }
+        if let Some(normalized) = normalize_language_value(&language)
+            && !items.iter().any(|existing| existing == &normalized)
+        {
+            items.push(normalized);
         }
     }
 
     for tag in &entry.tags {
-        if let Some(normalized) = normalize_language_value(tag) {
-            if !items.iter().any(|existing| existing == &normalized) {
-                items.push(normalized);
-            }
+        if let Some(normalized) = normalize_language_value(tag)
+            && !items.iter().any(|existing| existing == &normalized)
+        {
+            items.push(normalized);
         }
     }
 
@@ -696,6 +780,7 @@ fn extract_parameter_label_from_text(text: &str) -> Option<String> {
 }
 
 fn infer_parameter_count_from_entry(entry: &HfModelApiEntry) -> Option<String> {
+    // 1. Explicit card_data fields (highest priority).
     for key in [
         "parameter_count",
         "parameterCount",
@@ -704,24 +789,36 @@ fn infer_parameter_count_from_entry(entry: &HfModelApiEntry) -> Option<String> {
         "model_size",
     ] {
         if let Some(value) = card_data_value(entry, key) {
-            if let Some(raw) = value.as_str() {
-                if let Some(label) = extract_parameter_label_from_text(raw) {
-                    return Some(label);
-                }
+            if let Some(raw) = value.as_str()
+                && let Some(label) = extract_parameter_label_from_text(raw)
+            {
+                return Some(label);
             }
-            if let Some(raw) = json_as_u64(value) {
-                if let Some(label) = format_parameter_count_from_total(raw) {
-                    return Some(label);
-                }
+            if let Some(raw) = json_as_u64(value)
+                && let Some(label) = format_parameter_count_from_total(raw)
+            {
+                return Some(label);
             }
         }
     }
 
-    if let Some(gguf) = entry.gguf.as_ref() {
-        if let Some(total) = json_get_u64_at_path(gguf, &["total"]) {
-            if let Some(label) = format_parameter_count_from_total(total) {
-                return Some(label);
-            }
+    // 2. GGUF metadata total parameter count.
+    if let Some(gguf) = entry.gguf.as_ref()
+        && let Some(total) = json_get_u64_at_path(gguf, &["total"])
+        && let Some(label) = format_parameter_count_from_total(total)
+    {
+        return Some(label);
+    }
+
+    // 3. Fallback: extract from repo_id / model name (e.g. "bartowski/Qwen3-4B-GGUF").
+    if let Some(label) = extract_parameter_label_from_text(&entry.id) {
+        return Some(label);
+    }
+
+    // 4. Fallback: scan tags for parameter-like tokens.
+    for tag in &entry.tags {
+        if let Some(label) = extract_parameter_label_from_text(tag) {
+            return Some(label);
         }
     }
 
@@ -729,10 +826,10 @@ fn infer_parameter_count_from_entry(entry: &HfModelApiEntry) -> Option<String> {
 }
 
 fn infer_context_length_from_entry(entry: &HfModelApiEntry) -> Option<u64> {
-    if let Some(gguf) = entry.gguf.as_ref() {
-        if let Some(length) = json_get_u64_at_path(gguf, &["context_length"]) {
-            return Some(length);
-        }
+    if let Some(gguf) = entry.gguf.as_ref()
+        && let Some(length) = json_get_u64_at_path(gguf, &["context_length"])
+    {
+        return Some(length);
     }
 
     for key in [
@@ -747,10 +844,10 @@ fn infer_context_length_from_entry(entry: &HfModelApiEntry) -> Option<u64> {
             }
             if let Some(text) = value.as_str() {
                 let trimmed = text.trim();
-                if let Ok(parsed) = trimmed.parse::<u64>() {
-                    if parsed > 0 {
-                        return Some(parsed);
-                    }
+                if let Ok(parsed) = trimmed.parse::<u64>()
+                    && parsed > 0
+                {
+                    return Some(parsed);
                 }
             }
         }
@@ -834,36 +931,78 @@ fn build_model_card_markdown(entry: &HfModelApiEntry) -> String {
     out
 }
 
+fn query_param(url: &str, key: &str) -> Option<String> {
+    let query = url.split_once('?')?.1;
+    for pair in query.split('&') {
+        let (k, v) = pair.split_once('=')?;
+        if k == key {
+            return urlencoding::decode(v)
+                .ok()
+                .map(|decoded| decoded.to_string());
+        }
+    }
+    None
+}
+
+fn extract_next_cursor(link_header: Option<&str>) -> Option<String> {
+    let header = link_header?;
+    for part in header.split(',') {
+        let trimmed = part.trim();
+        if !trimmed.contains(r#"rel="next""#) {
+            continue;
+        }
+        let start = trimmed.find('<')?;
+        let end = trimmed[start + 1..].find('>')?;
+        let url = &trimmed[start + 1..start + 1 + end];
+        if let Some(cursor) = query_param(url, "cursor")
+            && !cursor.trim().is_empty()
+        {
+            return Some(cursor);
+        }
+    }
+    None
+}
+
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn search_huggingface_gguf(
     query: String,
     filters: Option<ModelFilters>,
-) -> Result<Vec<HFModelInfo>, String> {
+) -> Result<HFSearchPage, String> {
     let limit = filters
         .as_ref()
         .and_then(|f| f.limit)
         .unwrap_or(20)
         .clamp(1, 1000);
-    let offset = filters
+    let cursor = filters
         .as_ref()
-        .and_then(|f| f.offset)
-        .unwrap_or(0);
-    let url = format!(
-        "https://huggingface.co/api/models?search={}&limit={}&offset={}&full=true",
+        .and_then(|f| f.cursor.as_ref())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let offset = filters.as_ref().and_then(|f| f.offset).unwrap_or(0);
+    let mut url = format!(
+        "https://huggingface.co/api/models?search={}&limit={}&full=true",
         urlencoding::encode(&query),
         limit,
-        offset
     );
+    if let Some(cursor) = cursor.as_ref() {
+        url.push_str("&cursor=");
+        url.push_str(&urlencoding::encode(cursor));
+    } else {
+        // Kept for backward compatibility with callers that still rely on offset.
+        url.push_str("&offset=");
+        url.push_str(&offset.to_string());
+    }
 
     let client = build_http_client()?;
-    let entries: Vec<HfModelApiEntry> = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let next_cursor = extract_next_cursor(
+        response
+            .headers()
+            .get(reqwest::header::LINK)
+            .and_then(|value| value.to_str().ok()),
+    );
+    let entries: Vec<HfModelApiEntry> = response.json().await.map_err(|e| e.to_string())?;
 
     let mut out = Vec::new();
     for entry in entries {
@@ -935,9 +1074,13 @@ pub async fn search_huggingface_gguf(
         });
     }
 
-    Ok(out)
+    Ok(HFSearchPage {
+        items: out,
+        next_cursor,
+    })
 }
 
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn get_hf_model_metadata(repo_id: String) -> Result<HFModelMetadata, String> {
     let url = format!(
@@ -959,34 +1102,100 @@ pub async fn get_hf_model_metadata(repo_id: String) -> Result<HFModelMetadata, S
     })
 }
 
+#[allow(dead_code)]
+#[tauri::command]
+pub async fn get_hf_search_total(query: String) -> Result<Option<u64>, String> {
+    let url = format!(
+        "https://huggingface.co/models?search={}",
+        urlencoding::encode(&query)
+    );
+    let client = build_http_client()?;
+    let body = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let re = Regex::new(r#""numTotalItems"\s*:\s*(\d+)"#).map_err(|e| e.to_string())?;
+    let total = re
+        .captures(&body)
+        .and_then(|caps| caps.get(1))
+        .and_then(|m| m.as_str().parse::<u64>().ok());
+
+    Ok(total)
+}
+
 #[tauri::command]
 pub async fn download_hf_model_file(
     repo_id: String,
     filename: String,
     destination_dir: String,
 ) -> Result<DownloadedFileInfo, String> {
-    let api = hf_hub::api::sync::Api::new().map_err(|e| e.to_string())?;
-    let repo = hf_hub::Repo::new(repo_id.clone(), hf_hub::RepoType::Model);
-    let src = api
-        .repo(repo)
-        .get(&filename)
-        .map_err(|e| format!("hf_hub get {} failed: {}", filename, e))?;
+    let sanitized_filename = sanitize_repo_relative_filename(&filename)?;
+    let relative_path = PathBuf::from(sanitized_filename.replace('/', std::path::MAIN_SEPARATOR_STR));
 
-    let dest_dir = PathBuf::from(destination_dir);
-    fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
-    let dest = dest_dir.join(&filename);
-    fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let api = hf_hub::api::sync::Api::new().map_err(|e| e.to_string())?;
+        let repo = hf_hub::Repo::new(repo_id.clone(), hf_hub::RepoType::Model);
+        let src = api
+            .repo(repo)
+            .get(&sanitized_filename)
+            .map_err(|e| format!("hf_hub get {} failed: {}", sanitized_filename, e))?;
 
-    let size = fs::metadata(&dest).map_err(|e| e.to_string())?.len();
+        let dest_dir = PathBuf::from(destination_dir);
+        fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+        let dest = dest_dir.join(&relative_path);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::copy(&src, &dest).map_err(|e| e.to_string())?;
 
-    Ok(DownloadedFileInfo {
-        repo_id,
-        filename,
-        local_path: dest,
-        size,
+        let size = fs::metadata(&dest).map_err(|e| e.to_string())?.len();
+
+        Ok(DownloadedFileInfo {
+            repo_id,
+            filename: sanitized_filename,
+            local_path: dest,
+            size,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
+fn sanitize_repo_relative_filename(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Filename cannot be empty".to_string());
+    }
+
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Err("Filename must be relative to repository root".to_string());
+    }
+
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_string_lossy().to_string()),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err("Filename contains invalid path components".to_string());
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return Err("Filename cannot be empty".to_string());
+    }
+
+    Ok(parts.join("/"))
+}
+
+#[allow(dead_code)]
 #[tauri::command]
 pub async fn get_model_readme(repo_id: String) -> Result<String, String> {
     let url = format!("https://huggingface.co/api/models/{}", repo_id);
@@ -1003,12 +1212,50 @@ pub async fn get_model_readme(repo_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn delete_local_model(model_path: String) -> Result<(), String> {
+pub fn delete_local_model(
+    settings_state: tauri::State<'_, SettingsV2State>,
+    model_path: String,
+) -> Result<(), String> {
     let path = PathBuf::from(model_path);
     if !path.exists() {
         return Ok(());
     }
-    fs::remove_file(path).map_err(|e| e.to_string())
+    if !path.is_file() {
+        return Err("Model path is not a file".to_string());
+    }
+    if !path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("gguf"))
+        .unwrap_or(false)
+    {
+        return Err("Only .gguf files can be deleted via this command".to_string());
+    }
+
+    let canonical_model =
+        fs::canonicalize(&path).map_err(|e| format!("Failed to resolve model path: {e}"))?;
+
+    let configured_models_dir = {
+        let guard = settings_state.inner.lock().map_err(|e| e.to_string())?;
+        guard.get_ref().models_storage.models_dir.clone()
+    };
+
+    if let Some(models_dir) = configured_models_dir {
+        let root = PathBuf::from(models_dir);
+        if !root.exists() || !root.is_dir() {
+            return Err(format!(
+                "Configured models directory is invalid: {}",
+                root.display()
+            ));
+        }
+        let canonical_root = fs::canonicalize(&root)
+            .map_err(|e| format!("Failed to resolve models directory: {e}"))?;
+        if !canonical_model.starts_with(&canonical_root) {
+            return Err("Model deletion is allowed only inside configured models directory".to_string());
+        }
+    }
+
+    fs::remove_file(canonical_model).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1045,4 +1292,30 @@ pub fn update_model_manifest(
     };
 
     save_manifest(&target, &manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_repo_relative_filename_rejects_traversal() {
+        assert!(sanitize_repo_relative_filename("../model.gguf").is_err());
+        assert!(sanitize_repo_relative_filename("/tmp/model.gguf").is_err());
+        assert_eq!(
+            sanitize_repo_relative_filename("folder/model.gguf").unwrap(),
+            "folder/model.gguf"
+        );
+    }
+
+    #[test]
+    fn hf_total_regex_extracts_number() {
+        let re = Regex::new(r#""numTotalItems"\s*:\s*(\d+)"#).unwrap();
+        let body = r#"{"numTotalItems": 12345}"#;
+        let total = re
+            .captures(body)
+            .and_then(|caps| caps.get(1))
+            .and_then(|m| m.as_str().parse::<u64>().ok());
+        assert_eq!(total, Some(12345));
+    }
 }

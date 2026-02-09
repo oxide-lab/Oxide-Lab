@@ -344,8 +344,10 @@ pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+        // Keep child process in the same process group as the app process.
+        // This improves ownership/lifecycle behavior and prevents detached-looking
+        // helper processes in OS task managers.
+        command.creation_flags(CREATE_NO_WINDOW);
     }
     #[cfg(not(all(windows, target_arch = "x86_64")))]
     {

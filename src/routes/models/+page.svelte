@@ -10,19 +10,15 @@
   import { setPageTabs, clearPageTabs, activePageTab } from '$lib/stores/page-tabs.svelte';
   import LocalModelsPanel from '$lib/components/model-manager/LocalModelsPanel.svelte';
   import RemoteModelsPanel from '$lib/components/model-manager/RemoteModelsPanel.svelte';
-  import RecommendationsPanel from '$lib/components/model-manager/RecommendationsPanel.svelte';
 
-  type TabId = 'local' | 'remote' | 'recommendations';
+  type TabId = 'local' | 'remote';
 
   let activeTab = $state<TabId>('local');
 
   const tabs = $derived([
     { id: 'local' as TabId, label: $t('models.tabs.local') || 'Local Models' },
     { id: 'remote' as TabId, label: $t('models.tabs.remote') || 'Remote Models' },
-    {
-      id: 'recommendations' as TabId,
-      label: $t('models.tabs.recommendations') || 'Recommendations',
-    },
+
   ]);
 
   onMount(() => {
@@ -49,8 +45,7 @@
       <LocalModelsPanel />
     {:else if activeTab === 'remote'}
       <RemoteModelsPanel />
-    {:else if activeTab === 'recommendations'}
-      <RecommendationsPanel />
+
     {/if}
   </div>
 </div>

@@ -1,0 +1,92 @@
+[
+  {
+    "repo_id": "Qwen/Qwen3-1.7B-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-VL-2B-Thinking-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-4B-GGUF"
+  },
+  {
+    "repo_id": "google/gemma-3-1b-it-qat-q4_0-gguf"
+  },
+  {
+    "repo_id": "google/gemma-3-4b-it-qat-q4_0-gguf"
+  },
+  {
+    "repo_id": "unsloth/Phi-4-mini-instruct-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-8B-GGUF"
+  },
+  {
+    "repo_id": "openbmb/MiniCPM-V-4_5-gguf"
+  },
+  {
+    "repo_id": "google/gemma-3-12b-it-qat-q4_0-gguf"
+  },
+  {
+    "repo_id": "microsoft/phi-4-gguf"
+  },
+  {
+    "repo_id": "mistralai/Ministral-3-14B-Reasoning-2512-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-VL-8B-Instruct-GGUF"
+  },
+  {
+    "repo_id": "unsloth/GLM-4.6V-Flash-GGUFF"
+  },
+  {
+    "repo_id": "ai-sage/GigaChat3-10B-A1.8B-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-32B-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-30B-A3B-GGUF"
+  },
+  {
+    "repo_id": "google/gemma-3-27b-it-qat-q4_0-gguf"
+  },
+  {
+    "repo_id": "mistralai/Magistral-Small-2507-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-VL-32B-Instruct-GGUF"
+  },
+  {
+    "repo_id": "unsloth/GLM-4.7-Flash-GGUF"
+  },
+  {
+    "repo_id": "ggml-org/Kimi-VL-A3B-Thinking-2506-GGUF"
+  },
+  {
+    "repo_id": "mistralai/Magistral-Small-2509-GGUF"
+  },
+  {
+    "repo_id": "internlm/Intern-S1-mini-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-VL-4B-Instruct-GGUF"
+  },
+  {
+    "repo_id": "yandex/YandexGPT-5-Lite-8B-instruct-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-32B-Thinking-2507-GGUF"
+  },
+  {
+    "repo_id": "LiquidAI/LFM2.5-VL-1.6B-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-30B-A3B-Thinking-2507-GGUF"
+  },
+  {
+    "repo_id": "ggml-org/gpt-oss-20b-GGUF"
+  },
+  {
+    "repo_id": "Qwen/Qwen3-VL-30B-A3B-Thinking-GGUF"
+  }
+]

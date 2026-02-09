@@ -21,7 +21,8 @@
   import CaretDown from 'phosphor-svelte/lib/CaretDown';
   import Check from 'phosphor-svelte/lib/CheckCircle';
   import GithubLogo from 'phosphor-svelte/lib/GithubLogo';
-  import ArrowClockwise from 'phosphor-svelte/lib/ArrowClockwise';
+  import Repeat from 'phosphor-svelte/lib/Repeat';
+  import UploadSimple from 'phosphor-svelte/lib/UploadSimple';
   import SlidersHorizontal from 'phosphor-svelte/lib/SlidersHorizontal';
   import Cube from 'phosphor-svelte/lib/Cube';
   import Gauge from 'phosphor-svelte/lib/Gauge';
@@ -56,7 +57,6 @@
   import { settingsSearchStore } from '$lib/stores/settings-search';
   import type { SettingsSectionId } from '$lib/types/settings-v2';
 
-
   // Pages for mount-all pattern
   import Chat from '$lib/chat/Chat.svelte';
 
@@ -75,14 +75,14 @@
   let appVersion = $state('0.15.0');
   let modalElement = $state<HTMLDivElement | null>(null);
   let viewportWidth = $state(1024);
+  let isUnloadActionRunning = $state(false);
 
   const appWindow = getCurrentWindow();
 
   // Derived stores for model picker
   const quickModels = derived(models, ($models) =>
-    $models.filter(
-      (model: ModelInfo) =>
-        Boolean(model.source_repo_name?.trim() || model.name?.trim()),
+    $models.filter((model: ModelInfo) =>
+      Boolean(model.source_repo_name?.trim() || model.name?.trim()),
     ),
   );
   const currentModelPath = derived(chatState, ($chatState) => $chatState.modelPath);
@@ -99,6 +99,17 @@
   );
   const isReloadAvailable = derived([pendingModelPath, currentModelPath], ([$pending, $current]) =>
     Boolean($pending && $pending !== $current),
+  );
+  const isCurrentModelLoaded = derived(chatState, ($chatState) =>
+    Boolean($chatState.isLoaded && $chatState.modelPath),
+  );
+  const canUnloadCurrentModel = derived(chatState, ($chatState) =>
+    Boolean(
+      $chatState.isLoaded &&
+        !$chatState.busy &&
+        !$chatState.isLoadingModel &&
+        !$chatState.isUnloadingModel,
+    ),
   );
   const settingsSnapshot = settingsV2Store;
 
@@ -166,7 +177,8 @@
   }
 
   function formatModelLabel(model: ModelInfo | null | undefined) {
-    if (!model) return currentLocale ? $t('common.model.selectModel') || 'Select model' : 'Select model';
+    if (!model)
+      return currentLocale ? $t('common.model.selectModel') || 'Select model' : 'Select model';
     const publisher = model.metadata?.author ?? model.source_repo_id?.split('/')[0] ?? 'local';
     const title = model.name ?? model.source_repo_name ?? 'Unnamed';
     return `${publisher}/${title}`;
@@ -183,6 +195,26 @@
     const ox = (window as any).__oxide;
     if (ox?.reloadSelectedModel) {
       ox.reloadSelectedModel();
+    }
+  }
+
+  async function handleUnloadAndClearCache() {
+    if (isUnloadActionRunning || !$canUnloadCurrentModel) return;
+    const ox = (window as any).__oxide;
+    if (!ox?.unloadGGUF) {
+      console.warn('Model unloading is not ready yet');
+      return;
+    }
+
+    isUnloadActionRunning = true;
+    try {
+      await ox.unloadGGUF();
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('clear_prefix_cache');
+    } catch (error) {
+      console.warn('Failed to unload model and clear cache:', error);
+    } finally {
+      isUnloadActionRunning = false;
     }
   }
 
@@ -270,7 +302,6 @@
       toggleAbout();
     }
   }
-
 
   async function loadAppVersion() {
     try {
@@ -360,22 +391,22 @@
     const { toast, Toaster } = await import('svelte-sonner');
 
     const unlistenUnload = await listen<string>('model_unloaded', (event) => {
-        console.log('Model unloaded automatically:', event.payload);
-        
-        chatState.update(s => ({
-            ...s,
-            isLoaded: false,
-            modelPath: '', // Force selector reset
-            pendingModelPath: '',
-            errorText: '',
-            // Clear loading state too just in case
-            isLoadingModel: false,
-            loadingStage: ''
-        }));
+      console.log('Model unloaded automatically:', event.payload);
 
-        toast.info($t('common.model.unloaded') || 'Model unloaded due to inactivity', {
-            description: event.payload
-        });
+      chatState.update((s) => ({
+        ...s,
+        isLoaded: false,
+        modelPath: '', // Force selector reset
+        pendingModelPath: '',
+        errorText: '',
+        // Clear loading state too just in case
+        isLoadingModel: false,
+        loadingStage: '',
+      }));
+
+      toast.info($t('common.model.unloaded') || 'Model unloaded due to inactivity', {
+        description: event.payload,
+      });
     });
 
     const unlistenSchedulerSnapshot = await listen<{
@@ -406,12 +437,12 @@
     window.addEventListener('keydown', handleGlobalShortcut);
     window.addEventListener('resize', handleViewportResize);
     unlistenFn = () => {
-        originalUnlisten();
-        unlistenUnload();
-        unlistenSchedulerSnapshot();
-        unlistenQueueWait();
-        window.removeEventListener('keydown', handleGlobalShortcut);
-        window.removeEventListener('resize', handleViewportResize);
+      originalUnlisten();
+      unlistenUnload();
+      unlistenSchedulerSnapshot();
+      unlistenQueueWait();
+      window.removeEventListener('keydown', handleGlobalShortcut);
+      window.removeEventListener('resize', handleViewportResize);
     };
   });
 
@@ -452,7 +483,8 @@
                   </Breadcrumb.Item>
 
                   {#if viewportWidth < 1024}
-                    {@const CurrentSectionIcon = settingsSectionIconMap[getSettingsSectionFromQuery()]}
+                    {@const CurrentSectionIcon =
+                      settingsSectionIconMap[getSettingsSectionFromQuery()]}
                     <Breadcrumb.Separator />
                     <Breadcrumb.Item>
                       <DropdownMenu.Root>
@@ -471,7 +503,9 @@
                               <DropdownMenu.Separator />
                             {/if}
                             {@const SectionIcon = settingsSectionIconMap[sectionId]}
-                            <DropdownMenu.Item onSelect={() => openSettingsSectionShortcut(sectionId)}>
+                            <DropdownMenu.Item
+                              onSelect={() => openSettingsSectionShortcut(sectionId)}
+                            >
                               <SectionIcon class="size-4" />
                               {$t(settingsSectionLabelMap[sectionId])}
                             </DropdownMenu.Item>
@@ -565,8 +599,22 @@
                 onclick={handleReloadModel}
                 aria-label={$t('common.model.reloadModel') || 'Reload model'}
               >
-                <ArrowClockwise size={16} weight="bold" />
+                <Repeat size={16} weight="bold" />
                 {$t('common.model.reloadModel') || 'Reload'}
+              </button>
+            {:else if $isCurrentModelLoaded}
+              <button
+                type="button"
+                class="model-reload-btn model-unload-btn"
+                onclick={() => void handleUnloadAndClearCache()}
+                disabled={isUnloadActionRunning || !$canUnloadCurrentModel}
+                aria-label="Unload model and clear cache"
+              >
+                {#if isUnloadActionRunning}
+                  <Spinner size={14} />
+                {:else}
+                  <UploadSimple size={16} weight="bold" />
+                {/if}
               </button>
             {/if}
           {/if}
@@ -593,7 +641,12 @@
 
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1">
-            <Button variant="ghost" size="icon" class="win-btn" onclick={() => appWindow.minimize()}>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="win-btn"
+              onclick={() => appWindow.minimize()}
+            >
               <Minus size={16} weight="bold" />
             </Button>
             <Button variant="ghost" size="icon" class="win-btn" onclick={toggleMaximize}>
@@ -723,10 +776,10 @@
   {/if}
 
   <div class="toaster-wrapper">
-     <!-- Dynamic import workaround for Toaster if needed, or just standard usage if imported -->
-     {#await import('svelte-sonner') then { Toaster }}
-        <Toaster position="bottom-right" richColors theme="dark" />
-     {/await}
+    <!-- Dynamic import workaround for Toaster if needed, or just standard usage if imported -->
+    {#await import('svelte-sonner') then { Toaster }}
+      <Toaster position="bottom-right" richColors theme="dark" />
+    {/await}
   </div>
 </SidebarUI.Provider>
 
@@ -891,6 +944,16 @@
   .model-reload-btn:hover {
     background: var(--accent);
     border-color: var(--primary);
+  }
+
+  .model-reload-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .model-unload-btn:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--destructive) 75%, var(--border));
+    background: color-mix(in srgb, var(--destructive) 10%, transparent);
   }
 
   .settings-breadcrumbs {
@@ -1086,5 +1149,4 @@
   .close-btn:hover {
     opacity: 0.9;
   }
-
 </style>

@@ -12,6 +12,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 use tokio::sync::{Mutex, Notify, mpsc, watch};
 
+const CAPACITY_BUSY_ERR: &str = "scheduler_capacity_busy";
+
 #[derive(Debug, Clone)]
 pub struct RunnerRef {
     pub key: SessionKey,
@@ -208,6 +210,9 @@ impl VramScheduler {
                     Err(e) => {
                         drop(inner);
                         self.publish_snapshot().await;
+                        if e == CAPACITY_BUSY_ERR {
+                            return Err(AcquireError::Busy);
+                        }
                         return Err(AcquireError::Internal(e));
                     }
                 }
@@ -420,6 +425,12 @@ impl VramScheduler {
         candidate_estimate_mb: u64,
         runtime_cfg: &LlamaRuntimeConfig,
     ) -> Result<(), String> {
+        enum CapacityDecision {
+            Ready,
+            Evict(SessionKey),
+            Busy,
+        }
+
         loop {
             let decision = {
                 let inner = self.inner.lock().await;
@@ -431,18 +442,22 @@ impl VramScheduler {
                 let over_capacity = inner.loaded.len() >= limit;
                 let need_vram = policy::needs_vram_eviction(candidate_estimate_mb);
                 if !(over_capacity || need_vram) {
-                    None
+                    CapacityDecision::Ready
+                } else if let Some(candidate) = policy::pick_eviction_candidate(&inner.loaded) {
+                    CapacityDecision::Evict(candidate)
                 } else {
-                    policy::pick_eviction_candidate(&inner.loaded)
+                    CapacityDecision::Busy
                 }
             };
 
-            let Some(candidate) = decision else {
-                return Ok(());
-            };
-
-            self.unload_key_with_recovery(&candidate, Some(runtime_cfg))
-                .await?;
+            match decision {
+                CapacityDecision::Ready => return Ok(()),
+                CapacityDecision::Evict(candidate) => {
+                    self.unload_key_with_recovery(&candidate, Some(runtime_cfg))
+                        .await?;
+                }
+                CapacityDecision::Busy => return Err(CAPACITY_BUSY_ERR.to_string()),
+            }
         }
     }
 

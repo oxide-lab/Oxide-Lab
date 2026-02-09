@@ -68,10 +68,7 @@ pub fn get_system_usage() -> SystemUsage {
         cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / (cpus.len().max(1) as f32);
     let disks = Disks::new_with_refreshed_list();
     let disk_total_bytes = disks.iter().map(|disk| disk.total_space()).sum::<u64>();
-    let disk_free_bytes = disks
-        .iter()
-        .map(|disk| disk.available_space())
-        .sum::<u64>();
+    let disk_free_bytes = disks.iter().map(|disk| disk.available_space()).sum::<u64>();
 
     SystemUsage {
         cpu: cpu_usage,

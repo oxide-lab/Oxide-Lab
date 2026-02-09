@@ -199,18 +199,22 @@ impl ToolCallParser {
             return None;
         }
 
-        let buf_str = String::from_utf8_lossy(&self.buffer);
+        let buffer = self.buffer.as_slice();
 
         // Check for partial match at end (need to wait for more data)
-        let mut longest_name = 0;
-        for t in &self.tools {
-            longest_name = longest_name.max(t.function.name.len());
-        }
+        let longest_name = self
+            .tools
+            .iter()
+            .map(|t| t.function.name.len())
+            .max()
+            .unwrap_or(0);
+        let max_suffix_len = buffer.len().min(longest_name.saturating_sub(1));
 
-        for i in 1..=std::cmp::min(buf_str.len(), longest_name) {
-            let tail = &buf_str[buf_str.len() - i..];
+        for suffix_len in 1..=max_suffix_len {
+            let tail = &buffer[buffer.len() - suffix_len..];
             for t in &self.tools {
-                if t.function.name.len() > tail.len() && t.function.name.starts_with(tail) {
+                let tool_name = t.function.name.as_bytes();
+                if tool_name.len() > tail.len() && tool_name.starts_with(tail) {
                     // Partial match at end, wait for more data
                     return None;
                 }
@@ -223,13 +227,17 @@ impl ToolCallParser {
         let mut best_end = 0;
 
         for t in &self.tools {
-            if let Some(pos) = buf_str.find(&t.function.name)
+            let tool_name = t.function.name.as_bytes();
+            if tool_name.is_empty() {
+                continue;
+            }
+            if let Some(pos) = buffer.windows(tool_name.len()).position(|w| w == tool_name)
                 && (pos < best_start
-                    || (pos == best_start && t.function.name.len() > best_end - best_start))
+                    || (pos == best_start && tool_name.len() > best_end - best_start))
             {
                 best_tool = Some(t);
                 best_start = pos;
-                best_end = pos + t.function.name.len();
+                best_end = pos + tool_name.len();
             }
         }
 
@@ -485,5 +493,16 @@ mod tests {
         assert_eq!(result.calls.len(), 1);
         let args = &result.calls[0].function.arguments;
         assert!(args.contains_key("data"));
+    }
+
+    #[test]
+    fn test_multibyte_content_does_not_panic() {
+        let tools = vec![make_tool("get_weather")];
+        let mut parser = ToolCallParser::with_json_tag(tools);
+        let _ = parser.add("{");
+
+        let res =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parser.add("привет мир")));
+        assert!(res.is_ok());
     }
 }

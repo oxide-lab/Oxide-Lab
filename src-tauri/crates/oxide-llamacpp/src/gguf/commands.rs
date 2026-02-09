@@ -1,9 +1,9 @@
 use super::types::GgufMetadata;
 use super::utils::{estimate_kv_cache_internal, read_gguf_metadata_internal};
 use crate::gguf::types::{KVCacheError, KVCacheEstimate, ModelSupportStatus};
+use oxide_hardware::get_system_info;
 use std::collections::HashMap;
 use std::fs;
-use oxide_hardware::get_system_info;
 /// Read GGUF metadata from a model file
 #[tauri::command]
 pub async fn read_gguf_metadata(path: String) -> Result<GgufMetadata, String> {

@@ -1,218 +1,209 @@
 <script lang="ts">
-	import { cn } from "$lib/components/ai-elements/markdown/utils/utils.js";
-	import { watch } from "runed";
-	import { onMount } from "svelte";
-	import {
-		AttachmentsContext,
-		setAttachmentsContext,
-		type PromptInputMessage,
-		type FileUIPart,
-	} from "./attachments-context.svelte.js";
+  import { cn } from '$lib/components/ai-elements/markdown/utils/utils.js';
+  import { watch } from 'runed';
+  import { onMount } from 'svelte';
+  import {
+    AttachmentsContext,
+    setAttachmentsContext,
+    type PromptInputMessage,
+    type FileUIPart,
+  } from './attachments-context.svelte.js';
 
-	interface Props {
-		class?: string;
-		accept?: string;
-		multiple?: boolean;
-		globalDrop?: boolean;
-		syncHiddenInput?: boolean;
-		clearOnSubmit?: boolean;
-		maxFiles?: number;
-		maxFileSize?: number; // bytes
-		onError?: (err: {
-			code: "max_files" | "max_file_size" | "accept";
-			message: string;
-		}) => void;
-		onSubmit: (message: PromptInputMessage, event: SubmitEvent) => void | Promise<void>;
-		children?: import("svelte").Snippet;
-	}
+  interface Props {
+    class?: string;
+    accept?: string;
+    multiple?: boolean;
+    globalDrop?: boolean;
+    syncHiddenInput?: boolean;
+    clearOnSubmit?: boolean;
+    maxFiles?: number;
+    maxFileSize?: number; // bytes
+    onError?: (err: { code: 'max_files' | 'max_file_size' | 'accept'; message: string }) => void;
+    onSubmit: (message: PromptInputMessage, event: SubmitEvent) => void | Promise<void>;
+    children?: import('svelte').Snippet;
+    attachmentsContext?: AttachmentsContext;
+  }
 
-	let {
-		class: className,
-		accept,
-		multiple,
-		globalDrop,
-		syncHiddenInput,
-		clearOnSubmit = true,
-		maxFiles,
-		maxFileSize,
-		onError,
-		onSubmit,
-		children,
-		...props
-	}: Props = $props();
+  let {
+    class: className,
+    accept,
+    multiple,
+    globalDrop,
+    syncHiddenInput,
+    clearOnSubmit = true,
+    maxFiles,
+    maxFileSize,
+    onError,
+    onSubmit,
+    children,
+    attachmentsContext = $bindable(),
+    ...props
+  }: Props = $props();
 
-	let anchorRef = $state<HTMLSpanElement | null>(null);
-	let formRef = $state<HTMLFormElement | null>(null);
-	let attachmentsContext = new AttachmentsContext(
-		accept,
-		multiple,
-		maxFiles,
-		maxFileSize,
-		onError
-	);
+  let anchorRef = $state<HTMLSpanElement | null>(null);
+  let formRef = $state<HTMLFormElement | null>(null);
 
-	// Find nearest form to scope drag & drop
-	onMount(() => {
-		let root = anchorRef?.closest("form");
-		if (root instanceof HTMLFormElement) {
-			formRef = root;
-		}
-	});
+  attachmentsContext = new AttachmentsContext(accept, multiple, maxFiles, maxFileSize, onError);
 
-	// Attach drop handlers on nearest form
-	watch(
-		() => formRef,
-		(formRef) => {
-			if (!formRef) return;
+  // Find nearest form to scope drag & drop
+  onMount(() => {
+    let root = anchorRef?.closest('form');
+    if (root instanceof HTMLFormElement) {
+      formRef = root;
+    }
+  });
 
-			let onDragOver = (e: DragEvent) => {
-				if (e.dataTransfer?.types?.includes("Files")) {
-					e.preventDefault();
-				}
-			};
+  // Attach drop handlers on nearest form
+  watch(
+    () => formRef,
+    (formRef) => {
+      if (!formRef) return;
 
-			let onDrop = (e: DragEvent) => {
-				if (e.dataTransfer?.types?.includes("Files")) {
-					e.preventDefault();
-				}
-				if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-					attachmentsContext.add(e.dataTransfer.files);
-				}
-			};
+      let onDragOver = (e: DragEvent) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault();
+        }
+      };
 
-			formRef.addEventListener("dragover", onDragOver);
-			formRef.addEventListener("drop", onDrop);
+      let onDrop = (e: DragEvent) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault();
+        }
+        if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+          attachmentsContext.add(e.dataTransfer.files);
+        }
+      };
 
-			return () => {
-				formRef?.removeEventListener("dragover", onDragOver);
-				formRef?.removeEventListener("drop", onDrop);
-			};
-		}
-	);
+      formRef.addEventListener('dragover', onDragOver);
+      formRef.addEventListener('drop', onDrop);
 
-	// Global drop handlers
-	watch(
-		() => globalDrop,
-		(globalDrop) => {
-			if (!globalDrop) return;
+      return () => {
+        formRef?.removeEventListener('dragover', onDragOver);
+        formRef?.removeEventListener('drop', onDrop);
+      };
+    },
+  );
 
-			let onDragOver = (e: DragEvent) => {
-				if (e.dataTransfer?.types?.includes("Files")) {
-					e.preventDefault();
-				}
-			};
+  // Global drop handlers
+  watch(
+    () => globalDrop,
+    (globalDrop) => {
+      if (!globalDrop) return;
 
-			let onDrop = (e: DragEvent) => {
-				if (e.dataTransfer?.types?.includes("Files")) {
-					e.preventDefault();
-				}
-				if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-					attachmentsContext.add(e.dataTransfer.files);
-				}
-			};
+      let onDragOver = (e: DragEvent) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault();
+        }
+      };
 
-			document.addEventListener("dragover", onDragOver);
-			document.addEventListener("drop", onDrop);
+      let onDrop = (e: DragEvent) => {
+        if (e.dataTransfer?.types?.includes('Files')) {
+          e.preventDefault();
+        }
+        if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+          attachmentsContext.add(e.dataTransfer.files);
+        }
+      };
 
-			return () => {
-				document.removeEventListener("dragover", onDragOver);
-				document.removeEventListener("drop", onDrop);
-			};
-		}
-	);
+      document.addEventListener('dragover', onDragOver);
+      document.addEventListener('drop', onDrop);
 
-	// Note: File input cannot be programmatically set for security reasons
-	// The syncHiddenInput prop is no longer functional
-	watch(
-		() => attachmentsContext.files,
-		() => {
-			if (syncHiddenInput && attachmentsContext.fileInputRef) {
-				// Clear the input when items are cleared
-				if (attachmentsContext.files.length === 0) {
-					attachmentsContext.fileInputRef.value = "";
-				}
-			}
-		}
-	);
+      return () => {
+        document.removeEventListener('dragover', onDragOver);
+        document.removeEventListener('drop', onDrop);
+      };
+    },
+  );
 
-	let handleChange = (event: Event) => {
-		let target = event.currentTarget as HTMLInputElement;
-		if (target.files) {
-			attachmentsContext.add(target.files);
-		}
-	};
+  // Note: File input cannot be programmatically set for security reasons
+  // The syncHiddenInput prop is no longer functional
+  watch(
+    () => attachmentsContext.files,
+    () => {
+      if (syncHiddenInput && attachmentsContext.fileInputRef) {
+        // Clear the input when items are cleared
+        if (attachmentsContext.files.length === 0) {
+          attachmentsContext.fileInputRef.value = '';
+        }
+      }
+    },
+  );
 
-	// Convert blob URLs to data URLs for proper serialization
-	async function convertBlobUrlToDataUrl(url: string): Promise<string> {
-		const response = await fetch(url);
-		const blob = await response.blob();
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onloadend = () => resolve(reader.result as string);
-			reader.onerror = reject;
-			reader.readAsDataURL(blob);
-		});
-	}
+  let handleChange = (event: Event) => {
+    let target = event.currentTarget as HTMLInputElement;
+    if (target.files) {
+      attachmentsContext.add(target.files);
+    }
+  };
 
-	let handleSubmit = async (event: SubmitEvent) => {
-		event.preventDefault();
+  // Convert blob URLs to data URLs for proper serialization
+  async function convertBlobUrlToDataUrl(url: string): Promise<string> {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
 
-		let form = event.currentTarget as HTMLFormElement;
-		let formData = new FormData(form);
-		let text = (formData.get("message") as string) || "";
+  let handleSubmit = async (event: SubmitEvent) => {
+    event.preventDefault();
 
-		// Convert blob URLs to data URLs asynchronously
-		let filesPromises = attachmentsContext.files.map(async ({ id, ...item }) => {
-			if (item.url && item.url.startsWith("blob:")) {
-				return {
-					...item,
-					url: await convertBlobUrlToDataUrl(item.url),
-				};
-			}
-			return item;
-		});
+    let form = event.currentTarget as HTMLFormElement;
+    let formData = new FormData(form);
+    let text = (formData.get('message') as string) || '';
 
-		try {
-			let files = await Promise.all(filesPromises);
-			let result = onSubmit({ text, files }, event);
+    // Convert blob URLs to data URLs asynchronously
+    let filesPromises = attachmentsContext.files.map(async ({ id, ...item }) => {
+      if (item.url && item.url.startsWith('blob:')) {
+        return {
+          ...item,
+          url: await convertBlobUrlToDataUrl(item.url),
+        };
+      }
+      return item;
+    });
 
-			// Handle both sync and async onSubmit
-			if (result && typeof result === "object" && "then" in result) {
-				await result;
-			}
+    try {
+      let files = await Promise.all(filesPromises);
+      let result = onSubmit({ text, files }, event);
 
-			// Only clear if submission was successful
-			if (clearOnSubmit) {
-				attachmentsContext.clear();
-				form.reset();
-			}
-		} catch (error) {
-			// Don't clear on error - user may want to retry
-			console.error("Submit failed:", error);
-		}
-	};
+      // Handle both sync and async onSubmit
+      if (result && typeof result === 'object' && 'then' in result) {
+        await result;
+      }
 
-	setAttachmentsContext(attachmentsContext);
+      // Only clear if submission was successful
+      if (clearOnSubmit) {
+        attachmentsContext.clear();
+        form.reset();
+      }
+    } catch (error) {
+      // Don't clear on error - user may want to retry
+      console.error('Submit failed:', error);
+    }
+  };
+
+  setAttachmentsContext(attachmentsContext);
 </script>
 
 <span aria-hidden="true" class="hidden" bind:this={anchorRef}></span>
 <input
-	{accept}
-	class="hidden"
-	{multiple}
-	onchange={handleChange}
-	bind:this={attachmentsContext.fileInputRef}
-	type="file"
+  {accept}
+  class="hidden"
+  {multiple}
+  onchange={handleChange}
+  bind:this={attachmentsContext.fileInputRef}
+  type="file"
 />
 <form
-	class={cn(
-		"bg-background w-full divide-y overflow-hidden rounded-xl border shadow-sm",
-		className
-	)}
-	onsubmit={handleSubmit}
-	{...props}
+  class={cn('bg-background w-full divide-y overflow-hidden rounded-xl border shadow-sm', className)}
+  onsubmit={handleSubmit}
+  {...props}
 >
-	{#if children}
-		{@render children()}
-	{/if}
+  {#if children}
+    {@render children()}
+  {/if}
 </form>

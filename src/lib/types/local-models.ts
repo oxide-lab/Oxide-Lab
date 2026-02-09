@@ -160,6 +160,7 @@ export interface RemoteModelFilters {
     sort_order?: SortOrder;
     limit?: number;
     offset?: number;
+    cursor?: string;
 }
 
 /**

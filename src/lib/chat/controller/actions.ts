@@ -254,6 +254,13 @@ export function createActions(ctx: ChatControllerCtx) {
         ctx.unloadingProgress = 0;
         ctx.busy = true;
         ctx.errorText = '';
+        chatState.update((s) => ({
+            ...s,
+            busy: true,
+            isUnloadingModel: true,
+            unloadingProgress: 0,
+            errorText: '',
+        }));
 
         try {
             const unloadInterval = setInterval(() => {
@@ -267,8 +274,18 @@ export function createActions(ctx: ChatControllerCtx) {
             clearInterval(unloadInterval);
             await new Promise((r) => setTimeout(r, 300));
             ctx.isLoaded = false;
+            ctx.modelPath = '';
             ctx.messages = [];
             ctx.errorText = get(t)('chat.loading.unloadSuccess');
+            chatState.update((s) => ({
+                ...s,
+                isLoaded: false,
+                modelPath: '',
+                busy: true,
+                isUnloadingModel: true,
+                unloadingProgress: 100,
+                errorText: ctx.errorText,
+            }));
 
             const unloadSuccessText = get(t)('chat.loading.unloadSuccess');
             setTimeout(() => {
@@ -281,6 +298,15 @@ export function createActions(ctx: ChatControllerCtx) {
             ctx.isUnloadingModel = false;
             ctx.unloadingProgress = 0;
             ctx.busy = false;
+            chatState.update((s) => ({
+                ...s,
+                busy: false,
+                isLoaded: ctx.isLoaded,
+                modelPath: ctx.modelPath,
+                isUnloadingModel: false,
+                unloadingProgress: 0,
+                errorText: ctx.errorText,
+            }));
         }
     }
 

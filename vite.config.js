@@ -26,7 +26,7 @@ export default defineConfig(async () => ({
       }
       : undefined,
     fs: {
-      allow: ['.'],
+      allow: ['.', '.svelte-kit'],
     },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri` and documentation files

@@ -25,6 +25,21 @@ export function getPrimaryFile(model: RemoteModelInfo): RemoteGGUFFile | null {
 
 export function extractParameterLabel(model: RemoteModelInfo): string {
   if (model.parameter_count?.trim()) return model.parameter_count;
+
+  const text = `${model.repo_id} ${model.name}`;
+  const pattern = /(^|[^A-Za-z0-9])(\d+(?:\.\d+)?)\s*([bBmM])(?=[^A-Za-z0-9]|$)/g;
+  for (const match of text.matchAll(pattern)) {
+    const prefix = match[1] ?? '';
+    const valueRaw = match[2];
+    const unit = match[3];
+    // Ignore activation-style fragments like A3B/A4B.
+    if (prefix.toLowerCase() === 'a') continue;
+    const value = Number(valueRaw);
+    if (Number.isFinite(value) && value > 0) {
+      return `${value % 1 === 0 ? value.toFixed(0) : value}${unit.toUpperCase()}`;
+    }
+  }
+
   return '—';
 }
 

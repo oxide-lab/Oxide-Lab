@@ -145,10 +145,7 @@ pub fn run() {
             crate::api::local_models::parse_gguf_metadata,
             crate::api::local_models::scan_models_folder,
             crate::api::local_models::scan_local_models_folder,
-            crate::api::local_models::search_huggingface_gguf,
             crate::api::local_models::download_hf_model_file,
-            crate::api::local_models::get_hf_model_metadata,
-            crate::api::local_models::get_model_readme,
             crate::api::local_models::delete_local_model,
             crate::api::local_models::update_model_manifest,
             crate::api::model_cards::get_model_cards,
@@ -185,6 +182,7 @@ pub fn run() {
             crate::api::set_llama_runtime_config,
             crate::api::get_loaded_models,
             crate::api::get_scheduler_stats,
+            crate::api::fetch_url,
         ])
         .setup(move |app| {
             // Hybrid responsiveness: keep the window/event-loop thread slightly prioritized on Windows,
@@ -192,7 +190,7 @@ pub fn run() {
             let _ = set_current_thread_above_normal();
 
             let handle = app.handle();
-            let settings_store = match crate::core::settings_v2::SettingsV2Store::load(&handle) {
+            let settings_store = match crate::core::settings_v2::SettingsV2Store::load(handle) {
                 Ok(store) => store,
                 Err(err) => {
                     log::error!("Failed to initialize settings_v2 store: {}", err);

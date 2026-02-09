@@ -12,6 +12,7 @@ export type LogEntry = {
 
 export class WebPreviewContext {
 	#url = $state("");
+	#srcdoc = $state("");
 	#consoleOpen = $state(false);
 	#onUrlChange?: (url: string) => void;
 
@@ -27,6 +28,14 @@ export class WebPreviewContext {
 	setUrl(newUrl: string) {
 		this.#url = newUrl;
 		this.#onUrlChange?.(newUrl);
+	}
+
+	get srcdoc() {
+		return this.#srcdoc;
+	}
+
+	setSrcdoc(doc: string) {
+		this.#srcdoc = doc;
 	}
 
 	get consoleOpen() {

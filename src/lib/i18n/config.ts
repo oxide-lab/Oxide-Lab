@@ -136,7 +136,7 @@ const config: Config = {
 
     // Настройки логирования (только ошибки в продакшене)
     log: {
-        level: import.meta.env.DEV ? 'debug' : 'error',
+        level: 'error',
         prefix: '[i18n]: ',
     },
 

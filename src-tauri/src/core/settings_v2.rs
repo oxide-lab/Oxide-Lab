@@ -211,19 +211,10 @@ impl Default for PerformanceSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrivacyDataSettings {
     pub telemetry_enabled: bool,
     pub crash_reports_enabled: bool,
-}
-
-impl Default for PrivacyDataSettings {
-    fn default() -> Self {
-        Self {
-            telemetry_enabled: false,
-            crash_reports_enabled: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -560,6 +551,9 @@ impl SettingsV2Store {
 
         let locations = self.data_locations(app)?;
         let mut cleared_files = Vec::new();
+        let app_data = PathBuf::from(&locations.app_data_dir);
+        let downloads_history = app_data.join("oxide-lab").join("downloads").join("history.json");
+        let legacy_download_manifest = app_data.join("oxide-lab").join("downloads_manifest.json");
 
         match scope {
             ClearDataScope::All => {
@@ -570,36 +564,24 @@ impl SettingsV2Store {
                     locations.legacy_thread_limit_file.clone(),
                     locations.legacy_experimental_file.clone(),
                 ] {
-                    let path = PathBuf::from(&p);
-                    if path.exists() {
-                        let _ = fs::remove_file(&path);
-                        cleared_files.push(p);
-                    }
+                    remove_file_if_exists(Path::new(&p), &mut cleared_files)?;
                 }
+                remove_file_if_exists(&downloads_history, &mut cleared_files)?;
+                remove_file_if_exists(&legacy_download_manifest, &mut cleared_files)?;
                 self.settings = AppSettingsV2::default();
                 self.save()?;
             }
             ClearDataScope::Chats => {
                 let chat_db = PathBuf::from(&locations.chat_db);
-                if chat_db.exists() {
-                    let _ = fs::remove_file(&chat_db);
-                    cleared_files.push(locations.chat_db);
-                }
+                remove_file_if_exists(&chat_db, &mut cleared_files)?;
             }
             ClearDataScope::Downloads => {
-                let app_data = PathBuf::from(&locations.app_data_dir);
-                let download_manifest = app_data.join("oxide-lab").join("downloads_manifest.json");
-                if download_manifest.exists() {
-                    let _ = fs::remove_file(&download_manifest);
-                    cleared_files.push(download_manifest.to_string_lossy().to_string());
-                }
+                remove_file_if_exists(&downloads_history, &mut cleared_files)?;
+                remove_file_if_exists(&legacy_download_manifest, &mut cleared_files)?;
             }
             ClearDataScope::Settings => {
                 let settings_file = PathBuf::from(&locations.settings_file);
-                if settings_file.exists() {
-                    let _ = fs::remove_file(&settings_file);
-                    cleared_files.push(locations.settings_file);
-                }
+                remove_file_if_exists(&settings_file, &mut cleared_files)?;
                 self.settings = AppSettingsV2::default();
                 self.save()?;
             }
@@ -630,16 +612,26 @@ impl SettingsV2Store {
 
         if let Ok(profile) = profile_dir(app) {
             let experimental_path = profile.join("experimental_features.json");
-            if experimental_path.exists() {
-                if let Ok(raw) = fs::read_to_string(&experimental_path) {
-                    if let Ok(enabled) = serde_json::from_str::<bool>(&raw) {
-                        settings.general.developer_mode = enabled;
-                    }
-                }
+            if experimental_path.exists()
+                && let Ok(raw) = fs::read_to_string(&experimental_path)
+                && let Ok(enabled) = serde_json::from_str::<bool>(&raw)
+            {
+                settings.general.developer_mode = enabled;
             }
         }
 
         Ok(settings)
+    }
+}
+
+fn remove_file_if_exists(path: &Path, cleared_files: &mut Vec<String>) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => {
+            cleared_files.push(path.to_string_lossy().to_string());
+            Ok(())
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("Failed to remove {}: {err}", path.display())),
     }
 }
 

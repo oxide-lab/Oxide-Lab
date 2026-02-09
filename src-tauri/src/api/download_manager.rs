@@ -4,7 +4,8 @@
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    io::Read,
+    path::{Component, Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -14,6 +15,7 @@ use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest::header::{HeaderMap, HeaderValue, RANGE};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
     fs::OpenOptions,
@@ -260,14 +262,79 @@ impl DownloadManager {
     }
 }
 
-fn sanitize_download_url(repo_id: &str, url: &str) -> Result<(), String> {
-    if !url.starts_with("https://huggingface.co/") {
+fn sanitize_relative_filename(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Filename cannot be empty".to_string());
+    }
+
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Err("Filename must be a repository-relative path".to_string());
+    }
+
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_string_lossy().to_string()),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err("Filename contains invalid path components".to_string());
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return Err("Filename cannot be empty".to_string());
+    }
+
+    Ok(parts.join("/"))
+}
+
+fn normalize_sha256(raw: &str) -> Result<String, String> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    if normalized.len() != 64 || !normalized.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err("sha256 must be a 64-character hex string".to_string());
+    }
+    Ok(normalized)
+}
+
+fn sanitize_download_url(repo_id: &str, filename: &str, url: &str) -> Result<(), String> {
+    let parsed =
+        reqwest::Url::parse(url).map_err(|e| format!("Download URL is invalid: {e}"))?;
+    if parsed.scheme() != "https" {
+        return Err("Download URL must use https scheme".to_string());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "Download URL must have a host".to_string())?;
+    if !host.eq_ignore_ascii_case("huggingface.co") {
         return Err("Download URL must originate from huggingface.co".to_string());
     }
-    let encoded_repo = repo_id.replace('/', "%2F");
-    if !(url.contains(repo_id) || url.contains(&encoded_repo)) {
+
+    let repo_id = repo_id.trim_matches('/');
+    if repo_id.is_empty() {
+        return Err("Repository id cannot be empty".to_string());
+    }
+
+    let decoded_path = urlencoding::decode(parsed.path())
+        .map_err(|e| format!("Failed to decode URL path: {e}"))?;
+    let decoded_path = decoded_path.as_ref();
+    let repo_prefix = format!("/{repo_id}");
+    let models_prefix = format!("/models/{repo_id}");
+    let repo_matches = decoded_path == repo_prefix
+        || decoded_path.starts_with(&format!("{repo_prefix}/"))
+        || decoded_path == models_prefix
+        || decoded_path.starts_with(&format!("{models_prefix}/"));
+    if !repo_matches {
         return Err("Download URL does not match repository id".to_string());
     }
+
+    let expected_suffix = format!("/{filename}");
+    if !decoded_path.ends_with(&expected_suffix) {
+        return Err("Download URL path does not match requested filename".to_string());
+    }
+
     Ok(())
 }
 
@@ -304,6 +371,30 @@ async fn rename_partial_to_final(partial: &Path, final_path: &Path) -> Result<()
     tokio::fs::rename(partial, final_path)
         .await
         .map_err(|e| format!("Failed to finalize downloaded file: {e}"))
+}
+
+async fn compute_sha256_hex(path: &Path) -> Result<String, String> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let mut file =
+            fs::File::open(&path).map_err(|e| format!("Failed to open file for checksum: {e}"))?;
+        let mut hasher = Sha256::new();
+        let mut buf = [0_u8; 1024 * 1024];
+
+        loop {
+            let read = file
+                .read(&mut buf)
+                .map_err(|e| format!("Failed to read file for checksum: {e}"))?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buf[..read]);
+        }
+
+        Ok::<String, String>(format!("{:x}", hasher.finalize()))
+    })
+    .await
+    .map_err(|e| format!("Checksum task join failed: {e}"))?
 }
 
 fn compute_speed_and_eta(
@@ -534,6 +625,22 @@ async fn run_download_loop(
         return DownloadLoopOutcome::Error(err);
     }
 
+    if let Some(expected_sha256) = sha256.as_deref() {
+        match compute_sha256_hex(&final_path).await {
+            Ok(actual_sha256) if actual_sha256 == expected_sha256 => {}
+            Ok(_) => {
+                let _ = tokio::fs::remove_file(&final_path).await;
+                return DownloadLoopOutcome::Error(
+                    "Downloaded file checksum verification failed".to_string(),
+                );
+            }
+            Err(err) => {
+                let _ = tokio::fs::remove_file(&final_path).await;
+                return DownloadLoopOutcome::Error(err);
+            }
+        }
+    }
+
     persist_download_completed(&job_id, &final_path).await;
 
     {
@@ -577,13 +684,19 @@ async fn run_download_loop(
     DownloadLoopOutcome::Completed
 }
 
-async fn init_job(request: &StartDownloadRequest, job_id: &str) -> Result<DownloadJob, String> {
-    sanitize_download_url(&request.repo_id, &request.download_url)?;
+async fn init_job(
+    request: &StartDownloadRequest,
+    job_id: &str,
+    filename: String,
+) -> Result<DownloadJob, String> {
+    sanitize_download_url(&request.repo_id, &filename, &request.download_url)?;
     let destination_dir = PathBuf::from(&request.destination_dir);
+    let sha256 = request.sha256.as_deref().map(normalize_sha256).transpose()?;
+
     Ok(DownloadJob {
         id: job_id.to_string(),
         repo_id: request.repo_id.clone(),
-        filename: request.filename.clone(),
+        filename,
         download_url: request.download_url.clone(),
         destination_dir,
         total_bytes: request.total_bytes,
@@ -595,7 +708,7 @@ async fn init_job(request: &StartDownloadRequest, job_id: &str) -> Result<Downlo
         updated_at: None,
         finished_at: None,
         error: None,
-        sha256: request.sha256.clone(),
+        sha256,
         group_id: request.group_id.clone(),
         display_name: request.display_name.clone(),
     })
@@ -750,32 +863,28 @@ pub async fn start_model_download(
         return Err("Destination directory cannot be empty".to_string());
     }
 
-    let job_id = build_job_id(&request.repo_id, &request.filename);
+    let sanitized_filename = sanitize_relative_filename(&request.filename)?;
+    let job_id = build_job_id(&request.repo_id, &sanitized_filename);
 
-    {
-        let manager = &*MANAGER;
-        let guard = manager.state.read().await;
-        if guard.active.contains_key(&job_id) {
-            return Err("Download is already in progress".to_string());
-        }
-    }
-
-    let mut job = init_job(&request, &job_id).await?;
+    let mut job = init_job(&request, &job_id, sanitized_filename).await?;
     job.status = DownloadStatus::Queued;
     job.updated_at = Some(Utc::now());
 
+    let manager = &*MANAGER;
     {
-        let manager = &*MANAGER;
-        manager
-            .state
-            .write()
-            .await
-            .active
-            .insert(job_id.clone(), job.clone());
-        manager.emit_update(&app).await;
+        let mut guard = manager.state.write().await;
+        if guard.active.contains_key(&job_id) {
+            return Err("Download is already in progress".to_string());
+        }
+        guard.active.insert(job_id.clone(), job.clone());
     }
+    manager.emit_update(&app).await;
 
-    start_task(app.clone(), job.clone()).await?;
+    if let Err(err) = start_task(app.clone(), job.clone()).await {
+        manager.remove_job(&job_id).await;
+        manager.emit_update(&app).await;
+        return Err(err);
+    }
 
     Ok(job)
 }
@@ -916,4 +1025,42 @@ pub async fn clear_download_history(app: AppHandle) -> Result<(), String> {
     MANAGER.persist_history(&app).await?;
     MANAGER.emit_update(&app).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_relative_filename_rejects_traversal() {
+        assert!(sanitize_relative_filename("../model.gguf").is_err());
+        assert!(sanitize_relative_filename("C:\\tmp\\model.gguf").is_err());
+        assert_eq!(
+            sanitize_relative_filename("subdir/model.gguf").unwrap(),
+            "subdir/model.gguf"
+        );
+    }
+
+    #[test]
+    fn sanitize_download_url_validates_repo_and_file() {
+        let repo = "owner/model";
+        let file = "weights/model.gguf";
+        let good = "https://huggingface.co/owner/model/resolve/main/weights/model.gguf";
+        let wrong_repo = "https://huggingface.co/other/model/resolve/main/weights/model.gguf";
+        let wrong_file = "https://huggingface.co/owner/model/resolve/main/weights/other.gguf";
+
+        assert!(sanitize_download_url(repo, file, good).is_ok());
+        assert!(sanitize_download_url(repo, file, wrong_repo).is_err());
+        assert!(sanitize_download_url(repo, file, wrong_file).is_err());
+    }
+
+    #[test]
+    fn normalize_sha256_accepts_only_hex_digest() {
+        let ok = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789ABCDEF";
+        assert_eq!(
+            normalize_sha256(ok).unwrap(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+        assert!(normalize_sha256("zz").is_err());
+    }
 }

@@ -321,7 +321,10 @@
                 >
                   <div class="flex justify-between items-start gap-2">
                     <div class="min-w-0 flex-1">
-                      <strong class="block truncate">{card.name}</strong>
+                      <div class="flex items-center gap-2 mb-1">
+                        <Cube class="size-4 text-muted-foreground flex-shrink-0" />
+                        <strong class="block truncate">{card.name}</strong>
+                      </div>
                       <span class="text-xs text-muted-foreground block truncate">
                         {card.family ?? '—'} · {card.hf_repo_id}
                       </span>

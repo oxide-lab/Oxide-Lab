@@ -103,6 +103,8 @@ pub async fn load_llama_model<R: Runtime>(
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    // Ensure child server is tied to parent process lifecycle on all platforms.
+    command.kill_on_drop(true);
     setup_windows_process_flags(&mut command);
 
     // Try to add CUDA paths (works on both Windows and Linux)

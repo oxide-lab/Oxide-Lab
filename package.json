@@ -27,7 +27,8 @@
     "check-licenses": "node scripts/check-licenses.js"
   },
   "dependencies": {
-    "@lobehub/icons-static-svg": "^1.73.0",
+    "@huggingface/hub": "^2.8.1",
+    "@lobehub/icons-static-svg": "^1.78.0",
     "@playwright/mcp": "^0.0.41",
     "@sveltekit-i18n/parser-icu": "^1.0.8",
     "@tauri-apps/api": "2.10.1",

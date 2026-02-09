@@ -9,7 +9,7 @@ use crate::core::settings_v2::{OpenAiServerConfig, OpenAiServerStatus, openai_st
 use crate::core::state::SharedState;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{Mutex, broadcast, oneshot};
 
 pub struct OpenAIServerState {
     pub app_handle: tauri::AppHandle,
@@ -17,12 +17,18 @@ pub struct OpenAIServerState {
     pub config: OpenAiServerConfig,
 }
 
+pub struct OpenAiServerHandle {
+    pub shutdown: broadcast::Sender<()>,
+    pub finished: oneshot::Receiver<()>,
+}
+
 pub async fn start_server(
     app_handle: tauri::AppHandle,
     model_state: SharedState,
     config: OpenAiServerConfig,
-) -> Result<broadcast::Sender<()>, String> {
+) -> Result<OpenAiServerHandle, String> {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    let (finished_tx, finished_rx) = oneshot::channel::<()>();
     let state = Arc::new(OpenAIServerState {
         app_handle,
         model_state,
@@ -40,15 +46,22 @@ pub async fn start_server(
     let mut shutdown_rx = shutdown_tx.subscribe();
 
     tokio::spawn(async move {
-        let _ = axum::serve(listener, app)
+        let result = axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.recv().await;
                 log::info!("OpenAI API server shutting down");
             })
             .await;
+        if let Err(err) = result {
+            log::error!("OpenAI API server exited with error: {err}");
+        }
+        let _ = finished_tx.send(());
     });
 
-    Ok(shutdown_tx)
+    Ok(OpenAiServerHandle {
+        shutdown: shutdown_tx,
+        finished: finished_rx,
+    })
 }
 
 #[derive(Default)]
@@ -56,6 +69,7 @@ struct OpenAiRuntime {
     shutdown: Option<broadcast::Sender<()>>,
     config: Option<OpenAiServerConfig>,
     running: bool,
+    instance_id: u64,
 }
 
 #[derive(Clone)]
@@ -79,6 +93,7 @@ impl OpenAiServerController {
             let mut runtime = self.runtime.lock().await;
             runtime.running = false;
             runtime.config = Some(config.clone());
+            runtime.instance_id = runtime.instance_id.wrapping_add(1);
             runtime.shutdown.take()
         };
         if let Some(shutdown) = shutdown_to_send {
@@ -90,16 +105,29 @@ impl OpenAiServerController {
             return Ok(());
         }
 
-        let shutdown_tx = start_server(
+        let OpenAiServerHandle { shutdown, finished } = start_server(
             self.app_handle.clone(),
             self.model_state.clone(),
             config.clone(),
         )
         .await?;
+        let runtime_ref = self.runtime.clone();
         let mut runtime = self.runtime.lock().await;
-        runtime.shutdown = Some(shutdown_tx);
+        runtime.shutdown = Some(shutdown);
         runtime.config = Some(config);
         runtime.running = true;
+        let instance_id = runtime.instance_id;
+        drop(runtime);
+
+        tokio::spawn(async move {
+            let _ = finished.await;
+            let mut runtime = runtime_ref.lock().await;
+            if runtime.instance_id == instance_id {
+                runtime.running = false;
+                runtime.shutdown = None;
+            }
+        });
+
         Ok(())
     }
 
@@ -119,6 +147,7 @@ impl OpenAiServerController {
             let mut runtime = self.runtime.lock().await;
             runtime.running = false;
             runtime.config = None;
+            runtime.instance_id = runtime.instance_id.wrapping_add(1);
             runtime.shutdown.take()
         };
         if let Some(shutdown) = shutdown_to_send {

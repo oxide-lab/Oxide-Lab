@@ -305,17 +305,20 @@ impl ModelLoadTracker {
         let total_duration_ms = self.start.elapsed().as_millis() as u64;
         let memory_after_mb = self.monitor.get_memory_usage_mb().await;
         let memory_delta_mb = memory_after_mb - self.memory_before_mb;
+        let finished_at = Instant::now();
 
         let mut load_stages = Vec::new();
-        let mut prev_time = self.start;
-
-        for (stage_name, _stage_start) in self.stages {
-            let stage_duration = prev_time.elapsed().as_millis() as u64;
+        for (idx, (stage_name, stage_start)) in self.stages.iter().enumerate() {
+            let stage_end = self
+                .stages
+                .get(idx + 1)
+                .map(|(_, next_start)| *next_start)
+                .unwrap_or(finished_at);
+            let stage_duration = stage_end.saturating_duration_since(*stage_start).as_millis() as u64;
             load_stages.push(LoadStage {
-                name: stage_name,
+                name: stage_name.clone(),
                 duration_ms: stage_duration,
             });
-            prev_time = Instant::now();
         }
 
         ModelLoadMetrics {

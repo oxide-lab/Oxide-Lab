@@ -1,11 +1,12 @@
 use crate::core::settings_v2::SettingsV2State;
 use crate::core::state::{ModelState, SharedState};
 
-use std::env;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::AppHandle;
 use tauri::Manager;
 
-const RAYON_ENV_VAR: &str = "RAYON_NUM_THREADS";
+const NO_THREAD_LIMIT: usize = 0;
+static RAYON_THREAD_LIMIT_HINT: AtomicUsize = AtomicUsize::new(NO_THREAD_LIMIT);
 
 pub(crate) fn default_rayon_thread_limit() -> usize {
     let cpus = std::thread::available_parallelism()
@@ -15,12 +16,10 @@ pub(crate) fn default_rayon_thread_limit() -> usize {
 }
 
 pub(crate) fn apply_rayon_thread_limit(limit: Option<usize>) {
-    unsafe {
-        match limit {
-            Some(count) => env::set_var(RAYON_ENV_VAR, count.to_string()),
-            None => env::remove_var(RAYON_ENV_VAR),
-        }
-    }
+    // Runtime changes are persisted in settings/state and applied on next startup.
+    // Avoid mutating process environment in multithreaded context.
+    let stored = limit.unwrap_or(NO_THREAD_LIMIT);
+    RAYON_THREAD_LIMIT_HINT.store(stored, Ordering::Relaxed);
 }
 
 #[tauri::command]

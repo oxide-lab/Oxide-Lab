@@ -1,9 +1,9 @@
 use crate::gguf::commands::get_model_size;
 use crate::gguf::utils::estimate_kv_cache_internal;
 use crate::gguf::utils::read_gguf_metadata_internal;
+use oxide_hardware::get_system_info;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use oxide_hardware::get_system_info;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
