@@ -14,7 +14,7 @@
     ConversationScrollButton,
   } from '$lib/components/ai-elements/conversation';
   import { MessageList, Composer, LoaderPanel, PreviewPanel } from '$lib/chat/components';
-  import type { ChatMessage } from '$lib/chat/types';
+  import type { ChatMessage, RetrievalWebMode } from '$lib/chat/types';
   import { createChatController } from '$lib/chat/controller';
   import { chatState, chatUiMounted, getDefaultChatState } from '$lib/stores/chat';
   import { currentSession } from '$lib/stores/chat-history';
@@ -85,6 +85,8 @@
   let split_prompt = $state<boolean>(savedState.split_prompt);
   let verbose_prompt = $state<boolean>(savedState.verbose_prompt);
   let tracing = $state<boolean>(savedState.tracing);
+  let retrieval_web_mode = $state<RetrievalWebMode>(savedState.retrieval_web_mode ?? 'lite');
+  let retrieval_local_enabled = $state<boolean>(savedState.retrieval_local_enabled ?? false);
   let preset_id = $state<string | null>(savedState.preset_id ?? null);
 
   // Create controller with context
@@ -347,6 +349,18 @@
     set tracing(v) {
       tracing = v;
     },
+    get retrieval_web_mode() {
+      return retrieval_web_mode;
+    },
+    set retrieval_web_mode(v) {
+      retrieval_web_mode = v;
+    },
+    get retrieval_local_enabled() {
+      return retrieval_local_enabled;
+    },
+    set retrieval_local_enabled(v) {
+      retrieval_local_enabled = v;
+    },
   });
 
   // Controller actions
@@ -366,6 +380,14 @@
       id: preset.id,
       name: preset.name,
     })),
+  );
+  let retrievalProEnabled = $derived(Boolean($settingsV2Store?.web_rag.web_search.pro_beta_enabled));
+  let retrievalLocalBetaEnabled = $derived(Boolean($settingsV2Store?.web_rag.local_rag.beta_enabled));
+  let retrievalEmbeddingsConfigured = $derived(
+    Boolean(
+      $settingsV2Store?.web_rag.embeddings_provider.base_url?.trim() &&
+        $settingsV2Store?.web_rag.embeddings_provider.model?.trim(),
+    ),
   );
 
   // Keep shared chatState in sync so header and other views get instant truth
@@ -387,8 +409,19 @@
       loadingStage,
       loadingProgress,
       unloadingProgress,
+      retrieval_web_mode,
+      retrieval_local_enabled,
       preset_id,
     }));
+  });
+
+  $effect(() => {
+    if (retrieval_web_mode === 'pro' && (!retrievalProEnabled || !retrievalEmbeddingsConfigured)) {
+      retrieval_web_mode = 'lite';
+    }
+    if (!retrievalLocalBetaEnabled) {
+      retrieval_local_enabled = false;
+    }
   });
 
   function toggleLoaderPanelVisibility() {
@@ -610,6 +643,8 @@
       split_prompt,
       verbose_prompt,
       tracing,
+      retrieval_web_mode,
+      retrieval_local_enabled,
       preset_id,
     });
 
@@ -667,9 +702,16 @@
               {busy}
               isLoaded={$chatState.isLoaded}
               canStop={canStopGeneration}
+              retrievalMode={retrieval_web_mode}
+              retrievalLocalEnabled={retrieval_local_enabled}
+              retrievalProEnabled={retrievalProEnabled}
+              retrievalLocalBetaEnabled={retrievalLocalBetaEnabled}
+              retrievalEmbeddingsConfigured={retrievalEmbeddingsConfigured}
               {isLoaderPanelVisible}
               {isChatHistoryVisible}
               {hasMessages}
+              onRetrievalModeChange={(mode) => (retrieval_web_mode = mode)}
+              onRetrievalLocalToggle={(enabled) => (retrieval_local_enabled = enabled)}
               onSend={sendMessage}
               onStop={stopGenerate}
               onToggleLoaderPanel={toggleLoaderPanelVisibility}

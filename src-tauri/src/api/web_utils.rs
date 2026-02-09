@@ -1,5 +1,5 @@
-use serde::Serialize;
 use reqwest::Client;
+use serde::Serialize;
 use std::time::Duration;
 
 #[derive(Debug, Serialize)]
@@ -20,7 +20,8 @@ pub async fn fetch_url(url: String) -> Result<FetchResult, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let response = client.get(&url)
+    let response = client
+        .get(&url)
         .send()
         .await
         .map_err(|e| format!("Failed to fetch URL: {}", e))?;

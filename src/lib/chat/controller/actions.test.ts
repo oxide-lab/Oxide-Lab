@@ -81,6 +81,8 @@ function makeCtx() {
     split_prompt: false,
     verbose_prompt: false,
     tracing: false,
+    retrieval_web_mode: 'lite',
+    retrieval_local_enabled: false,
   };
 }
 

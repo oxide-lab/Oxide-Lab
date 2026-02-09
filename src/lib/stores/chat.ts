@@ -5,16 +5,10 @@
  */
 
 import { writable, type Writable } from 'svelte/store';
+import type { ChatMessage, RetrievalWebMode } from '$lib/chat/types';
 
 export type Role = 'user' | 'assistant';
-
-export type ChatMessage = {
-    role: Role;
-    content: string;
-    html?: string;
-    thinking?: string;
-    isThinking?: boolean;
-};
+export type { ChatMessage };
 
 export type ChatPersistedState = {
     // Model selection
@@ -69,6 +63,8 @@ export type ChatPersistedState = {
     split_prompt: boolean;
     verbose_prompt: boolean;
     tracing: boolean;
+    retrieval_web_mode: RetrievalWebMode;
+    retrieval_local_enabled: boolean;
 
     // Presets
     preset_id: string | null;
@@ -121,6 +117,8 @@ export function getDefaultChatState(): ChatPersistedState {
         split_prompt: false,
         verbose_prompt: false,
         tracing: false,
+        retrieval_web_mode: 'lite',
+        retrieval_local_enabled: false,
 
         preset_id: null,
     };

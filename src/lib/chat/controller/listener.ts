@@ -9,6 +9,7 @@ import { finalizeStreaming } from '$lib/chat/stream_render';
 import { get } from 'svelte/store';
 import { chatHistory } from '$lib/stores/chat-history';
 import type { ChatControllerCtx } from './types';
+import type { RetrievalSource } from '$lib/chat/types';
 
 /** Structured message from backend */
 interface StreamMessage {
@@ -16,13 +17,25 @@ interface StreamMessage {
     content: string;
 }
 
+interface RetrievalContextEvent {
+    sources?: RetrievalSource[];
+}
+
+interface RetrievalWarningEvent {
+    message?: string;
+}
+
 export function createStreamListener(ctx: ChatControllerCtx) {
     let unlistenStart: (() => void) | null = null;
     let unlistenMessage: (() => void) | null = null;
     let unlistenDone: (() => void) | null = null;
+    let unlistenRetrievalContext: (() => void) | null = null;
+    let unlistenRetrievalWarning: (() => void) | null = null;
     let rafId: number | null = null;
     let pendingThinking = '';
     let pendingContent = '';
+    let pendingSources: RetrievalSource[] = [];
+    let pendingWarnings: string[] = [];
 
     function scheduleUpdate() {
         if (rafId !== null) return;
@@ -74,6 +87,29 @@ export function createStreamListener(ctx: ChatControllerCtx) {
         scheduleUpdate();
     }
 
+    function applyRetrievalContextToLastMessage() {
+        const msgs = ctx.messages;
+        const last = msgs[msgs.length - 1];
+        if (!last || last.role !== 'assistant') {
+            return;
+        }
+        last.sources = [...pendingSources];
+        last.retrievalWarnings = [...pendingWarnings];
+        ctx.messages = msgs;
+    }
+
+    function handleRetrievalContext(event: RetrievalContextEvent) {
+        pendingSources = Array.isArray(event.sources) ? event.sources : [];
+        applyRetrievalContextToLastMessage();
+    }
+
+    function handleRetrievalWarning(event: RetrievalWarningEvent) {
+        const message = event.message?.trim();
+        if (!message) return;
+        pendingWarnings = [...pendingWarnings, message];
+        applyRetrievalContextToLastMessage();
+    }
+
     function initNewStream() {
         const msgs = ctx.messages;
         const last = msgs[msgs.length - 1];
@@ -85,11 +121,19 @@ export function createStreamListener(ctx: ChatControllerCtx) {
                 html: '',
                 thinking: '',
                 isThinking: false,
+                sources: [...pendingSources],
+                retrievalWarnings: [...pendingWarnings],
             });
             ctx.messages = msgs;
         } else {
             last.thinking = '';
             last.isThinking = false;
+            if (pendingSources.length > 0) {
+                last.sources = [...pendingSources];
+            }
+            if (pendingWarnings.length > 0) {
+                last.retrievalWarnings = [...pendingWarnings];
+            }
             ctx.messages = msgs;
         }
 
@@ -131,10 +175,15 @@ export function createStreamListener(ctx: ChatControllerCtx) {
                         state.currentSessionId,
                         last.content,
                         last.thinking,
+                        last.sources ?? [],
+                        last.retrievalWarnings ?? [],
                     );
                 }
             }
         }
+
+        pendingSources = [];
+        pendingWarnings = [];
     }
 
     async function ensureListener() {
@@ -158,6 +207,14 @@ export function createStreamListener(ctx: ChatControllerCtx) {
         // Stream completion signal
         unlistenDone = await listen('message_done', () => {
             void finalizeStream();
+        });
+
+        unlistenRetrievalContext = await listen<RetrievalContextEvent>('retrieval_context', (event) => {
+            handleRetrievalContext(event.payload ?? {});
+        });
+
+        unlistenRetrievalWarning = await listen<RetrievalWarningEvent>('retrieval_warning', (event) => {
+            handleRetrievalWarning(event.payload ?? {});
         });
     }
 
@@ -186,10 +243,28 @@ export function createStreamListener(ctx: ChatControllerCtx) {
             }
             unlistenDone = null;
         }
+        if (unlistenRetrievalContext) {
+            try {
+                unlistenRetrievalContext();
+            } catch {
+                /* ignore */
+            }
+            unlistenRetrievalContext = null;
+        }
+        if (unlistenRetrievalWarning) {
+            try {
+                unlistenRetrievalWarning();
+            } catch {
+                /* ignore */
+            }
+            unlistenRetrievalWarning = null;
+        }
         if (rafId !== null) {
             cancelAnimationFrame(rafId);
             rafId = null;
         }
+        pendingSources = [];
+        pendingWarnings = [];
     }
 
     return { ensureListener, destroy };

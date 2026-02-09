@@ -45,6 +45,8 @@
   let thinkingContent = $derived(message.thinking?.replace(/<think>/g, '').trim());
   let hasThinking = $derived(!!thinkingContent);
   let showActions = $derived(!isStreaming && message.content);
+  let retrievalSources = $derived(message.sources ?? []);
+  let retrievalWarnings = $derived(message.retrievalWarnings ?? []);
 
   function closeActionTooltips() {
     copyTooltipOpen = false;
@@ -66,6 +68,23 @@
   function toggleRaw() {
     closeActionTooltips();
     showRaw = !showRaw;
+  }
+
+  async function openWebSource(url: string) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+  }
+
+  function getParentFolder(path: string): string {
+    const normalized = path.replaceAll('/', '\\');
+    const idx = normalized.lastIndexOf('\\');
+    if (idx <= 0) return path;
+    return normalized.slice(0, idx);
+  }
+
+  async function openLocalSourceFolder(path: string) {
+    const { openPath } = await import('@tauri-apps/plugin-opener');
+    await openPath(getParentFolder(path));
   }
 
   function getRawContent(): string {
@@ -117,6 +136,50 @@
       content={message.content}
       class="prose prose-sm dark:prose-invert max-w-none"
     />
+  {/if}
+
+  {#if retrievalWarnings.length > 0}
+    <div class="mt-3 space-y-2">
+      {#each retrievalWarnings as warning, warningIdx (`${warningIdx}-${warning}`)}
+        <div class="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+          {warning}
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  {#if retrievalSources.length > 0}
+    <div class="mt-3 rounded-lg border border-border/70 bg-muted/35 p-3">
+      <div class="mb-2 text-xs font-medium text-muted-foreground">Sources ({retrievalSources.length})</div>
+      <div class="space-y-2">
+        {#each retrievalSources as source, sourceIdx (`${sourceIdx}-${source.title}-${source.url ?? source.path ?? ''}`)}
+          <div class="rounded-md border border-border/60 bg-background/70 px-3 py-2">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-medium">{sourceIdx + 1}. {source.title}</p>
+                {#if source.url}
+                  <p class="truncate text-xs text-muted-foreground">{source.url}</p>
+                {:else if source.path}
+                  <p class="truncate text-xs text-muted-foreground">{source.path}</p>
+                {/if}
+              </div>
+              {#if source.url}
+                <Button variant="outline" size="sm" onclick={() => source.url && openWebSource(source.url)}>
+                  Open
+                </Button>
+              {:else if source.path}
+                <Button variant="outline" size="sm" onclick={() => source.path && openLocalSourceFolder(source.path)}>
+                  Open folder
+                </Button>
+              {/if}
+            </div>
+            {#if source.snippet}
+              <p class="mt-2 line-clamp-3 text-xs text-muted-foreground">{source.snippet}</p>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </div>
   {/if}
 
   <!-- Actions (only show when not streaming and has content) -->

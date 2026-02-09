@@ -175,6 +175,10 @@
         "title": "Chat e Presets",
         "description": "Comportamento padrão do chat e perfis reutilizáveis."
       },
+      "web_rag": {
+        "title": "Web Search + RAG",
+        "description": "Modos de busca web, provedor de embeddings e índice local de documentos."
+      },
       "privacy_data": {
         "title": "Privacidade e Dados",
         "description": "Controles locais de dados, exportação e limpeza."

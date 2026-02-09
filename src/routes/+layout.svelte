@@ -28,6 +28,7 @@
   import Gauge from 'phosphor-svelte/lib/Gauge';
   import Cpu from 'phosphor-svelte/lib/Cpu';
   import ChatsCircle from 'phosphor-svelte/lib/ChatsCircle';
+  import Globe from 'phosphor-svelte/lib/Globe';
   import Shield from 'phosphor-svelte/lib/Shield';
   import Code from 'phosphor-svelte/lib/Code';
   import Info from 'phosphor-svelte/lib/Info';
@@ -119,6 +120,7 @@
     performance: 'settings.v2.sections.performance.title',
     hardware: 'settings.v2.sections.hardware.title',
     chat_presets: 'settings.v2.sections.chat_presets.title',
+    web_rag: 'settings.v2.sections.web_rag.title',
     privacy_data: 'settings.v2.sections.privacy_data.title',
     developer: 'settings.v2.sections.developer.title',
     about: 'settings.v2.sections.about.title',
@@ -127,6 +129,7 @@
     'general',
     'models_storage',
     'chat_presets',
+    'web_rag',
     'privacy_data',
     'developer',
     'about',
@@ -139,6 +142,7 @@
     performance: Gauge,
     hardware: Cpu,
     chat_presets: ChatsCircle,
+    web_rag: Globe,
     privacy_data: Shield,
     developer: Code,
     about: Info,

@@ -9,6 +9,7 @@ export { default as SettingsSectionModelsStorage } from './SettingsSectionModels
 export { default as SettingsSectionPerformance } from './SettingsSectionPerformance.svelte';
 export { default as SettingsSectionHardware } from './SettingsSectionHardware.svelte';
 export { default as SettingsSectionChatPresets } from './SettingsSectionChatPresets.svelte';
+export { default as SettingsSectionWebRag } from './SettingsSectionWebRag.svelte';
 export { default as SettingsSectionPrivacyData } from './SettingsSectionPrivacyData.svelte';
 export { default as SettingsSectionDeveloper } from './SettingsSectionDeveloper.svelte';
 export { default as SettingsSectionAbout } from './SettingsSectionAbout.svelte';

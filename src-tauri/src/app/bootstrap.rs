@@ -96,6 +96,12 @@ pub fn run() {
             sql: "ALTER TABLE messages ADD COLUMN thinking TEXT NOT NULL DEFAULT '';",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add retrieval sources json to messages",
+            sql: "ALTER TABLE messages ADD COLUMN sources_json TEXT NOT NULL DEFAULT '[]';",
+            kind: MigrationKind::Up,
+        },
     ];
 
     let app = tauri::Builder::default()
@@ -183,6 +189,14 @@ pub fn run() {
             crate::api::get_loaded_models,
             crate::api::get_scheduler_stats,
             crate::api::fetch_url,
+            crate::api::rag_list_sources,
+            crate::api::rag_add_source,
+            crate::api::rag_reindex_source,
+            crate::api::rag_remove_source,
+            crate::api::rag_clear_index,
+            crate::api::rag_get_stats,
+            crate::api::rag_test_embeddings_provider,
+            crate::api::rag_open_source_folder,
         ])
         .setup(move |app| {
             // Hybrid responsiveness: keep the window/event-loop thread slightly prioritized on Windows,

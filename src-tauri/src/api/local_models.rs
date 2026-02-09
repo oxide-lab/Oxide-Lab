@@ -425,7 +425,10 @@ fn collect_gguf_files_impl(
         let entry = match entry {
             Ok(entry) => entry,
             Err(err) => {
-                log::warn!("Failed to read directory entry in {}: {err}", root.display());
+                log::warn!(
+                    "Failed to read directory entry in {}: {err}",
+                    root.display()
+                );
                 continue;
             }
         };
@@ -1135,7 +1138,8 @@ pub async fn download_hf_model_file(
     destination_dir: String,
 ) -> Result<DownloadedFileInfo, String> {
     let sanitized_filename = sanitize_repo_relative_filename(&filename)?;
-    let relative_path = PathBuf::from(sanitized_filename.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let relative_path =
+        PathBuf::from(sanitized_filename.replace('/', std::path::MAIN_SEPARATOR_STR));
 
     tauri::async_runtime::spawn_blocking(move || {
         let api = hf_hub::api::sync::Api::new().map_err(|e| e.to_string())?;
@@ -1251,7 +1255,9 @@ pub fn delete_local_model(
         let canonical_root = fs::canonicalize(&root)
             .map_err(|e| format!("Failed to resolve models directory: {e}"))?;
         if !canonical_model.starts_with(&canonical_root) {
-            return Err("Model deletion is allowed only inside configured models directory".to_string());
+            return Err(
+                "Model deletion is allowed only inside configured models directory".to_string(),
+            );
         }
     }
 

@@ -56,6 +56,13 @@ tower-http = { version = "0.6", features = ["cors"] }
 strsim = "0.11"
 urlencoding = "2.1"
 simsearch = "0.3.0"
+scraper = "0.24"
+html2text = "0.16"
+rusqlite = { version = "0.31", features = ["bundled"] }
+sqlite-vec = "0.1.7-alpha.2"
+walkdir = "2.5"
+lopdf = "0.38"
+uuid = { version = "1.18", features = ["v4", "serde"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

@@ -175,6 +175,10 @@
         "title": "Chat & Presets",
         "description": "Default chat behavior and reusable prompt/sampling profiles."
       },
+      "web_rag": {
+        "title": "Web Search + RAG",
+        "description": "Web retrieval modes, embeddings provider, and local document index."
+      },
       "privacy_data": {
         "title": "Privacy & Data",
         "description": "Local data controls, exports, and deletion actions."

@@ -2,7 +2,7 @@ import type { AppSettingsV2, OpenAiServerStatus } from '$lib/types/settings-v2';
 
 export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSettingsV2 {
   const base: AppSettingsV2 = {
-    schema_version: 2,
+    schema_version: 3,
     general: {
       locale: 'en',
       theme: 'system',
@@ -83,6 +83,29 @@ export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSetting
         cors_allowlist: [],
       },
     },
+    web_rag: {
+      web_search: {
+        default_mode: 'lite',
+        pro_beta_enabled: false,
+        max_snippets: 8,
+        max_snippet_chars: 500,
+        max_pages: 5,
+        max_retrieval_tokens: 1200,
+      },
+      local_rag: {
+        beta_enabled: false,
+        top_k: 5,
+        chunk_size_chars: 1200,
+        chunk_overlap_chars: 180,
+        max_file_size_mb: 20,
+      },
+      embeddings_provider: {
+        base_url: '',
+        api_key: '',
+        model: '',
+        timeout_ms: 20000,
+      },
+    },
   };
 
   return {
@@ -110,6 +133,22 @@ export function createSettingsV2(overrides?: Partial<AppSettingsV2>): AppSetting
       openai_server: {
         ...base.developer.openai_server,
         ...(overrides?.developer?.openai_server ?? {}),
+      },
+    },
+    web_rag: {
+      ...base.web_rag,
+      ...(overrides?.web_rag ?? {}),
+      web_search: {
+        ...base.web_rag.web_search,
+        ...(overrides?.web_rag?.web_search ?? {}),
+      },
+      local_rag: {
+        ...base.web_rag.local_rag,
+        ...(overrides?.web_rag?.local_rag ?? {}),
+      },
+      embeddings_provider: {
+        ...base.web_rag.embeddings_provider,
+        ...(overrides?.web_rag?.embeddings_provider ?? {}),
       },
     },
   };

@@ -5,6 +5,7 @@
  */
 
 import type { ChatMessage } from '$lib/chat/types';
+import type { RetrievalWebMode } from '$lib/chat/types';
 
 export type ChatControllerCtx = {
     get modelPath(): string;
@@ -96,4 +97,8 @@ export type ChatControllerCtx = {
     set verbose_prompt(v: boolean);
     get tracing(): boolean;
     set tracing(v: boolean);
+    get retrieval_web_mode(): RetrievalWebMode;
+    set retrieval_web_mode(v: RetrievalWebMode);
+    get retrieval_local_enabled(): boolean;
+    set retrieval_local_enabled(v: boolean);
 };

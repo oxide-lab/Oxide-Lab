@@ -62,6 +62,7 @@
       <div class="rounded-md border p-3 text-xs text-muted-foreground space-y-1">
         <p class="break-all">{$t('settings.v2.privacy_data.locations.settings')}: {locations.settings_file}</p>
         <p class="break-all">{$t('settings.v2.privacy_data.locations.chats_db')}: {locations.chat_db}</p>
+        <p class="break-all">RAG DB: {locations.rag_db}</p>
         <p class="break-all">{$t('settings.v2.privacy_data.locations.profile')}: {locations.profile_dir}</p>
       </div>
     {/if}

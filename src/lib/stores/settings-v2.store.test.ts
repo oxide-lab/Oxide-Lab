@@ -19,6 +19,7 @@ function applyPatch(patch: AppSettingsPatch) {
   if (patch.chat_presets) state.settings.chat_presets = patch.chat_presets;
   if (patch.privacy_data) state.settings.privacy_data = patch.privacy_data;
   if (patch.developer) state.settings.developer = patch.developer;
+  if (patch.web_rag) state.settings.web_rag = patch.web_rag;
 }
 
 function clearStorage() {

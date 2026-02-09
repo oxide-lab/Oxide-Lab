@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use tauri::Manager;
 
-pub const SETTINGS_V2_SCHEMA_VERSION: u32 = 2;
+pub const SETTINGS_V2_SCHEMA_VERSION: u32 = 3;
 pub const DEFAULT_OPENAI_PORT: u16 = 11434;
 pub const CLEAR_DATA_CONFIRM_TOKEN: &str = "CONFIRM_CLEAR_DATA";
 
@@ -222,6 +222,93 @@ pub struct DeveloperSettings {
     pub openai_server: OpenAiServerConfig,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WebRetrievalDefaultMode {
+    #[default]
+    Lite,
+    Off,
+    Pro,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSearchSettings {
+    pub default_mode: WebRetrievalDefaultMode,
+    pub max_snippets: usize,
+    pub max_snippet_chars: usize,
+    pub max_retrieval_tokens: usize,
+    pub max_pages: usize,
+    pub pro_beta_enabled: bool,
+}
+
+impl Default for WebSearchSettings {
+    fn default() -> Self {
+        Self {
+            default_mode: WebRetrievalDefaultMode::Lite,
+            max_snippets: 8,
+            max_snippet_chars: 420,
+            max_retrieval_tokens: 900,
+            max_pages: 5,
+            pro_beta_enabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalRagSettings {
+    pub beta_enabled: bool,
+    pub chunk_size_chars: usize,
+    pub chunk_overlap_chars: usize,
+    pub top_k: usize,
+    pub max_file_size_mb: usize,
+    pub max_context_chunks: usize,
+}
+
+impl Default for LocalRagSettings {
+    fn default() -> Self {
+        Self {
+            beta_enabled: false,
+            chunk_size_chars: 1200,
+            chunk_overlap_chars: 180,
+            top_k: 6,
+            max_file_size_mb: 20,
+            max_context_chunks: 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingsProviderSettings {
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub model: String,
+    pub timeout_ms: u64,
+}
+
+impl Default for EmbeddingsProviderSettings {
+    fn default() -> Self {
+        Self {
+            base_url: "http://127.0.0.1:11434/v1".to_string(),
+            api_key: None,
+            model: String::new(),
+            timeout_ms: 20_000,
+        }
+    }
+}
+
+impl EmbeddingsProviderSettings {
+    pub fn is_configured(&self) -> bool {
+        !self.base_url.trim().is_empty() && !self.model.trim().is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WebRagSettings {
+    pub web_search: WebSearchSettings,
+    pub local_rag: LocalRagSettings,
+    pub embeddings_provider: EmbeddingsProviderSettings,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettingsV2 {
     pub schema_version: u32,
@@ -231,6 +318,8 @@ pub struct AppSettingsV2 {
     pub chat_presets: ChatPresetSettings,
     pub privacy_data: PrivacyDataSettings,
     pub developer: DeveloperSettings,
+    #[serde(default)]
+    pub web_rag: WebRagSettings,
 }
 
 impl Default for AppSettingsV2 {
@@ -243,6 +332,7 @@ impl Default for AppSettingsV2 {
             chat_presets: ChatPresetSettings::default(),
             privacy_data: PrivacyDataSettings::default(),
             developer: DeveloperSettings::default(),
+            web_rag: WebRagSettings::default(),
         }
     }
 }
@@ -255,6 +345,7 @@ pub struct AppSettingsPatch {
     pub chat_presets: Option<ChatPresetSettings>,
     pub privacy_data: Option<PrivacyDataSettings>,
     pub developer: Option<DeveloperSettings>,
+    pub web_rag: Option<WebRagSettings>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,6 +358,7 @@ pub enum SettingsScope {
     ChatPresets,
     PrivacyData,
     Developer,
+    WebRag,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,6 +376,7 @@ pub struct DataLocations {
     pub settings_file: String,
     pub settings_backup_file: String,
     pub chat_db: String,
+    pub rag_db: String,
     pub legacy_thread_limit_file: String,
     pub legacy_runtime_file: String,
     pub legacy_experimental_file: String,
@@ -410,6 +503,9 @@ impl SettingsV2Store {
         if let Some(developer) = patch.developer {
             self.settings.developer = developer;
         }
+        if let Some(web_rag) = patch.web_rag {
+            self.settings.web_rag = web_rag;
+        }
 
         self.settings.schema_version = SETTINGS_V2_SCHEMA_VERSION;
         ensure_builtin_presets(&mut self.settings.chat_presets);
@@ -437,6 +533,7 @@ impl SettingsV2Store {
             SettingsScope::ChatPresets => self.settings.chat_presets = defaults.chat_presets,
             SettingsScope::PrivacyData => self.settings.privacy_data = defaults.privacy_data,
             SettingsScope::Developer => self.settings.developer = defaults.developer,
+            SettingsScope::WebRag => self.settings.web_rag = defaults.web_rag,
         }
         self.settings.schema_version = SETTINGS_V2_SCHEMA_VERSION;
         self.save()?;
@@ -473,6 +570,7 @@ impl SettingsV2Store {
                 .join("chat_history.db")
                 .to_string_lossy()
                 .to_string(),
+            rag_db: profile.join("rag_index.db").to_string_lossy().to_string(),
             legacy_thread_limit_file: profile
                 .join("thread_limit.json")
                 .to_string_lossy()
@@ -552,7 +650,10 @@ impl SettingsV2Store {
         let locations = self.data_locations(app)?;
         let mut cleared_files = Vec::new();
         let app_data = PathBuf::from(&locations.app_data_dir);
-        let downloads_history = app_data.join("oxide-lab").join("downloads").join("history.json");
+        let downloads_history = app_data
+            .join("oxide-lab")
+            .join("downloads")
+            .join("history.json");
         let legacy_download_manifest = app_data.join("oxide-lab").join("downloads_manifest.json");
 
         match scope {
@@ -694,6 +795,9 @@ pub fn openai_status_from_config(config: &OpenAiServerConfig, running: bool) -> 
 pub fn validate_settings(settings: &AppSettingsV2) -> Result<Vec<String>, String> {
     let mut warnings = Vec::new();
     let cfg = &settings.developer.openai_server;
+    let web = &settings.web_rag.web_search;
+    let local = &settings.web_rag.local_rag;
+    let embeddings = &settings.web_rag.embeddings_provider;
 
     if cfg.port < 1024 {
         return Err("OpenAI server port must be in range 1024..65535".to_string());
@@ -717,6 +821,44 @@ pub fn validate_settings(settings: &AppSettingsV2) -> Result<Vec<String>, String
 
     if settings.chat_presets.presets.is_empty() {
         warnings.push("No presets configured; restoring built-in presets".to_string());
+    }
+
+    if web.max_snippets == 0 || web.max_snippets > 25 {
+        return Err("web_rag.web_search.max_snippets must be between 1 and 25".to_string());
+    }
+    if web.max_pages == 0 || web.max_pages > 10 {
+        return Err("web_rag.web_search.max_pages must be between 1 and 10".to_string());
+    }
+    if web.max_retrieval_tokens < 64 {
+        return Err("web_rag.web_search.max_retrieval_tokens must be >= 64".to_string());
+    }
+    if local.chunk_overlap_chars >= local.chunk_size_chars {
+        return Err(
+            "web_rag.local_rag.chunk_overlap_chars must be smaller than chunk_size_chars"
+                .to_string(),
+        );
+    }
+    if local.top_k == 0 || local.top_k > 30 {
+        return Err("web_rag.local_rag.top_k must be between 1 and 30".to_string());
+    }
+    if embeddings.timeout_ms < 1000 || embeddings.timeout_ms > 180_000 {
+        return Err(
+            "web_rag.embeddings_provider.timeout_ms must be between 1000 and 180000".to_string(),
+        );
+    }
+    if !embeddings.base_url.trim().is_empty() {
+        let parsed = reqwest::Url::parse(&embeddings.base_url)
+            .map_err(|e| format!("Invalid embeddings base_url: {e}"))?;
+        match parsed.scheme() {
+            "http" | "https" => {}
+            _ => return Err("Embeddings base_url must use http or https".to_string()),
+        }
+    }
+    if (web.pro_beta_enabled || local.beta_enabled) && embeddings.model.trim().is_empty() {
+        warnings.push(
+            "Embeddings model is not configured; Search Pro/Local RAG will be unavailable"
+                .to_string(),
+        );
     }
 
     Ok(warnings)

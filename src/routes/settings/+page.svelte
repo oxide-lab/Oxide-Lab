@@ -18,6 +18,7 @@
     SettingsSectionModelsStorage,
     SettingsSectionPerformance,
     SettingsSectionPrivacyData,
+    SettingsSectionWebRag,
   } from '$lib/components/settings';
   import { settingsV2Store } from '$lib/stores/settings-v2';
   import { settingsSearchStore } from '$lib/stores/settings-search';
@@ -38,6 +39,7 @@
   import Engine from 'phosphor-svelte/lib/Engine';
   import Cpu from 'phosphor-svelte/lib/Cpu';
   import ChatsCircle from 'phosphor-svelte/lib/ChatsCircle';
+  import Globe from 'phosphor-svelte/lib/Globe';
   import Shield from 'phosphor-svelte/lib/Shield';
   import Code from 'phosphor-svelte/lib/Code';
   import Info from 'phosphor-svelte/lib/Info';
@@ -66,6 +68,7 @@
     { id: 'general', label: 'settings.v2.sections.general.title', icon: GearFine },
     { id: 'models_storage', label: 'settings.v2.sections.models_storage.title', icon: Cube },
     { id: 'chat_presets', label: 'settings.v2.sections.chat_presets.title', icon: ChatsCircle },
+    { id: 'web_rag', label: 'settings.v2.sections.web_rag.title', icon: Globe },
     { id: 'privacy_data', label: 'settings.v2.sections.privacy_data.title', icon: Shield },
     { id: 'developer', label: 'settings.v2.sections.developer.title', icon: Code },
     { id: 'about', label: 'settings.v2.sections.about.title', icon: Info },
@@ -379,6 +382,14 @@
                     transientNotice = $t('settings.v2.chat_presets.apply_later_notice');
                   }
                 }}
+              />
+            {/if}
+
+            {#if activeSection === 'web_rag'}
+              <SettingsSectionWebRag
+                value={$settings.web_rag}
+                highlightedSettingId={highlightedSettingId}
+                onChange={(next) => settings.updateSection('web_rag', next)}
               />
             {/if}
 

@@ -4,6 +4,17 @@
 
 export type Role = 'user' | 'assistant';
 
+export type RetrievalWebMode = 'off' | 'lite' | 'pro';
+
+export type RetrievalSource = {
+    source_type: string;
+    title: string;
+    url?: string | null;
+    path?: string | null;
+    snippet: string;
+    score?: number | null;
+};
+
 /**
  * File attachment for messages
  */
@@ -37,4 +48,6 @@ export type ChatMessage = {
     thinking?: string;
     isThinking?: boolean;
     attachments?: Attachment[];
+    sources?: RetrievalSource[];
+    retrievalWarnings?: string[];
 };

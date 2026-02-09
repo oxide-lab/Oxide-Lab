@@ -69,6 +69,38 @@ export interface DeveloperSettings {
   openai_server: OpenAiServerConfig;
 }
 
+export type WebRetrievalDefaultMode = 'off' | 'lite' | 'pro';
+
+export interface WebSearchSettings {
+  default_mode: WebRetrievalDefaultMode;
+  pro_beta_enabled: boolean;
+  max_snippets: number;
+  max_snippet_chars: number;
+  max_pages: number;
+  max_retrieval_tokens: number;
+}
+
+export interface LocalRagSettings {
+  beta_enabled: boolean;
+  top_k: number;
+  chunk_size_chars: number;
+  chunk_overlap_chars: number;
+  max_file_size_mb: number;
+}
+
+export interface EmbeddingsProviderSettings {
+  base_url: string;
+  api_key: string;
+  model: string;
+  timeout_ms: number;
+}
+
+export interface WebRagSettings {
+  web_search: WebSearchSettings;
+  local_rag: LocalRagSettings;
+  embeddings_provider: EmbeddingsProviderSettings;
+}
+
 export interface AppSettingsV2 {
   schema_version: number;
   general: GeneralSettings;
@@ -77,6 +109,7 @@ export interface AppSettingsV2 {
   chat_presets: ChatPresetSettings;
   privacy_data: PrivacyDataSettings;
   developer: DeveloperSettings;
+  web_rag: WebRagSettings;
 }
 
 export interface AppSettingsPatch {
@@ -86,6 +119,7 @@ export interface AppSettingsPatch {
   chat_presets?: ChatPresetSettings;
   privacy_data?: PrivacyDataSettings;
   developer?: DeveloperSettings;
+  web_rag?: WebRagSettings;
 }
 
 export type SettingsScope =
@@ -95,7 +129,8 @@ export type SettingsScope =
   | 'performance'
   | 'chat_presets'
   | 'privacy_data'
-  | 'developer';
+  | 'developer'
+  | 'web_rag';
 
 export interface SettingsApplyResult {
   applied: boolean;
@@ -110,6 +145,7 @@ export interface DataLocations {
   settings_file: string;
   settings_backup_file: string;
   chat_db: string;
+  rag_db: string;
   legacy_thread_limit_file: string;
   legacy_runtime_file: string;
   legacy_experimental_file: string;
@@ -147,6 +183,7 @@ export type SettingsSectionId =
   | 'performance'
   | 'hardware'
   | 'chat_presets'
+  | 'web_rag'
   | 'privacy_data'
   | 'developer'
   | 'about';

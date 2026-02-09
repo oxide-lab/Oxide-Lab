@@ -146,6 +146,16 @@ pub async fn generate_stream(
 
     let msgs = preflight_chat_messages(&req)?;
     req.messages = Some(msgs);
+    if let Err(err) =
+        crate::retrieval::orchestrator::apply_retrieval(&app, &state_arc, &mut req).await
+    {
+        let _ = app.emit(
+            "retrieval_warning",
+            crate::retrieval::types::RetrievalWarningEvent {
+                message: format!("Retrieval pipeline failed: {err}"),
+            },
+        );
+    }
     let result = manager.chat_stream(&app, &chat_session, req).await;
     drop(acquired.lease);
     result

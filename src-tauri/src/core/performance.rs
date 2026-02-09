@@ -314,7 +314,9 @@ impl ModelLoadTracker {
                 .get(idx + 1)
                 .map(|(_, next_start)| *next_start)
                 .unwrap_or(finished_at);
-            let stage_duration = stage_end.saturating_duration_since(*stage_start).as_millis() as u64;
+            let stage_duration = stage_end
+                .saturating_duration_since(*stage_start)
+                .as_millis() as u64;
             load_stages.push(LoadStage {
                 name: stage_name.clone(),
                 duration_ms: stage_duration,

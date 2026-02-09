@@ -300,8 +300,7 @@ fn normalize_sha256(raw: &str) -> Result<String, String> {
 }
 
 fn sanitize_download_url(repo_id: &str, filename: &str, url: &str) -> Result<(), String> {
-    let parsed =
-        reqwest::Url::parse(url).map_err(|e| format!("Download URL is invalid: {e}"))?;
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("Download URL is invalid: {e}"))?;
     if parsed.scheme() != "https" {
         return Err("Download URL must use https scheme".to_string());
     }
@@ -691,7 +690,11 @@ async fn init_job(
 ) -> Result<DownloadJob, String> {
     sanitize_download_url(&request.repo_id, &filename, &request.download_url)?;
     let destination_dir = PathBuf::from(&request.destination_dir);
-    let sha256 = request.sha256.as_deref().map(normalize_sha256).transpose()?;
+    let sha256 = request
+        .sha256
+        .as_deref()
+        .map(normalize_sha256)
+        .transpose()?;
 
     Ok(DownloadJob {
         id: job_id.to_string(),

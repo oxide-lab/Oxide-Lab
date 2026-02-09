@@ -276,6 +276,8 @@ pub struct GenerateRequest {
     pub stop_sequences: Option<Vec<String>>,
     #[serde(default)]
     pub tool_choice: Option<ToolChoice>,
+    #[serde(default)]
+    pub retrieval: Option<crate::retrieval::types::RetrievalRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -29,6 +29,7 @@
   import { cn } from '../../utils';
   import { t } from '$lib/i18n';
   import { chatState } from '$lib/stores/chat';
+  import type { RetrievalWebMode } from '$lib/chat/types';
 
   type AttachDetail = {
     filename: string;
@@ -55,6 +56,11 @@
     busy?: boolean;
     isLoaded?: boolean;
     canStop?: boolean;
+    retrievalMode?: RetrievalWebMode;
+    retrievalLocalEnabled?: boolean;
+    retrievalProEnabled?: boolean;
+    retrievalLocalBetaEnabled?: boolean;
+    retrievalEmbeddingsConfigured?: boolean;
     supports_text?: boolean;
     supports_image?: boolean;
     supports_audio?: boolean;
@@ -64,6 +70,8 @@
     hasMessages?: boolean;
     onSend?: () => void;
     onStop?: () => void;
+    onRetrievalModeChange?: (mode: RetrievalWebMode) => void;
+    onRetrievalLocalToggle?: (enabled: boolean) => void;
     onClear?: () => void;
     onAttach?: (detail: AttachDetail) => void;
     onToggleLoaderPanel?: () => void;
@@ -75,6 +83,11 @@
     busy = false,
     isLoaded = false,
     canStop = false,
+    retrievalMode = 'lite',
+    retrievalLocalEnabled = false,
+    retrievalProEnabled = false,
+    retrievalLocalBetaEnabled = false,
+    retrievalEmbeddingsConfigured = false,
     supports_text = true,
     supports_image = false,
     supports_audio: _supports_audio = false,
@@ -84,6 +97,8 @@
     hasMessages = false,
     onSend,
     onStop,
+    onRetrievalModeChange,
+    onRetrievalLocalToggle,
     onClear,
     onAttach,
     onToggleLoaderPanel,
@@ -99,6 +114,14 @@
   // Build accept string for file input
   const accept = $derived(buildAccept());
   const sendDisabled = $derived(!isLoaded || (!busy && !prompt.trim()));
+  const proDisabled = $derived(!retrievalProEnabled || !retrievalEmbeddingsConfigured);
+  const proDisabledReason = $derived(
+    !retrievalProEnabled
+      ? 'Search Pro is disabled in settings'
+      : !retrievalEmbeddingsConfigured
+        ? 'Configure embeddings provider in settings first'
+        : '',
+  );
 
   function buildAccept() {
     const extensions: string[] = [];
@@ -171,6 +194,17 @@
       console.warn('AttachmentsContext not ready');
     }
   }
+
+  function setRetrievalMode(mode: RetrievalWebMode) {
+    if (busy) return;
+    if (mode === 'pro' && proDisabled) return;
+    onRetrievalModeChange?.(mode);
+  }
+
+  function toggleLocalRetrieval() {
+    if (busy) return;
+    onRetrievalLocalToggle?.(!retrievalLocalEnabled);
+  }
 </script>
 
 <UrlFetchModal bind:open={showUrlFetchModal} onfiles={handleUrlFiles} />
@@ -206,6 +240,66 @@
       <!-- Toolbar -->
       <div class="flex justify-between items-center gap-2 p-2">
         <PromptInputTools class="flex gap-0">
+          <div class="flex items-center gap-1 rounded-full border border-border/80 bg-muted/35 px-1 py-1 mr-1 overflow-x-auto">
+            <button
+              type="button"
+              class={cn(
+                'h-7 rounded-full px-2 text-xs transition-colors',
+                retrievalMode === 'off'
+                  ? 'bg-background text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              disabled={busy || !isLoaded}
+              onclick={() => setRetrievalMode('off')}
+            >
+              Off
+            </button>
+            <button
+              type="button"
+              class={cn(
+                'h-7 rounded-full px-2 text-xs transition-colors',
+                retrievalMode === 'lite'
+                  ? 'bg-background text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              disabled={busy || !isLoaded}
+              onclick={() => setRetrievalMode('lite')}
+            >
+              Lite
+            </button>
+            <button
+              type="button"
+              class={cn(
+                'h-7 rounded-full px-2 text-xs transition-colors',
+                retrievalMode === 'pro'
+                  ? 'bg-background text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+                proDisabled && 'cursor-not-allowed opacity-50',
+              )}
+              title={proDisabledReason}
+              disabled={busy || !isLoaded || proDisabled}
+              onclick={() => setRetrievalMode('pro')}
+            >
+              Pro
+            </button>
+            {#if retrievalLocalBetaEnabled}
+              <button
+                type="button"
+                class={cn(
+                  'h-7 rounded-full px-2 text-xs transition-colors',
+                  retrievalLocalEnabled
+                    ? 'bg-background text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                disabled={busy || !isLoaded || !retrievalEmbeddingsConfigured}
+                title={!retrievalEmbeddingsConfigured ? 'Configure embeddings provider in settings first' : ''}
+                onclick={toggleLocalRetrieval}
+              >
+                Local
+              </button>
+            {/if}
+          </div>
+
           <!-- Attach button -->
           <PromptInputButton
             onclick={() => attachmentsContext?.openFileDialog()}

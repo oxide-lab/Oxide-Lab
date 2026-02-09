@@ -7,6 +7,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import type { ChatMessage } from './chat';
+import type { RetrievalSource } from '$lib/chat/types';
 
 const DB_NAME = 'sqlite:chat_history.db';
 
@@ -26,6 +27,7 @@ export type DbMessage = {
     role: string;
     content: string;
     thinking: string;
+    sources_json: string;
     created_at: number;
 };
 
@@ -63,10 +65,21 @@ async function getDb() {
 }
 
 function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
+    let sources: RetrievalSource[] = [];
+    try {
+        const parsed = JSON.parse(msg.sources_json || '[]');
+        if (Array.isArray(parsed)) {
+            sources = parsed as RetrievalSource[];
+        }
+    } catch {
+        sources = [];
+    }
+
     return {
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
         thinking: msg.thinking || undefined,
+        sources,
     };
 }
 
@@ -151,7 +164,7 @@ function createChatHistoryStore() {
             try {
                 const db = await getDb();
                 const messages = await db.select<DbMessage[]>(
-                    'SELECT id, session_id, role, content, thinking, created_at FROM messages WHERE session_id = ? ORDER BY id ASC',
+                    'SELECT id, session_id, role, content, thinking, sources_json, created_at FROM messages WHERE session_id = ? ORDER BY id ASC',
                     [sessionId],
                 );
 
@@ -178,8 +191,15 @@ function createChatHistoryStore() {
             try {
                 const db = await getDb();
                 await db.execute(
-                    'INSERT INTO messages (session_id, role, content, thinking, created_at) VALUES (?, ?, ?, ?, ?)',
-                    [targetSessionId, message.role, message.content, message.thinking ?? '', now],
+                    'INSERT INTO messages (session_id, role, content, thinking, sources_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    [
+                        targetSessionId,
+                        message.role,
+                        message.content,
+                        message.thinking ?? '',
+                        JSON.stringify(message.sources ?? []),
+                        now,
+                    ],
                 );
                 await db.execute('UPDATE sessions SET updated_at = ? WHERE id = ?', [
                     now,
@@ -222,13 +242,18 @@ function createChatHistoryStore() {
             });
         },
 
-        updateLastMessage: async (sessionId: string, content: string, thinking?: string) => {
+        updateLastMessage: async (
+            sessionId: string,
+            content: string,
+            thinking?: string,
+            sources?: RetrievalSource[],
+        ) => {
             try {
                 const db = await getDb();
                 await db.execute(
-                    `UPDATE messages SET content = ?, thinking = ? 
+                    `UPDATE messages SET content = ?, thinking = ?, sources_json = ?
                      WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ?)`,
-                    [content, thinking ?? '', sessionId],
+                    [content, thinking ?? '', JSON.stringify(sources ?? []), sessionId],
                 );
             } catch (err) {
                 console.error('Failed to update last message in DB:', err);
@@ -242,6 +267,7 @@ function createChatHistoryStore() {
                             ...msgs[msgs.length - 1],
                             content,
                             thinking: thinking ?? msgs[msgs.length - 1].thinking,
+                            sources: sources ?? msgs[msgs.length - 1].sources,
                         };
                         return { ...sess, messages: msgs };
                     }
@@ -272,19 +298,42 @@ function createChatHistoryStore() {
             });
         },
 
-        saveAssistantMessage: async (sessionId: string, content: string, thinking?: string) => {
+        saveAssistantMessage: async (
+            sessionId: string,
+            content: string,
+            thinking?: string,
+            sources?: RetrievalSource[],
+            retrievalWarnings?: string[],
+        ) => {
             try {
                 const db = await getDb();
                 const now = Date.now();
                 await db.execute(
-                    `UPDATE messages SET content = ?, thinking = ? 
+                    `UPDATE messages SET content = ?, thinking = ?, sources_json = ?
                      WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ?)`,
-                    [content, thinking ?? '', sessionId],
+                    [content, thinking ?? '', JSON.stringify(sources ?? []), sessionId],
                 );
                 await db.execute('UPDATE sessions SET updated_at = ? WHERE id = ?', [now, sessionId]);
             } catch (err) {
                 console.error('Failed to save assistant message:', err);
             }
+
+            update((s) => {
+                const sessions = s.sessions.map((sess) => {
+                    if (sess.id !== sessionId || sess.messages.length === 0) return sess;
+                    const msgs = [...sess.messages];
+                    const lastIndex = msgs.length - 1;
+                    msgs[lastIndex] = {
+                        ...msgs[lastIndex],
+                        content,
+                        thinking: thinking ?? msgs[lastIndex].thinking,
+                        sources: sources ?? msgs[lastIndex].sources,
+                        retrievalWarnings: retrievalWarnings ?? msgs[lastIndex].retrievalWarnings,
+                    };
+                    return { ...sess, messages: msgs, updatedAt: Date.now() };
+                });
+                return { ...s, sessions };
+            });
         },
 
         truncateMessages: async (sessionId: string, keepCount: number) => {

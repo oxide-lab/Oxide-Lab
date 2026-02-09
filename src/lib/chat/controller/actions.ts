@@ -340,12 +340,25 @@ export function createActions(ctx: ChatControllerCtx) {
         await chatHistory.addMessage({ role: 'user', content: text });
 
         // Add empty assistant message to DB (will be updated by listener on stream end)
-        await chatHistory.addMessage({ role: 'assistant', content: '', thinking: '' });
+        await chatHistory.addMessage({
+            role: 'assistant',
+            content: '',
+            thinking: '',
+            sources: [],
+            retrievalWarnings: [],
+        });
 
         // Update local context
         const msgs = ctx.messages;
         msgs.push({ role: 'user', content: text });
-        msgs.push({ role: 'assistant', content: '', thinking: '', isThinking: false });
+        msgs.push({
+            role: 'assistant',
+            content: '',
+            thinking: '',
+            isThinking: false,
+            sources: [],
+            retrievalWarnings: [],
+        });
         ctx.messages = msgs;
 
         ctx.prompt = '';
@@ -400,6 +413,14 @@ export function createActions(ctx: ChatControllerCtx) {
                     split_prompt: !!ctx.split_prompt,
                     verbose_prompt: !!ctx.verbose_prompt,
                     tracing: !!ctx.tracing,
+                    retrieval: {
+                        web: {
+                            mode: ctx.retrieval_web_mode,
+                        },
+                        local: {
+                            enabled: ctx.retrieval_local_enabled,
+                        },
+                    },
                 },
             });
         } catch (e) {
@@ -435,7 +456,13 @@ export function createActions(ctx: ChatControllerCtx) {
                 const msgs = ctx.messages;
                 const last = msgs[msgs.length - 1];
                 if (last && last.role === 'assistant' && last.content) {
-                    await chatHistory.saveAssistantMessage(state.currentSessionId, last.content);
+                    await chatHistory.saveAssistantMessage(
+                        state.currentSessionId,
+                        last.content,
+                        last.thinking,
+                        last.sources ?? [],
+                        last.retrievalWarnings ?? [],
+                    );
                 }
             }
         } catch (err) {
@@ -477,11 +504,25 @@ export function createActions(ctx: ChatControllerCtx) {
             // Update the edited message content
             await chatHistory.updateLastMessage(historyState.currentSessionId, newContent);
             // Add new empty assistant message
-            await chatHistory.addMessage({ role: 'assistant', content: '', thinking: '' });
+            await chatHistory.addMessage({
+                role: 'assistant',
+                content: '',
+                thinking: '',
+                sources: [],
+                retrievalWarnings: [],
+            });
         }
 
         // Add empty assistant message for the new response
-        msgs.push({ role: 'assistant', content: '', html: '', thinking: '', isThinking: false });
+        msgs.push({
+            role: 'assistant',
+            content: '',
+            html: '',
+            thinking: '',
+            isThinking: false,
+            sources: [],
+            retrievalWarnings: [],
+        });
         ctx.messages = msgs;
 
         await generateFromHistoryWithIndex(editIndex);
@@ -527,11 +568,25 @@ export function createActions(ctx: ChatControllerCtx) {
             // Truncate in DB (keep messages up to userIndex + 1)
             await chatHistory.truncateMessages(historyState.currentSessionId, userIndex + 1);
             // Add new empty assistant message
-            await chatHistory.addMessage({ role: 'assistant', content: '', thinking: '' });
+            await chatHistory.addMessage({
+                role: 'assistant',
+                content: '',
+                thinking: '',
+                sources: [],
+                retrievalWarnings: [],
+            });
         }
 
         // Add empty assistant message for the new response
-        msgs.push({ role: 'assistant', content: '', html: '', thinking: '', isThinking: false });
+        msgs.push({
+            role: 'assistant',
+            content: '',
+            html: '',
+            thinking: '',
+            isThinking: false,
+            sources: [],
+            retrievalWarnings: [],
+        });
         ctx.messages = msgs;
 
         await generateFromHistoryWithIndex(userIndex);
@@ -576,6 +631,14 @@ export function createActions(ctx: ChatControllerCtx) {
                     verbose_prompt: !!ctx.verbose_prompt,
                     tracing: !!ctx.tracing,
                     edit_index: editIndex,
+                    retrieval: {
+                        web: {
+                            mode: ctx.retrieval_web_mode,
+                        },
+                        local: {
+                            enabled: ctx.retrieval_local_enabled,
+                        },
+                    },
                 },
             });
         } catch (e) {

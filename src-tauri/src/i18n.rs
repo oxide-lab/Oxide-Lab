@@ -194,6 +194,9 @@ mod tests {
         assert_eq!(t("error.model.load_failed"), "Не удалось загрузить модель");
         assert_eq!(t("missing.key"), "missing.key");
         set_locale(Locale::PtBr);
-        assert_eq!(t("error.settings.save_failed"), "Falha ao salvar configurações");
+        assert_eq!(
+            t("error.settings.save_failed"),
+            "Falha ao salvar configurações"
+        );
     }
 }
