@@ -41,10 +41,28 @@ export class AttachmentsContext {
 		if (!this.accept || this.accept.trim() === "") {
 			return true;
 		}
-		if (this.accept.includes("image/*")) {
-			return file.type.startsWith("image/");
+		const rules = this.accept
+			.split(",")
+			.map((value) => value.trim().toLowerCase())
+			.filter(Boolean);
+		if (!rules.length) {
+			return true;
 		}
-		return true;
+		const fileName = file.name.toLowerCase();
+		const fileType = (file.type || "").toLowerCase();
+		for (const rule of rules) {
+			if (rule.startsWith(".")) {
+				if (fileName.endsWith(rule)) return true;
+				continue;
+			}
+			if (rule.endsWith("/*")) {
+				const prefix = rule.slice(0, -1);
+				if (fileType.startsWith(prefix)) return true;
+				continue;
+			}
+			if (fileType === rule) return true;
+		}
+		return false;
 	};
 
 	add = (files: File[] | FileList) => {

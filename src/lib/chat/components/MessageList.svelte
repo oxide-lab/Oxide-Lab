@@ -65,15 +65,13 @@
     </p>
   </ConversationEmptyState>
 {:else}
-  <div class="flex flex-col gap-4 sm:gap-6 lg:gap-8 py-6 sm:py-8">
+  <div class="flex flex-col gap-4 py-4">
     {#each messages as m, i (i)}
       {@const isAssistant = m.role === 'assistant'}
       {@const isLastMessage = i === messages.length - 1}
       {@const isStreaming = isLastMessage && isAssistant && $chatState.busy}
 
-      <div
-        class="w-full mx-auto px-3 sm:px-4 md:px-6 max-w-2xl lg:max-w-3xl xl:max-w-4xl"
-      >
+      <div class="w-full mx-auto px-3 sm:px-4 md:px-6 max-w-2xl lg:max-w-3xl xl:max-w-4xl">
         {#if isAssistant}
           <AssistantMessage
             message={m}
@@ -83,12 +81,7 @@
             onRegenerate={handleRegenerate}
           />
         {:else}
-          <UserMessage
-            message={m}
-            index={i}
-            onCopy={handleCopy}
-            onEdit={handleEdit}
-          />
+          <UserMessage message={m} index={i} onCopy={handleCopy} onEdit={handleEdit} />
         {/if}
       </div>
     {/each}

@@ -16,6 +16,7 @@ export type ChatPersistedState = {
     repoId: string;
     revision: string;
     hubGgufFilename: string;
+    mmprojPath: string;
     format: 'gguf' | 'hub_gguf';
     pendingModelPath: string;
     pendingFormat: 'gguf' | 'hub_gguf';
@@ -78,6 +79,7 @@ export function getDefaultChatState(): ChatPersistedState {
         repoId: '',
         revision: '',
         hubGgufFilename: '',
+        mmprojPath: '',
         format: 'gguf',
         pendingModelPath: '',
         pendingFormat: 'gguf',

@@ -10,6 +10,27 @@ import { buildPromptWithChatTemplate } from '$lib/chat/prompts';
 import { get } from 'svelte/store';
 import { t } from '$lib/i18n';
 import { chatState } from '$lib/stores/chat';
+import type { Attachment as UiAttachment } from '$lib/chat/types';
+
+type ComposerFile = {
+    url?: string;
+    mediaType?: string;
+    filename?: string;
+};
+
+type SendPayload = {
+    text?: string;
+    files?: ComposerFile[];
+};
+
+type BackendAttachment = {
+    kind?: string | null;
+    mime?: string | null;
+    name?: string | null;
+    path?: string | null;
+    bytes_b64?: string | null;
+    size?: number | null;
+};
 
 export function createActions(ctx: ChatControllerCtx) {
     const stream = createStreamListener(ctx);
@@ -21,6 +42,39 @@ export function createActions(ctx: ChatControllerCtx) {
                 role: m.role,
                 content: m.content ?? '',
             }));
+    }
+
+    function uiToBackendAttachments(attachments: UiAttachment[] | undefined): BackendAttachment[] {
+        if (!attachments || attachments.length === 0) return [];
+        return attachments.map((attachment) => ({
+            kind: attachment.kind ?? null,
+            mime: attachment.mimeType ?? null,
+            name: attachment.filename ?? null,
+            path: attachment.path ?? null,
+            bytes_b64: attachment.data ?? null,
+            size: attachment.size ?? null,
+        }));
+    }
+
+    function backendToUiAttachments(attachments: BackendAttachment[] | undefined): UiAttachment[] {
+        if (!attachments || attachments.length === 0) return [];
+        return attachments.map((attachment) => ({
+            filename: attachment.name ?? 'attachment',
+            data: attachment.bytes_b64 ?? '',
+            mimeType: attachment.mime ?? 'application/octet-stream',
+            path: attachment.path ?? undefined,
+            kind: attachment.kind ?? undefined,
+            size: typeof attachment.size === 'number' ? attachment.size : undefined,
+        }));
+    }
+
+    function latestUserAttachments(messages: typeof ctx.messages): BackendAttachment[] {
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+            const message = messages[i];
+            if (message.role !== 'user') continue;
+            return uiToBackendAttachments(message.attachments);
+        }
+        return [];
     }
 
     function normalizedRetrievalUrls(): string[] {
@@ -150,12 +204,6 @@ export function createActions(ctx: ChatControllerCtx) {
         }
     }
 
-    // Attachment handler (currently disabled)
-    async function _handleAttachFile(_payload: { filename: string; content: string }) {
-        // Attachments are not added to prompt in current implementation
-        return;
-    }
-
     async function refreshDeviceInfo() {
         try {
             // TODO: Integrate with Tauri backend
@@ -259,6 +307,7 @@ export function createActions(ctx: ChatControllerCtx) {
                         format: 'gguf',
                         model_path: ctx.modelPath,
                         tokenizer_path: null,
+                        mmproj_path: ctx.mmprojPath?.trim() ? ctx.mmprojPath.trim() : null,
                         context_length,
                         device: ctx.use_gpu ? { kind: 'cuda', index: 0 } : { kind: 'cpu' },
                     },
@@ -277,6 +326,7 @@ export function createActions(ctx: ChatControllerCtx) {
                         repo_id: ctx.repoId,
                         revision: ctx.revision || null,
                         filename: ctx.hubGgufFilename,
+                        mmproj_path: ctx.mmprojPath?.trim() ? ctx.mmprojPath.trim() : null,
                         context_length,
                         device: ctx.use_gpu ? { kind: 'cuda', index: 0 } : { kind: 'cpu' },
                     },
@@ -365,9 +415,10 @@ export function createActions(ctx: ChatControllerCtx) {
         }
     }
 
-    async function handleSend() {
-        const text = ctx.prompt.trim();
-        if (!text || ctx.busy) return;
+    async function handleSend(payload?: SendPayload) {
+        const text = (payload?.text ?? ctx.prompt).trim();
+        const hasFiles = (payload?.files ?? []).some((file) => file.filename && file.url);
+        if ((!text && !hasFiles) || ctx.busy) return;
 
         // Check both ctx.isLoaded and chatState for model loaded status
         // (ctx.isLoaded may not update due to Svelte 5 reactivity issues with getter/setter pattern)
@@ -382,20 +433,44 @@ export function createActions(ctx: ChatControllerCtx) {
             return;
         }
 
-        const canContinue = await resolveUrlCandidatesBeforeSend(text);
-        if (!canContinue) return;
+        if (text) {
+            const canContinue = await resolveUrlCandidatesBeforeSend(text);
+            if (!canContinue) return;
+        }
 
         // Add user message to database
         const { chatHistory } = await import('$lib/stores/chat-history');
+        const { invoke } = await import('@tauri-apps/api/core');
 
         // Create session if none exists
-        const state = get(chatHistory);
+        let state = get(chatHistory);
         if (!state.currentSessionId) {
             await chatHistory.createSession(ctx.modelPath, ctx.repoId);
+            state = get(chatHistory);
         }
 
+        const rawAttachments: BackendAttachment[] = (payload?.files ?? [])
+            .filter((file) => file.filename && file.url)
+            .map((file) => ({
+                name: file.filename ?? null,
+                mime: file.mediaType ?? null,
+                bytes_b64: file.url ?? null,
+            }));
+
+        let persistedAttachments: BackendAttachment[] = [];
+        if (rawAttachments.length > 0) {
+            if (!state.currentSessionId) {
+                throw new Error('Missing current session id for attachment persistence');
+            }
+            persistedAttachments = await invoke<BackendAttachment[]>('persist_chat_attachments', {
+                sessionId: state.currentSessionId,
+                attachments: rawAttachments,
+            });
+        }
+        const uiAttachments = backendToUiAttachments(persistedAttachments);
+
         // Save user message to DB
-        await chatHistory.addMessage({ role: 'user', content: text });
+        await chatHistory.addMessage({ role: 'user', content: text, attachments: uiAttachments });
 
         // Add empty assistant message to DB (will be updated by listener on stream end)
         await chatHistory.addMessage({
@@ -408,7 +483,7 @@ export function createActions(ctx: ChatControllerCtx) {
 
         // Update local context
         const msgs = ctx.messages;
-        msgs.push({ role: 'user', content: text });
+        msgs.push({ role: 'user', content: text, attachments: uiAttachments });
         msgs.push({
             role: 'assistant',
             content: '',
@@ -437,6 +512,7 @@ export function createActions(ctx: ChatControllerCtx) {
                     : msgs.slice();
 
             const chatPrompt = await buildPromptWithChatTemplate(hist);
+            const attachments = latestUserAttachments(hist);
 
             console.log('[infer] frontend params', {
                 use_custom_params: ctx.use_custom_params,
@@ -456,6 +532,7 @@ export function createActions(ctx: ChatControllerCtx) {
                 req: {
                     prompt: chatPrompt,
                     messages: toBackendMessages(hist),
+                    attachments: attachments.length > 0 ? attachments : null,
                     use_custom_params: ctx.use_custom_params,
                     temperature: ctx.use_custom_params && ctx.temperature_enabled ? ctx.temperature : null,
                     top_p: ctx.use_custom_params && ctx.top_p_enabled
@@ -673,12 +750,14 @@ export function createActions(ctx: ChatControllerCtx) {
                     : msgs.slice();
 
             const chatPrompt = await buildPromptWithChatTemplate(hist);
+            const attachments = latestUserAttachments(hist);
 
             const { invoke } = await import('@tauri-apps/api/core');
             await invoke('generate_stream', {
                 req: {
                     prompt: chatPrompt,
                     messages: toBackendMessages(hist),
+                    attachments: attachments.length > 0 ? attachments : null,
                     use_custom_params: ctx.use_custom_params,
                     temperature: ctx.use_custom_params && ctx.temperature_enabled ? ctx.temperature : null,
                     top_p: ctx.use_custom_params && ctx.top_p_enabled
@@ -756,7 +835,6 @@ export function createActions(ctx: ChatControllerCtx) {
         handleSend,
         handleEdit,
         handleRegenerate,
-        handleAttachFile: _handleAttachFile,
         generateFromHistory,
         stopGenerate,
         pickModel,

@@ -187,6 +187,7 @@ mod tests {
                 engine_id: crate::inference::engine::EngineId::Llamacpp,
                 model_id: "model".to_string(),
                 model_path: "m.gguf".to_string(),
+                mmproj_path: None,
                 pid: 1,
                 port: 1111,
                 api_key: "k".to_string(),

@@ -1,5 +1,7 @@
 use super::error::ApiError;
 use super::types::ExtraFields;
+use crate::core::modality::ModalitySupport;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -127,11 +129,18 @@ impl ResponsesRequest {
         self.stream.unwrap_or(false)
     }
 
-    pub fn to_chat_payload(&self, stream: bool) -> Result<Value, ApiError> {
+    pub fn to_chat_payload(
+        &self,
+        stream: bool,
+        modalities: &ModalitySupport,
+    ) -> Result<Value, ApiError> {
         let mut map = Map::<String, Value>::new();
         map.insert("model".to_string(), Value::String(self.model.clone()));
         map.insert("stream".to_string(), Value::Bool(stream));
-        map.insert("messages".to_string(), Value::Array(build_messages(self)?));
+        map.insert(
+            "messages".to_string(),
+            Value::Array(build_messages(self, modalities)?),
+        );
 
         if let Some(v) = self.max_output_tokens {
             map.insert("max_tokens".to_string(), json!(v));
@@ -497,7 +506,10 @@ pub fn to_non_stream_response(
     })
 }
 
-fn build_messages(req: &ResponsesRequest) -> Result<Vec<Value>, ApiError> {
+fn build_messages(
+    req: &ResponsesRequest,
+    modalities: &ModalitySupport,
+) -> Result<Vec<Value>, ApiError> {
     let mut messages = Vec::<Value>::new();
     if let Some(instructions) = &req.instructions
         && !instructions.trim().is_empty()
@@ -532,9 +544,9 @@ fn build_messages(req: &ResponsesRequest) -> Result<Vec<Value>, ApiError> {
                             .to_string();
                         let content = obj
                             .get("content")
-                            .map(extract_text_content)
+                            .map(|value| extract_content_value(value, modalities))
                             .transpose()?
-                            .unwrap_or_default();
+                            .unwrap_or_else(|| Value::String(String::new()));
                         messages.push(json!({
                             "role": role,
                             "content": content
@@ -598,11 +610,63 @@ fn build_messages(req: &ResponsesRequest) -> Result<Vec<Value>, ApiError> {
     Ok(messages)
 }
 
-fn extract_text_content(content: &Value) -> Result<String, ApiError> {
+fn guess_mime_from_path(path: &std::path::Path, fallback: &str) -> String {
+    let ext = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png".to_string(),
+        "jpg" | "jpeg" => "image/jpeg".to_string(),
+        "webp" => "image/webp".to_string(),
+        "gif" => "image/gif".to_string(),
+        "bmp" => "image/bmp".to_string(),
+        "svg" => "image/svg+xml".to_string(),
+        "wav" => "audio/wav".to_string(),
+        "mp3" => "audio/mpeg".to_string(),
+        "m4a" => "audio/mp4".to_string(),
+        "ogg" => "audio/ogg".to_string(),
+        "mp4" => "video/mp4".to_string(),
+        "webm" => "video/webm".to_string(),
+        "mov" => "video/quicktime".to_string(),
+        "mkv" => "video/x-matroska".to_string(),
+        _ => fallback.to_string(),
+    }
+}
+
+fn normalize_media_url(
+    raw: &str,
+    mime_hint: Option<&str>,
+    fallback_mime: &str,
+    param: &str,
+) -> Result<String, ApiError> {
+    if raw.starts_with("data:") {
+        return Ok(raw.to_string());
+    }
+    let lower = raw.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        return Err(ApiError::invalid_request(
+            "remote media URLs are not supported, use local path or data URL",
+            param,
+        ));
+    }
+
+    let bytes = std::fs::read(raw)
+        .map_err(|_| ApiError::invalid_request("failed to read local media file path", param))?;
+    let mime = mime_hint
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| guess_mime_from_path(std::path::Path::new(raw), fallback_mime));
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
+}
+
+fn extract_content_value(content: &Value, modalities: &ModalitySupport) -> Result<Value, ApiError> {
     match content {
-        Value::String(s) => Ok(s.clone()),
+        Value::String(s) => Ok(Value::String(s.clone())),
         Value::Array(parts) => {
-            let mut out = String::new();
+            let mut out_parts = Vec::<Value>::new();
             for p in parts {
                 let obj = p.as_object().ok_or_else(|| {
                     ApiError::invalid_request("content items must be objects", "input.content")
@@ -611,19 +675,75 @@ fn extract_text_content(content: &Value) -> Result<String, ApiError> {
                 match part_type {
                     "input_text" | "output_text" | "text" => {
                         if let Some(t) = obj.get("text").and_then(Value::as_str) {
-                            out.push_str(t);
+                            out_parts.push(json!({
+                                "type": "text",
+                                "text": t,
+                            }));
                         }
                     }
                     "input_image" => {
-                        return Err(ApiError::not_implemented(
-                            "input_image in /v1/responses is not supported in current backend",
-                            "input.content",
-                        ));
+                        if !modalities.image {
+                            return Err(ApiError::invalid_request(
+                                "input_image is not supported by current model/backend",
+                                "input.content",
+                            ));
+                        }
+                        let source = if let Some(v) = obj.get("image_url").and_then(Value::as_str) {
+                            v.to_string()
+                        } else if let Some(v) = obj
+                            .get("image_url")
+                            .and_then(Value::as_object)
+                            .and_then(|v| v.get("url"))
+                            .and_then(Value::as_str)
+                        {
+                            v.to_string()
+                        } else if let Some(v) = obj.get("url").and_then(Value::as_str) {
+                            v.to_string()
+                        } else {
+                            return Err(ApiError::invalid_request(
+                                "input_image must include image_url/url",
+                                "input.content",
+                            ));
+                        };
+                        let mime_hint = obj
+                            .get("mime_type")
+                            .and_then(Value::as_str)
+                            .or_else(|| obj.get("mime").and_then(Value::as_str));
+                        let normalized =
+                            normalize_media_url(&source, mime_hint, "image/png", "input.content")?;
+                        out_parts.push(json!({
+                            "type": "image_url",
+                            "image_url": { "url": normalized }
+                        }));
+                    }
+                    "input_audio" => {
+                        if !modalities.audio {
+                            return Err(ApiError::invalid_request(
+                                "input_audio is not supported by current model/backend",
+                                "input.content",
+                            ));
+                        }
+                    }
+                    "input_video" => {
+                        if !modalities.video {
+                            return Err(ApiError::invalid_request(
+                                "input_video is not supported by current model/backend",
+                                "input.content",
+                            ));
+                        }
                     }
                     _ => {}
                 }
             }
-            Ok(out)
+            if out_parts.is_empty() {
+                return Ok(Value::String(String::new()));
+            }
+            if out_parts.len() == 1
+                && let Some(text) = out_parts[0].get("text").and_then(Value::as_str)
+            {
+                return Ok(Value::String(text.to_string()));
+            }
+            Ok(Value::Array(out_parts))
         }
         _ => Err(ApiError::invalid_request(
             "content must be string or array",
@@ -642,6 +762,7 @@ fn now_unix() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::modality::ModalitySupport;
 
     #[test]
     fn responses_stream_event_order() {
@@ -672,5 +793,38 @@ mod tests {
                 "response.completed",
             ]
         );
+    }
+
+    #[test]
+    fn extract_content_value_maps_input_image_to_image_url() {
+        let modalities = ModalitySupport {
+            text: true,
+            image: true,
+            audio: false,
+            video: false,
+        };
+        let content = json!([
+            {"type":"input_text","text":"look"},
+            {"type":"input_image","image_url":"data:image/png;base64,AAAA"}
+        ]);
+        let out = extract_content_value(&content, &modalities).expect("content");
+        let parts = out.as_array().expect("parts");
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[1].get("type"), Some(&json!("image_url")));
+    }
+
+    #[test]
+    fn extract_content_value_rejects_remote_input_image() {
+        let modalities = ModalitySupport {
+            text: true,
+            image: true,
+            audio: false,
+            video: false,
+        };
+        let content = json!([
+            {"type":"input_image","image_url":"https://example.com/cat.png"}
+        ]);
+        let err = extract_content_value(&content, &modalities).expect_err("must fail");
+        assert_eq!(err.error_type, "invalid_request_error");
     }
 }

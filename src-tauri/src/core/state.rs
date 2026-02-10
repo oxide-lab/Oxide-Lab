@@ -25,6 +25,7 @@ pub struct ModelState {
     pub(crate) backend_preference: BackendPreference,
     pub(crate) active_backend: ActiveBackend,
     pub(crate) active_model_id: Option<String>,
+    pub(crate) active_mmproj_path: Option<String>,
     pub(crate) active_llama_session: Option<LlamaSessionSnapshot>,
     pub(crate) llama_runtime: LlamaRuntimeConfig,
 }
@@ -45,6 +46,7 @@ impl ModelState {
             backend_preference: BackendPreference::Llamacpp,
             active_backend: ActiveBackend::None,
             active_model_id: None,
+            active_mmproj_path: None,
             active_llama_session: None,
             llama_runtime: LlamaRuntimeConfig::default(),
         }

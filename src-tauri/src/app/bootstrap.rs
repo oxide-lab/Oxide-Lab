@@ -102,6 +102,12 @@ pub fn run() {
             sql: "ALTER TABLE messages ADD COLUMN sources_json TEXT NOT NULL DEFAULT '[]';",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add attachments json to messages",
+            sql: "ALTER TABLE messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]';",
+            kind: MigrationKind::Up,
+        },
     ];
 
     let app = tauri::Builder::default()
@@ -127,6 +133,8 @@ pub fn run() {
             crate::api::cancel_model_loading,
             crate::api::generate_stream,
             crate::api::cancel_generation,
+            crate::api::persist_chat_attachments,
+            crate::api::delete_chat_attachment_files,
             crate::api::set_device,
             crate::api::is_model_loaded,
             crate::api::get_chat_template,

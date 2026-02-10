@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod backend;
 pub mod device;
 pub mod experimental;
@@ -13,6 +14,7 @@ pub mod rag;
 pub mod settings_v2;
 pub mod threads;
 
+pub use attachments::*;
 pub use backend::*;
 pub use device::*;
 pub use experimental::*;

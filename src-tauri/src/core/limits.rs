@@ -1,0 +1,2 @@
+pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 4;
+pub const MAX_ATTACHMENT_SIZE_BYTES: u64 = 20 * 1024 * 1024;

@@ -28,6 +28,7 @@ export type DbMessage = {
     content: string;
     thinking: string;
     sources_json: string;
+    attachments_json: string;
     created_at: number;
 };
 
@@ -64,6 +65,66 @@ async function getDb() {
     return dbInstance;
 }
 
+type AttachmentPathRow = {
+    attachments_json: string;
+};
+
+async function collectAttachmentPathsForSession(sessionId: string): Promise<string[]> {
+    const db = await getDb();
+    const rows = await db.select<AttachmentPathRow[]>(
+        'SELECT attachments_json FROM messages WHERE session_id = ?',
+        [sessionId],
+    );
+    const paths: string[] = [];
+    for (const row of rows) {
+        try {
+            const parsed = JSON.parse(row.attachments_json || '[]');
+            if (!Array.isArray(parsed)) continue;
+            for (const item of parsed) {
+                if (item && typeof item.path === 'string' && item.path.trim()) {
+                    paths.push(item.path);
+                }
+            }
+        } catch {
+            // Ignore malformed rows.
+        }
+    }
+    return Array.from(new Set(paths));
+}
+
+async function collectAttachmentPathsForAllSessions(): Promise<string[]> {
+    const db = await getDb();
+    const rows = await db.select<AttachmentPathRow[]>(
+        'SELECT attachments_json FROM messages',
+        [],
+    );
+    const paths: string[] = [];
+    for (const row of rows) {
+        try {
+            const parsed = JSON.parse(row.attachments_json || '[]');
+            if (!Array.isArray(parsed)) continue;
+            for (const item of parsed) {
+                if (item && typeof item.path === 'string' && item.path.trim()) {
+                    paths.push(item.path);
+                }
+            }
+        } catch {
+            // Ignore malformed rows.
+        }
+    }
+    return Array.from(new Set(paths));
+}
+
+async function cleanupAttachmentPaths(paths: string[]) {
+    if (!paths.length) return;
+    try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('delete_chat_attachment_files', { paths });
+    } catch (err) {
+        console.warn('Failed to cleanup attachment files:', err);
+    }
+}
+
 function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
     let sources: RetrievalSource[] = [];
     try {
@@ -75,11 +136,22 @@ function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
         sources = [];
     }
 
+    let attachments: ChatMessage['attachments'] = [];
+    try {
+        const parsed = JSON.parse(msg.attachments_json || '[]');
+        if (Array.isArray(parsed)) {
+            attachments = parsed as ChatMessage['attachments'];
+        }
+    } catch {
+        attachments = [];
+    }
+
     return {
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
         thinking: msg.thinking || undefined,
         sources,
+        attachments,
     };
 }
 
@@ -164,7 +236,7 @@ function createChatHistoryStore() {
             try {
                 const db = await getDb();
                 const messages = await db.select<DbMessage[]>(
-                    'SELECT id, session_id, role, content, thinking, sources_json, created_at FROM messages WHERE session_id = ? ORDER BY id ASC',
+                    'SELECT id, session_id, role, content, thinking, sources_json, attachments_json, created_at FROM messages WHERE session_id = ? ORDER BY id ASC',
                     [sessionId],
                 );
 
@@ -191,13 +263,14 @@ function createChatHistoryStore() {
             try {
                 const db = await getDb();
                 await db.execute(
-                    'INSERT INTO messages (session_id, role, content, thinking, sources_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    'INSERT INTO messages (session_id, role, content, thinking, sources_json, attachments_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
                     [
                         targetSessionId,
                         message.role,
                         message.content,
                         message.thinking ?? '',
                         JSON.stringify(message.sources ?? []),
+                        JSON.stringify(message.attachments ?? []),
                         now,
                     ],
                 );
@@ -367,6 +440,7 @@ function createChatHistoryStore() {
 
         deleteSession: async (sessionId: string) => {
             let deleted = false;
+            const attachmentPaths = await collectAttachmentPathsForSession(sessionId).catch(() => []);
             try {
                 const db = await getDb();
                 await db.execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
@@ -375,6 +449,7 @@ function createChatHistoryStore() {
                 console.error('Failed to delete session from DB:', err);
             }
             if (!deleted) return;
+            await cleanupAttachmentPaths(attachmentPaths);
 
             update((s) => {
                 const sessions = s.sessions.filter((sess) => sess.id !== sessionId);
@@ -410,6 +485,7 @@ function createChatHistoryStore() {
 
         clearAll: async () => {
             let deleted = false;
+            const attachmentPaths = await collectAttachmentPathsForAllSessions().catch(() => []);
             try {
                 const db = await getDb();
                 await db.execute('DELETE FROM sessions');
@@ -418,6 +494,7 @@ function createChatHistoryStore() {
                 console.error('Failed to clear chat history:', err);
             }
             if (!deleted) return;
+            await cleanupAttachmentPaths(attachmentPaths);
 
             update((s) => ({ ...s, sessions: [], currentSessionId: null }));
         },

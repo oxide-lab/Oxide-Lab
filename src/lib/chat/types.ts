@@ -70,6 +70,8 @@ export type Attachment = {
     filename: string;
     data: string;  // base64 encoded data
     mimeType: string;
+    path?: string;
+    kind?: string;
     size?: number;
 };
 

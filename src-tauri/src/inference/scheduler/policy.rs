@@ -133,6 +133,7 @@ mod tests {
                 engine_id: EngineId::Llamacpp,
                 model_id: model.to_string(),
                 model_path: format!("{}.gguf", model),
+                mmproj_path: None,
                 pid: 1,
                 port: 1234,
                 api_key: "k".to_string(),

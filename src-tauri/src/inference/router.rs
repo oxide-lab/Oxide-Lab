@@ -1,4 +1,5 @@
 use crate::api::model_loading::emit_load_progress;
+use crate::core::modality::{ModalitySupport, detect_modality_support};
 use crate::core::settings_v2::SettingsV2State;
 use crate::core::state::SharedState;
 use crate::core::types::{
@@ -28,11 +29,13 @@ fn to_snapshot(info: &crate::inference::engine::EngineSessionInfo) -> LlamaSessi
 fn source_from_state(
     model_id: String,
     model_path: String,
+    mmproj_path: Option<String>,
     context_length: usize,
 ) -> ResolvedModelSource {
     ResolvedModelSource {
         model_id,
         model_path,
+        mmproj_path,
         context_length,
     }
 }
@@ -90,8 +93,15 @@ pub async fn load_model(
     guard.chat_template = None;
     guard.active_backend = ActiveBackend::Llamacpp;
     guard.active_model_id = Some(source.model_id);
+    guard.active_mmproj_path = source.mmproj_path.clone();
     guard.active_llama_session = Some(to_snapshot(&chat_session));
     guard.backend_preference = crate::core::types::BackendPreference::Llamacpp;
+
+    let modalities = detect_modality_support(
+        guard.active_model_id.as_deref().unwrap_or_default(),
+        guard.active_mmproj_path.as_deref(),
+    );
+    let _ = app.emit("modality_support", modalities);
 
     emit_load_progress(&app, "complete", 100, Some("Ready"), true, None);
     Ok(())
@@ -103,11 +113,12 @@ pub async fn generate_stream(
     llama_state: LlamaCppState,
     mut req: GenerateRequest,
 ) -> Result<(), String> {
-    let (active_model_id, model_path, context_length, runtime_cfg) = {
+    let (active_model_id, model_path, active_mmproj_path, context_length, runtime_cfg) = {
         let guard = state_arc.lock().map_err(|e| e.to_string())?;
         (
             guard.active_model_id.clone(),
             guard.model_path.clone(),
+            guard.active_mmproj_path.clone(),
             guard.context_length,
             guard.llama_runtime.clone(),
         )
@@ -118,7 +129,12 @@ pub async fn generate_stream(
 
     let scheduler = app.state::<VramScheduler>().inner().clone();
     let manager = engine::default_session_manager(app.clone(), llama_state);
-    let source = source_from_state(model_id.clone(), model_path, context_length);
+    let source = source_from_state(
+        model_id.clone(),
+        model_path,
+        active_mmproj_path,
+        context_length,
+    );
     let acquired = scheduler
         .acquire(
             EngineSessionKind::Chat,
@@ -275,8 +291,10 @@ pub async fn unload_model(
     guard.chat_template = None;
     guard.active_backend = ActiveBackend::None;
     guard.active_model_id = None;
+    guard.active_mmproj_path = None;
     guard.active_llama_session = None;
 
+    let _ = app.emit("modality_support", ModalitySupport::default());
     emit_load_progress(&app, "unload_complete", 100, Some("complete"), true, None);
     Ok(())
 }

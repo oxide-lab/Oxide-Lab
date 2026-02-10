@@ -11,12 +11,14 @@ use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
+use base64::Engine;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::sync::Arc;
 use tauri::Manager;
 
+use crate::core::modality::{ModalitySupport, detect_modality_support};
 use crate::core::types::ActiveBackend;
 use crate::inference::engine::{EngineSessionKind, ResolvedModelSource};
 use crate::inference::scheduler::{AcquireError, AcquireResult, RequestPriority, VramScheduler};
@@ -72,6 +74,7 @@ fn active_source(state: &Arc<OpenAIServerState>) -> Result<ResolvedModelSource, 
     Ok(ResolvedModelSource {
         model_id,
         model_path,
+        mmproj_path: guard.active_mmproj_path.clone(),
         context_length: guard.context_length,
     })
 }
@@ -185,6 +188,147 @@ fn apply_queue_headers(resp: &mut Response, waited_ms: u64, queue_position: Opti
     }
 }
 
+fn guess_mime_from_path(path: &std::path::Path, fallback: &str) -> String {
+    let ext = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png".to_string(),
+        "jpg" | "jpeg" => "image/jpeg".to_string(),
+        "webp" => "image/webp".to_string(),
+        "gif" => "image/gif".to_string(),
+        "bmp" => "image/bmp".to_string(),
+        "svg" => "image/svg+xml".to_string(),
+        "wav" => "audio/wav".to_string(),
+        "mp3" => "audio/mpeg".to_string(),
+        "m4a" => "audio/mp4".to_string(),
+        "ogg" => "audio/ogg".to_string(),
+        "mp4" => "video/mp4".to_string(),
+        "webm" => "video/webm".to_string(),
+        "mov" => "video/quicktime".to_string(),
+        "mkv" => "video/x-matroska".to_string(),
+        _ => fallback.to_string(),
+    }
+}
+
+fn normalize_media_url(
+    raw: &str,
+    mime_hint: Option<&str>,
+    fallback_mime: &str,
+    param: &str,
+) -> Result<String, ApiError> {
+    if raw.starts_with("data:") {
+        return Ok(raw.to_string());
+    }
+    let lower = raw.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        return Err(ApiError::invalid_request(
+            "remote media URLs are not supported, use local path or data URL",
+            param,
+        ));
+    }
+
+    let bytes = std::fs::read(raw)
+        .map_err(|_| ApiError::invalid_request("failed to read local media file path", param))?;
+    let mime = mime_hint
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| guess_mime_from_path(std::path::Path::new(raw), fallback_mime));
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
+}
+
+fn normalize_message_content(
+    content: &mut Value,
+    modalities: &ModalitySupport,
+) -> Result<(), ApiError> {
+    let Some(parts) = content.as_array_mut() else {
+        return Ok(());
+    };
+
+    for part in parts {
+        let Some(obj) = part.as_object_mut() else {
+            continue;
+        };
+        let part_type = obj.get("type").and_then(Value::as_str).unwrap_or_default();
+        match part_type {
+            "image_url" | "input_image" => {
+                if !modalities.image {
+                    return Err(ApiError::invalid_request(
+                        "image input is not supported by current model/backend",
+                        "messages.content",
+                    ));
+                }
+                let source = if let Some(v) = obj
+                    .get("image_url")
+                    .and_then(Value::as_object)
+                    .and_then(|v| v.get("url"))
+                    .and_then(Value::as_str)
+                {
+                    v.to_string()
+                } else if let Some(v) = obj.get("url").and_then(Value::as_str) {
+                    v.to_string()
+                } else if let Some(v) = obj.get("image_url").and_then(Value::as_str) {
+                    v.to_string()
+                } else {
+                    return Err(ApiError::invalid_request(
+                        "image content must contain a URL",
+                        "messages.content",
+                    ));
+                };
+                let mime_hint = obj
+                    .get("mime_type")
+                    .and_then(Value::as_str)
+                    .or_else(|| obj.get("mime").and_then(Value::as_str));
+                let normalized =
+                    normalize_media_url(&source, mime_hint, "image/png", "messages.content")?;
+                obj.insert(
+                    "image_url".to_string(),
+                    serde_json::json!({ "url": normalized }),
+                );
+                obj.insert("type".to_string(), Value::String("image_url".to_string()));
+            }
+            "input_audio" | "audio_url" => {
+                if !modalities.audio {
+                    return Err(ApiError::invalid_request(
+                        "audio input is not supported by current model/backend",
+                        "messages.content",
+                    ));
+                }
+            }
+            "input_video" | "video_url" => {
+                if !modalities.video {
+                    return Err(ApiError::invalid_request(
+                        "video input is not supported by current model/backend",
+                        "messages.content",
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn normalize_chat_payload_media(
+    payload: &mut Value,
+    modalities: &ModalitySupport,
+) -> Result<(), ApiError> {
+    let Some(messages) = payload.get_mut("messages").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    for message in messages {
+        let Some(content) = message.get_mut("content") else {
+            continue;
+        };
+        normalize_message_content(content, modalities)?;
+    }
+    Ok(())
+}
+
 fn build_models(state: &Arc<OpenAIServerState>) -> Vec<Model> {
     let mut ids = std::collections::BTreeSet::<String>::new();
     if let Some(scheduler) = state.app_handle.try_state::<VramScheduler>() {
@@ -250,7 +394,10 @@ pub async fn chat_completions_handler(
     let waited_ms = acquired.waited_ms;
     let queue_position = acquired.queue_position;
     let session = acquired.lease.session().clone();
-    let payload = req.to_upstream_payload(None);
+    let modalities = detect_modality_support(&session.model_id, session.mmproj_path.as_deref());
+    let mut payload = req.to_upstream_payload(None);
+    normalize_chat_payload_media(&mut payload, &modalities)
+        .map_err(|e| error_response(StatusCode::BAD_REQUEST, e))?;
 
     if req.stream {
         let resp = upstream::post_stream(&session, "/v1/chat/completions", &payload)
@@ -400,11 +547,12 @@ pub async fn responses_handler(
     let waited_ms = acquired.waited_ms;
     let queue_position = acquired.queue_position;
     let session = acquired.lease.session().clone();
+    let modalities = detect_modality_support(&session.model_id, session.mmproj_path.as_deref());
 
     let response_id = format!("resp_{}", rand::random::<u32>());
     let item_id = format!("msg_{}", rand::random::<u32>());
     let payload = req
-        .to_chat_payload(is_stream)
+        .to_chat_payload(is_stream, &modalities)
         .map_err(|e| error_response(StatusCode::BAD_REQUEST, e))?;
 
     if !is_stream {

@@ -24,6 +24,7 @@
     repoId?: string;
     revision?: string;
     hubGgufFilename?: string;
+    mmprojPath?: string;
     ctx_limit_value?: number;
     isLoadingModel?: boolean;
     isUnloadingModel?: boolean;
@@ -69,6 +70,7 @@
     repoId = $bindable(''),
     revision = $bindable(''),
     hubGgufFilename = $bindable(''),
+    mmprojPath = $bindable(''),
     ctx_limit_value = $bindable(4096),
     isLoadingModel = $bindable(false),
     isUnloadingModel = $bindable(false),
@@ -239,6 +241,17 @@
         </Button>
       {/each}
     </div>
+  </div>
+
+  <div class="space-y-2">
+    <Label class="text-sm font-medium">MMProj Path (optional)</Label>
+    <Input
+      type="text"
+      placeholder="C:\\models\\mmproj.gguf"
+      bind:value={mmprojPath}
+      disabled={busy || isLoadingModel}
+    />
+    <p class="text-xs text-muted-foreground">Required for most vision GGUF models.</p>
   </div>
 
   <!-- CPU Features -->

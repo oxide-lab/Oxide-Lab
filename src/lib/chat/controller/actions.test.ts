@@ -66,6 +66,7 @@ function makeCtx() {
     repoId: '',
     revision: '',
     hubGgufFilename: '',
+    mmprojPath: '',
     prompt: '',
     messages: [{ role: 'assistant', content: 'hello' }],
     busy: false,

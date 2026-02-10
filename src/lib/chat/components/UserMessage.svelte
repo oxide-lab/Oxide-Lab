@@ -22,13 +22,7 @@
     onEdit?: (index: number, newContent: string) => void;
   }
 
-  let {
-    message,
-    index,
-    isFaded = false,
-    onCopy,
-    onEdit,
-  }: Props = $props();
+  let { message, index, isFaded = false, onCopy, onEdit }: Props = $props();
 
   // Edit state
   let isEditing = $state(false);
@@ -38,14 +32,12 @@
 
   // Derived: split attachments into images and files
   let imageAttachments = $derived(
-    message.attachments?.filter(
-      (a) => isImageFile(a.filename) || isImageMimeType(a.mimeType)
-    ) ?? []
+    message.attachments?.filter((a) => isImageFile(a.filename) || isImageMimeType(a.mimeType)) ??
+      [],
   );
   let fileAttachments = $derived(
-    message.attachments?.filter(
-      (a) => !isImageFile(a.filename) && !isImageMimeType(a.mimeType)
-    ) ?? []
+    message.attachments?.filter((a) => !isImageFile(a.filename) && !isImageMimeType(a.mimeType)) ??
+      [],
   );
 
   function closeActionTooltips() {
@@ -104,10 +96,7 @@
   });
 </script>
 
-<div
-  class="flex flex-col transition-opacity duration-300"
-  class:opacity-50={isFaded}
->
+<div class="flex flex-col transition-opacity duration-300" class:opacity-50={isFaded}>
   <!-- Image attachments above the message -->
   {#if imageAttachments.length > 0}
     <div class="flex gap-2 mb-2 overflow-x-auto justify-end max-w-md self-end">
@@ -142,10 +131,10 @@
     </div>
   {:else}
     <!-- Normal view -->
-    <div class="w-full group">
+    <div class="w-full group relative">
       <div class="flex justify-end">
         <div
-          class="bg-muted text-foreground max-w-[90%] rounded-3xl rounded-tr-sm px-5 py-2.5"
+          class="bg-muted text-foreground max-w-[90%] rounded-3xl rounded-tr-sm px-4 py-2 text-sm"
         >
           <!-- File attachments inside the bubble -->
           {#if fileAttachments.length > 0}
@@ -173,7 +162,7 @@
 
       <!-- Actions -->
       <div
-        class="message-actions mt-1 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+        class="message-actions mt-1.5 flex justify-end gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
       >
         <Tooltip.Provider>
           <Tooltip.Root delayDuration={60} bind:open={copyTooltipOpen}>

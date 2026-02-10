@@ -232,9 +232,17 @@
       >
         <span class="brand-icon-wrapper relative w-5 h-5 min-w-5 min-h-5 shrink-0">
           {#if isSettingsAbout}
-            <SidebarSimple size={20} weight="regular" class="w-5 h-5 absolute inset-0 text-sidebar-foreground" />
+            <SidebarSimple
+              size={20}
+              weight="regular"
+              class="w-5 h-5 absolute inset-0 text-sidebar-foreground"
+            />
           {:else}
-            <img src="/icon.svg" alt="Oxide Lab" class="brand-icon-default w-5 h-5 absolute inset-0" />
+            <img
+              src="/icon.svg"
+              alt="Oxide Lab"
+              class="brand-icon-default w-5 h-5 absolute inset-0"
+            />
             <SidebarSimple
               size={20}
               weight="regular"
@@ -295,7 +303,9 @@
 
     <!-- Chats History (hidden when collapsed) -->
     {#if sidebar.state !== 'collapsed'}
-      <Sidebar.Group class="group/chats-collapsible flex-1 min-h-0 flex flex-col !p-0 !pb-2 translate-x-2">
+      <Sidebar.Group
+        class="group/chats-collapsible flex-1 min-h-0 flex flex-col !p-0 !pb-2 translate-x-2"
+      >
         <Sidebar.GroupLabel>
           {#snippet child({ props })}
             <div class="relative w-full">
@@ -348,184 +358,210 @@
         </Sidebar.GroupLabel>
 
         {#if chatsExpanded}
-        <Sidebar.GroupContent class="chat-history-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mr-2">
-          {#if !hasAnySessions}
-            <div class="pl-2 pr-2 pt-2 text-sm text-sidebar-foreground/50">No chats yet</div>
-          {/if}
-          <!-- Today -->
-          {#if $groupedSessions.today.length > 0}
-            <div class="mb-1.5 pl-1.5 pr-2 pt-2 text-sm font-medium text-sidebar-foreground/50">{todayLabel}</div>
-            <Sidebar.Menu class="pl-1 pr-2 -mr-1 gap-0.5">
-              {#each $groupedSessions.today as session (session.id)}
-                <Sidebar.MenuItem
-                  class="group/menu-item"
-                  onmouseenter={() => handleSessionHover(session.id, true)}
-                  onmouseleave={() => handleSessionHover(session.id, false)}
-                >
-                  <Sidebar.MenuButton
-                    isActive={$currentSession?.id === session.id}
-                    size="sm"
-                    class={`chat-session-button !h-auto rounded-lg px-[11px] py-[6px] pr-9 text-[0.9rem] font-normal hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-accent/70 data-[active=true]:font-normal ${
-                      $currentSession?.id === session.id ||
-                      hoveredSessionId === session.id ||
-                      menuOpenSessionId === session.id
-                        ? '!bg-sidebar-accent/70 text-sidebar-foreground'
-                        : ''
-                    }`}
+          <Sidebar.GroupContent
+            class="chat-history-scrollbar flex-1 min-h-0 overflow-y-auto overflow-x-hidden -mr-2"
+          >
+            {#if !hasAnySessions}
+              <div class="pl-2 pr-2 pt-2 text-sm text-sidebar-foreground/50">No chats yet</div>
+            {/if}
+            <!-- Today -->
+            {#if $groupedSessions.today.length > 0}
+              <div class="mb-1.5 pl-1.5 pr-2 pt-2 text-sm font-medium text-sidebar-foreground/50">
+                {todayLabel}
+              </div>
+              <Sidebar.Menu class="pl-1 pr-2 -mr-1 gap-0.5">
+                {#each $groupedSessions.today as session (session.id)}
+                  <Sidebar.MenuItem
+                    class="group/menu-item"
+                    onmouseenter={() => handleSessionHover(session.id, true)}
+                    onmouseleave={() => handleSessionHover(session.id, false)}
                   >
-                    {#snippet child({ props })}
-                      <button {...props} onclick={() => handleLoadSession(session.id)}>
-                        <span class="block h-5 min-w-0 truncate leading-5">{session.title || 'Untitled Chat'}</span>
-                      </button>
-                    {/snippet}
-                  </Sidebar.MenuButton>
-                  <DropdownMenu.Root onOpenChange={(open) => handleSessionMenuOpenChange(session.id, open)}>
-                    <DropdownMenu.Trigger>
+                    <Sidebar.MenuButton
+                      isActive={$currentSession?.id === session.id}
+                      size="sm"
+                      class={`chat-session-button !h-auto rounded-lg px-[11px] py-[6px] pr-9 text-sm font-normal hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-accent/70 data-[active=true]:font-normal ${
+                        $currentSession?.id === session.id ||
+                        hoveredSessionId === session.id ||
+                        menuOpenSessionId === session.id
+                          ? '!bg-sidebar-accent/70 text-sidebar-foreground'
+                          : ''
+                      }`}
+                    >
                       {#snippet child({ props })}
-                        <Sidebar.MenuAction
-                          {...props}
-                          showOnHover={false}
-                          class="right-2.5 !top-1/2 h-5 w-5 !-translate-y-1/2 rounded-none p-0 text-sidebar-foreground/70 opacity-0 transition-opacity duration-75 hover:bg-transparent hover:text-sidebar-foreground/70 focus-visible:ring-0 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:!opacity-100"
-                        >
-                          <DotsThreeOutline size={14} weight="fill" />
-                        </Sidebar.MenuAction>
+                        <button {...props} onclick={() => handleLoadSession(session.id)}>
+                          <span class="block h-5 min-w-0 truncate leading-5"
+                            >{session.title || 'Untitled Chat'}</span
+                          >
+                        </button>
                       {/snippet}
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Content align="end" sideOffset={6}>
-                      <DropdownMenu.Item onSelect={() => handleRenameSession(session.id, session.title ?? '')}>
-                        <PencilSimple class="size-4" />
-                        <span>{renameLabel}</span>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        class="text-destructive focus:text-destructive"
-                        onSelect={() => handleDeleteSession(session.id)}
-                      >
-                        <Trash class="size-4" />
-                        <span>{deleteLabel}</span>
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Root>
-                </Sidebar.MenuItem>
-              {/each}
-            </Sidebar.Menu>
-          {/if}
+                    </Sidebar.MenuButton>
+                    <DropdownMenu.Root
+                      onOpenChange={(open) => handleSessionMenuOpenChange(session.id, open)}
+                    >
+                      <DropdownMenu.Trigger>
+                        {#snippet child({ props })}
+                          <Sidebar.MenuAction
+                            {...props}
+                            showOnHover={false}
+                            class="right-2.5 !top-1/2 h-5 w-5 !-translate-y-1/2 rounded-none p-0 text-sidebar-foreground/70 opacity-0 transition-opacity duration-75 hover:bg-transparent hover:text-sidebar-foreground/70 focus-visible:ring-0 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:!opacity-100"
+                          >
+                            <DotsThreeOutline size={14} weight="fill" />
+                          </Sidebar.MenuAction>
+                        {/snippet}
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Content align="end" sideOffset={6}>
+                        <DropdownMenu.Item
+                          onSelect={() => handleRenameSession(session.id, session.title ?? '')}
+                        >
+                          <PencilSimple class="size-4" />
+                          <span>{renameLabel}</span>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          class="text-destructive focus:text-destructive"
+                          onSelect={() => handleDeleteSession(session.id)}
+                        >
+                          <Trash class="size-4" />
+                          <span>{deleteLabel}</span>
+                        </DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Root>
+                  </Sidebar.MenuItem>
+                {/each}
+              </Sidebar.Menu>
+            {/if}
 
-          <!-- This Week -->
-          {#if $groupedSessions.thisWeek.length > 0}
-            <div class="mb-1.5 mt-4 pl-1.5 pr-2 text-sm font-medium text-sidebar-foreground/50">{thisWeekLabel}</div>
-            <Sidebar.Menu class="pl-1 pr-2 -mr-1 gap-0.5">
-              {#each $groupedSessions.thisWeek as session (session.id)}
-                <Sidebar.MenuItem
-                  class="group/menu-item"
-                  onmouseenter={() => handleSessionHover(session.id, true)}
-                  onmouseleave={() => handleSessionHover(session.id, false)}
-                >
-                  <Sidebar.MenuButton
-                    isActive={$currentSession?.id === session.id}
-                    size="sm"
-                    class={`chat-session-button !h-auto rounded-lg px-[11px] py-[6px] pr-9 text-[0.9rem] font-normal hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-accent/70 data-[active=true]:font-normal ${
-                      $currentSession?.id === session.id ||
-                      hoveredSessionId === session.id ||
-                      menuOpenSessionId === session.id
-                        ? '!bg-sidebar-accent/70 text-sidebar-foreground'
-                        : ''
-                    }`}
+            <!-- This Week -->
+            {#if $groupedSessions.thisWeek.length > 0}
+              <div class="mb-1.5 mt-4 pl-1.5 pr-2 text-sm font-medium text-sidebar-foreground/50">
+                {thisWeekLabel}
+              </div>
+              <Sidebar.Menu class="pl-1 pr-2 -mr-1 gap-0.5">
+                {#each $groupedSessions.thisWeek as session (session.id)}
+                  <Sidebar.MenuItem
+                    class="group/menu-item"
+                    onmouseenter={() => handleSessionHover(session.id, true)}
+                    onmouseleave={() => handleSessionHover(session.id, false)}
                   >
-                    {#snippet child({ props })}
-                      <button {...props} onclick={() => handleLoadSession(session.id)}>
-                        <span class="block h-5 min-w-0 truncate leading-5">{session.title || 'Untitled Chat'}</span>
-                      </button>
-                    {/snippet}
-                  </Sidebar.MenuButton>
-                  <DropdownMenu.Root onOpenChange={(open) => handleSessionMenuOpenChange(session.id, open)}>
-                    <DropdownMenu.Trigger>
+                    <Sidebar.MenuButton
+                      isActive={$currentSession?.id === session.id}
+                      size="sm"
+                      class={`chat-session-button !h-auto rounded-lg px-[11px] py-[6px] pr-9 text-sm font-normal hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-accent/70 data-[active=true]:font-normal ${
+                        $currentSession?.id === session.id ||
+                        hoveredSessionId === session.id ||
+                        menuOpenSessionId === session.id
+                          ? '!bg-sidebar-accent/70 text-sidebar-foreground'
+                          : ''
+                      }`}
+                    >
                       {#snippet child({ props })}
-                        <Sidebar.MenuAction
-                          {...props}
-                          showOnHover={false}
-                          class="right-2.5 !top-1/2 h-5 w-5 !-translate-y-1/2 rounded-none p-0 text-sidebar-foreground/70 opacity-0 transition-opacity duration-75 hover:bg-transparent hover:text-sidebar-foreground/70 focus-visible:ring-0 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:!opacity-100"
-                        >
-                          <DotsThreeOutline size={14} weight="fill" />
-                        </Sidebar.MenuAction>
+                        <button {...props} onclick={() => handleLoadSession(session.id)}>
+                          <span class="block h-5 min-w-0 truncate leading-5"
+                            >{session.title || 'Untitled Chat'}</span
+                          >
+                        </button>
                       {/snippet}
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Content align="end" sideOffset={6}>
-                      <DropdownMenu.Item onSelect={() => handleRenameSession(session.id, session.title ?? '')}>
-                        <PencilSimple class="size-4" />
-                        <span>{renameLabel}</span>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        class="text-destructive focus:text-destructive"
-                        onSelect={() => handleDeleteSession(session.id)}
-                      >
-                        <Trash class="size-4" />
-                        <span>{deleteLabel}</span>
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Root>
-                </Sidebar.MenuItem>
-              {/each}
-            </Sidebar.Menu>
-          {/if}
+                    </Sidebar.MenuButton>
+                    <DropdownMenu.Root
+                      onOpenChange={(open) => handleSessionMenuOpenChange(session.id, open)}
+                    >
+                      <DropdownMenu.Trigger>
+                        {#snippet child({ props })}
+                          <Sidebar.MenuAction
+                            {...props}
+                            showOnHover={false}
+                            class="right-2.5 !top-1/2 h-5 w-5 !-translate-y-1/2 rounded-none p-0 text-sidebar-foreground/70 opacity-0 transition-opacity duration-75 hover:bg-transparent hover:text-sidebar-foreground/70 focus-visible:ring-0 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:!opacity-100"
+                          >
+                            <DotsThreeOutline size={14} weight="fill" />
+                          </Sidebar.MenuAction>
+                        {/snippet}
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Content align="end" sideOffset={6}>
+                        <DropdownMenu.Item
+                          onSelect={() => handleRenameSession(session.id, session.title ?? '')}
+                        >
+                          <PencilSimple class="size-4" />
+                          <span>{renameLabel}</span>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          class="text-destructive focus:text-destructive"
+                          onSelect={() => handleDeleteSession(session.id)}
+                        >
+                          <Trash class="size-4" />
+                          <span>{deleteLabel}</span>
+                        </DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Root>
+                  </Sidebar.MenuItem>
+                {/each}
+              </Sidebar.Menu>
+            {/if}
 
-          <!-- Older -->
-          {#if $groupedSessions.older.length > 0}
-            <div class="mb-1.5 mt-4 pl-1.5 pr-2 text-sm font-medium text-sidebar-foreground/50">{olderLabel}</div>
-            <Sidebar.Menu class="pl-1 pr-2 -mr-1 gap-0.5">
-              {#each $groupedSessions.older as session (session.id)}
-                <Sidebar.MenuItem
-                  class="group/menu-item"
-                  onmouseenter={() => handleSessionHover(session.id, true)}
-                  onmouseleave={() => handleSessionHover(session.id, false)}
-                >
-                  <Sidebar.MenuButton
-                    isActive={$currentSession?.id === session.id}
-                    size="sm"
-                    class={`chat-session-button !h-auto rounded-lg px-[11px] py-[6px] pr-9 text-[0.9rem] font-normal hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-accent/70 data-[active=true]:font-normal ${
-                      $currentSession?.id === session.id ||
-                      hoveredSessionId === session.id ||
-                      menuOpenSessionId === session.id
-                        ? '!bg-sidebar-accent/70 text-sidebar-foreground'
-                        : ''
-                    }`}
+            <!-- Older -->
+            {#if $groupedSessions.older.length > 0}
+              <div class="mb-1.5 mt-4 pl-1.5 pr-2 text-sm font-medium text-sidebar-foreground/50">
+                {olderLabel}
+              </div>
+              <Sidebar.Menu class="pl-1 pr-2 -mr-1 gap-0.5">
+                {#each $groupedSessions.older as session (session.id)}
+                  <Sidebar.MenuItem
+                    class="group/menu-item"
+                    onmouseenter={() => handleSessionHover(session.id, true)}
+                    onmouseleave={() => handleSessionHover(session.id, false)}
                   >
-                    {#snippet child({ props })}
-                      <button {...props} onclick={() => handleLoadSession(session.id)}>
-                        <span class="block h-5 min-w-0 truncate leading-5">{session.title || 'Untitled Chat'}</span>
-                      </button>
-                    {/snippet}
-                  </Sidebar.MenuButton>
-                  <DropdownMenu.Root onOpenChange={(open) => handleSessionMenuOpenChange(session.id, open)}>
-                    <DropdownMenu.Trigger>
+                    <Sidebar.MenuButton
+                      isActive={$currentSession?.id === session.id}
+                      size="sm"
+                      class={`chat-session-button !h-auto rounded-lg px-[11px] py-[6px] pr-9 text-sm font-normal hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[state=open]:hover:bg-sidebar-accent/70 data-[active=true]:font-normal ${
+                        $currentSession?.id === session.id ||
+                        hoveredSessionId === session.id ||
+                        menuOpenSessionId === session.id
+                          ? '!bg-sidebar-accent/70 text-sidebar-foreground'
+                          : ''
+                      }`}
+                    >
                       {#snippet child({ props })}
-                        <Sidebar.MenuAction
-                          {...props}
-                          showOnHover={false}
-                          class="right-2.5 !top-1/2 h-5 w-5 !-translate-y-1/2 rounded-none p-0 text-sidebar-foreground/70 opacity-0 transition-opacity duration-75 hover:bg-transparent hover:text-sidebar-foreground/70 focus-visible:ring-0 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:!opacity-100"
-                        >
-                          <DotsThreeOutline size={14} weight="fill" />
-                        </Sidebar.MenuAction>
+                        <button {...props} onclick={() => handleLoadSession(session.id)}>
+                          <span class="block h-5 min-w-0 truncate leading-5"
+                            >{session.title || 'Untitled Chat'}</span
+                          >
+                        </button>
                       {/snippet}
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Content align="end" sideOffset={6}>
-                      <DropdownMenu.Item onSelect={() => handleRenameSession(session.id, session.title ?? '')}>
-                        <PencilSimple class="size-4" />
-                        <span>{renameLabel}</span>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        class="text-destructive focus:text-destructive"
-                        onSelect={() => handleDeleteSession(session.id)}
-                      >
-                        <Trash class="size-4" />
-                        <span>{deleteLabel}</span>
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Root>
-                </Sidebar.MenuItem>
-              {/each}
-            </Sidebar.Menu>
-          {/if}
-        </Sidebar.GroupContent>
+                    </Sidebar.MenuButton>
+                    <DropdownMenu.Root
+                      onOpenChange={(open) => handleSessionMenuOpenChange(session.id, open)}
+                    >
+                      <DropdownMenu.Trigger>
+                        {#snippet child({ props })}
+                          <Sidebar.MenuAction
+                            {...props}
+                            showOnHover={false}
+                            class="right-2.5 !top-1/2 h-5 w-5 !-translate-y-1/2 rounded-none p-0 text-sidebar-foreground/70 opacity-0 transition-opacity duration-75 hover:bg-transparent hover:text-sidebar-foreground/70 focus-visible:ring-0 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 peer-data-[active=true]/menu-button:!opacity-100"
+                          >
+                            <DotsThreeOutline size={14} weight="fill" />
+                          </Sidebar.MenuAction>
+                        {/snippet}
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Content align="end" sideOffset={6}>
+                        <DropdownMenu.Item
+                          onSelect={() => handleRenameSession(session.id, session.title ?? '')}
+                        >
+                          <PencilSimple class="size-4" />
+                          <span>{renameLabel}</span>
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          class="text-destructive focus:text-destructive"
+                          onSelect={() => handleDeleteSession(session.id)}
+                        >
+                          <Trash class="size-4" />
+                          <span>{deleteLabel}</span>
+                        </DropdownMenu.Item>
+                      </DropdownMenu.Content>
+                    </DropdownMenu.Root>
+                  </Sidebar.MenuItem>
+                {/each}
+              </Sidebar.Menu>
+            {/if}
+          </Sidebar.GroupContent>
         {/if}
       </Sidebar.Group>
     {/if}

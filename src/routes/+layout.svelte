@@ -478,7 +478,7 @@
                   <Breadcrumb.Item>
                     <Breadcrumb.Link
                       href="/settings?section=general"
-                      class="text-base font-semibold text-foreground"
+                      class="text-sm font-semibold text-foreground"
                       onclick={(event) => {
                         event.preventDefault();
                         openSettingsSectionShortcut('general');

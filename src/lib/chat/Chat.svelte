@@ -47,6 +47,7 @@
   let repoId = $state<string>(savedState.repoId);
   let revision = $state<string>(savedState.revision);
   let hubGgufFilename = $state<string>(savedState.hubGgufFilename);
+  let mmprojPath = $state<string>(savedState.mmprojPath ?? '');
   let prompt = $state(savedState.prompt);
   let messages = $state<ChatMessage[]>(Array.isArray(savedState.messages) ? savedState.messages : []);
   let busy = $state(savedState.busy);
@@ -133,6 +134,12 @@
     },
     set hubGgufFilename(v) {
       hubGgufFilename = v;
+    },
+    get mmprojPath() {
+      return mmprojPath;
+    },
+    set mmprojPath(v) {
+      mmprojPath = v;
     },
     get prompt() {
       return prompt;
@@ -420,6 +427,7 @@
       repoId,
       revision,
       hubGgufFilename,
+      mmprojPath,
       format,
       pendingModelPath,
       pendingFormat,
@@ -525,6 +533,7 @@
     repoId = '';
     revision = '';
     hubGgufFilename = '';
+    mmprojPath = '';
     pendingModelPath = '';
     pendingFormat = 'gguf';
     void controller.loadGGUF?.();
@@ -548,6 +557,7 @@
     repoId = '';
     revision = '';
     hubGgufFilename = '';
+    mmprojPath = '';
     pendingModelPath = '';
     pendingFormat = 'gguf';
     void controller.loadGGUF?.();
@@ -661,6 +671,7 @@
       repoId,
       revision,
       hubGgufFilename,
+      mmprojPath,
       format,
       pendingModelPath,
       pendingFormat,
@@ -763,6 +774,10 @@
               retrievalUrls={retrieval_urls}
               retrievalLocalEnabled={retrieval_local_enabled}
               mcpEnabled={mcp_enabled}
+              {supports_text}
+              {supports_image}
+              {supports_audio}
+              {supports_video}
               {isLoaderPanelVisible}
               {isChatHistoryVisible}
               {hasMessages}
@@ -801,6 +816,7 @@
             bind:repoId
             bind:revision
             bind:hubGgufFilename
+            bind:mmprojPath
             bind:ctx_limit_value
             bind:isLoadingModel
             bind:isUnloadingModel

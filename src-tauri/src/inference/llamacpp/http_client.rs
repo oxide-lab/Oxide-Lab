@@ -1,7 +1,11 @@
-use crate::core::types::{ChatMessage, GenerateRequest, StreamMessage, ToolChoice};
+use crate::core::attachments_text::{gather_text_from_attachments, read_attachment_bytes};
+use crate::core::limits::MAX_ATTACHMENTS_PER_MESSAGE;
+use crate::core::modality::{ModalitySupport, detect_modality_support};
+use crate::core::types::{Attachment, ChatMessage, GenerateRequest, StreamMessage, ToolChoice};
 use crate::generate::cancel::CANCEL_GENERATION;
 use crate::generate::tool_call_parser::ToolCallParser;
 use crate::inference::engine::EngineSessionInfo;
+use base64::Engine;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use regex::Regex;
@@ -17,7 +21,28 @@ use tauri::Emitter;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OpenAIMessage {
     role: String,
-    content: String,
+    content: MessageContent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum ContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ContentImageUrl },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ContentImageUrl {
+    url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,21 +147,185 @@ pub struct ChatCompletionMessageResult {
     pub tool_calls: Vec<ToolCallMessage>,
 }
 
-fn to_openai_messages(req: &GenerateRequest) -> Vec<OpenAIMessage> {
-    if let Some(messages) = req.messages.as_ref() {
-        return messages
-            .iter()
-            .map(|m| OpenAIMessage {
-                role: m.role.clone(),
-                content: m.content.clone(),
-            })
-            .collect();
+fn attachment_hint(att: &Attachment) -> String {
+    att.name
+        .clone()
+        .or_else(|| att.path.clone())
+        .unwrap_or_else(|| "attachment".to_string())
+}
+
+fn attachment_ext(att: &Attachment) -> Option<String> {
+    let candidate = att.name.clone().or_else(|| att.path.clone())?;
+    let ext = std::path::Path::new(&candidate)
+        .extension()
+        .and_then(|v| v.to_str())?;
+    Some(ext.to_ascii_lowercase())
+}
+
+fn is_image_attachment(att: &Attachment) -> bool {
+    if let Some(kind) = att.kind.as_deref()
+        && kind.eq_ignore_ascii_case("image")
+    {
+        return true;
+    }
+    if let Some(mime) = att.mime.as_deref()
+        && mime.to_ascii_lowercase().starts_with("image/")
+    {
+        return true;
+    }
+    matches!(
+        attachment_ext(att).as_deref(),
+        Some("png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg")
+    )
+}
+
+fn is_audio_attachment(att: &Attachment) -> bool {
+    if let Some(kind) = att.kind.as_deref()
+        && kind.eq_ignore_ascii_case("audio")
+    {
+        return true;
+    }
+    if let Some(mime) = att.mime.as_deref()
+        && mime.to_ascii_lowercase().starts_with("audio/")
+    {
+        return true;
+    }
+    matches!(
+        attachment_ext(att).as_deref(),
+        Some("wav" | "mp3" | "m4a" | "ogg")
+    )
+}
+
+fn is_video_attachment(att: &Attachment) -> bool {
+    if let Some(kind) = att.kind.as_deref()
+        && kind.eq_ignore_ascii_case("video")
+    {
+        return true;
+    }
+    if let Some(mime) = att.mime.as_deref()
+        && mime.to_ascii_lowercase().starts_with("video/")
+    {
+        return true;
+    }
+    matches!(
+        attachment_ext(att).as_deref(),
+        Some("mp4" | "webm" | "mov" | "mkv")
+    )
+}
+
+fn image_data_url(att: &Attachment) -> Result<String, String> {
+    let bytes = read_attachment_bytes(att)?
+        .ok_or_else(|| format!("Image attachment has no content: {}", attachment_hint(att)))?;
+    let mime = att
+        .mime
+        .clone()
+        .filter(|v| v.to_ascii_lowercase().starts_with("image/"))
+        .unwrap_or_else(|| "image/png".to_string());
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
+}
+
+fn build_user_message_content(
+    user_text: String,
+    attachments: &[Attachment],
+    modality: &ModalitySupport,
+) -> Result<MessageContent, String> {
+    if attachments.is_empty() {
+        return Ok(MessageContent::Text(user_text));
+    }
+    if attachments.len() > MAX_ATTACHMENTS_PER_MESSAGE {
+        return Err(format!(
+            "Too many attachments: {} (max {})",
+            attachments.len(),
+            MAX_ATTACHMENTS_PER_MESSAGE
+        ));
     }
 
-    vec![OpenAIMessage {
+    let text_from_files = gather_text_from_attachments(attachments)?;
+    let merged_text = if text_from_files.is_empty() {
+        user_text
+    } else if user_text.trim().is_empty() {
+        text_from_files
+    } else {
+        format!("{user_text}\n\n{text_from_files}")
+    };
+
+    let mut has_image = false;
+    let mut has_audio = false;
+    let mut has_video = false;
+    for att in attachments {
+        if is_image_attachment(att) {
+            has_image = true;
+        } else if is_audio_attachment(att) {
+            has_audio = true;
+        } else if is_video_attachment(att) {
+            has_video = true;
+        }
+    }
+
+    if has_audio && !modality.audio {
+        return Err("Current model/backend does not support audio attachments".to_string());
+    }
+    if has_video && !modality.video {
+        return Err("Current model/backend does not support video attachments".to_string());
+    }
+    if has_image && !modality.image {
+        return Err("Current model/backend does not support image attachments".to_string());
+    }
+
+    let mut parts = Vec::new();
+    if !merged_text.trim().is_empty() {
+        parts.push(ContentPart::Text { text: merged_text });
+    }
+
+    for att in attachments {
+        if !is_image_attachment(att) {
+            continue;
+        }
+        parts.push(ContentPart::ImageUrl {
+            image_url: ContentImageUrl {
+                url: image_data_url(att)?,
+            },
+        });
+    }
+
+    if parts.is_empty() {
+        return Ok(MessageContent::Text(String::new()));
+    }
+    if parts.len() == 1
+        && let ContentPart::Text { text } = &parts[0]
+    {
+        return Ok(MessageContent::Text(text.clone()));
+    }
+    Ok(MessageContent::Parts(parts))
+}
+
+fn to_openai_messages(
+    req: &GenerateRequest,
+    modality: &ModalitySupport,
+) -> Result<Vec<OpenAIMessage>, String> {
+    let attachments = req.attachments.clone().unwrap_or_default();
+    if let Some(messages) = req.messages.as_ref() {
+        let last_user_index = messages.iter().rposition(|m| m.role == "user");
+        let mut out = Vec::with_capacity(messages.len());
+        for (index, message) in messages.iter().enumerate() {
+            let content = if Some(index) == last_user_index {
+                build_user_message_content(message.content.clone(), &attachments, modality)?
+            } else {
+                MessageContent::Text(message.content.clone())
+            };
+            out.push(OpenAIMessage {
+                role: message.role.clone(),
+                content,
+            });
+        }
+        return Ok(out);
+    }
+
+    Ok(vec![OpenAIMessage {
         role: "user".to_string(),
-        content: req.prompt.clone(),
-    }]
+        content: build_user_message_content(req.prompt.clone(), &attachments, modality)?,
+    }])
 }
 
 fn to_openai_tools(
@@ -392,10 +581,11 @@ pub async fn stream_chat_completion(
     req: GenerateRequest,
 ) -> Result<(), String> {
     CANCEL_GENERATION.store(false, Ordering::SeqCst);
+    let modality = detect_modality_support(&session.model_id, session.mmproj_path.as_deref());
 
     let payload = ChatCompletionRequest {
         model: session.model_id.clone(),
-        messages: to_openai_messages(&req),
+        messages: to_openai_messages(&req, &modality)?,
         stream: true,
         max_tokens: req.max_new_tokens,
         temperature: req.temperature,
@@ -484,9 +674,10 @@ pub async fn chat_completion_once(
     session: &EngineSessionInfo,
     req: GenerateRequest,
 ) -> Result<ChatCompletionMessageResult, String> {
+    let modality = detect_modality_support(&session.model_id, session.mmproj_path.as_deref());
     let payload = ChatCompletionRequest {
         model: session.model_id.clone(),
-        messages: to_openai_messages(&req),
+        messages: to_openai_messages(&req, &modality)?,
         stream: false,
         max_tokens: req.max_new_tokens,
         temperature: req.temperature,
@@ -634,6 +825,9 @@ pub fn preflight_chat_messages(req: &GenerateRequest) -> Result<Vec<ChatMessage>
 #[cfg(test)]
 mod tests {
     use super::parse_tool_calls_from_content;
+    use super::{MessageContent, build_user_message_content};
+    use crate::core::modality::ModalitySupport;
+    use crate::core::types::Attachment;
     use crate::generate::tool_call_parser::{Tool, ToolFunction};
     use serde_json::{Value, json};
 
@@ -703,7 +897,7 @@ stores
             model: "test".to_string(),
             messages: vec![super::OpenAIMessage {
                 role: "user".to_string(),
-                content: "hi".to_string(),
+                content: super::MessageContent::Text("hi".to_string()),
             }],
             stream: false,
             max_tokens: None,
@@ -728,5 +922,29 @@ stores
             tools[0].get("function").and_then(|v| v.get("name")),
             Some(&json!("mcp_context7_resolve_library_id"))
         );
+    }
+
+    #[test]
+    fn message_content_becomes_parts_for_image_attachment() {
+        let attachment = Attachment {
+            kind: Some("image".to_string()),
+            mime: Some("image/png".to_string()),
+            name: Some("cat.png".to_string()),
+            path: None,
+            bytes_b64: Some("AAAA".to_string()),
+            size: None,
+        };
+        let modality = ModalitySupport {
+            text: true,
+            image: true,
+            audio: false,
+            video: false,
+        };
+        let content = build_user_message_content("describe".to_string(), &[attachment], &modality)
+            .expect("content");
+        match content {
+            MessageContent::Parts(parts) => assert_eq!(parts.len(), 2),
+            MessageContent::Text(_) => panic!("expected parts"),
+        }
     }
 }

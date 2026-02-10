@@ -215,6 +215,8 @@ pub enum LoadRequest {
     Gguf {
         model_path: String,
         tokenizer_path: Option<String>,
+        #[serde(default)]
+        mmproj_path: Option<String>,
         context_length: usize,
         device: Option<DevicePreference>,
     },
@@ -223,6 +225,8 @@ pub enum LoadRequest {
         repo_id: String,
         revision: Option<String>,
         filename: String,
+        #[serde(default)]
+        mmproj_path: Option<String>,
         context_length: usize,
         device: Option<DevicePreference>,
     },
@@ -299,9 +303,40 @@ pub struct ToolChoiceFunction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attachment {
+    #[serde(default)]
     pub kind: Option<String>,
+    #[serde(default, alias = "mimeType")]
     pub mime: Option<String>,
+    #[serde(default, alias = "filename")]
     pub name: Option<String>,
+    #[serde(default)]
     pub path: Option<String>,
+    #[serde(default, alias = "data")]
     pub bytes_b64: Option<String>,
+    #[serde(default)]
+    pub size: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Attachment;
+
+    #[test]
+    fn attachment_deserializes_frontend_aliases() {
+        let value = serde_json::json!({
+            "filename": "cat.png",
+            "data": "YWJjZA==",
+            "mimeType": "image/png",
+            "size": 1234,
+            "kind": "image",
+            "path": "C:/tmp/cat.png"
+        });
+        let parsed: Attachment = serde_json::from_value(value).expect("attachment parse");
+        assert_eq!(parsed.name.as_deref(), Some("cat.png"));
+        assert_eq!(parsed.bytes_b64.as_deref(), Some("YWJjZA=="));
+        assert_eq!(parsed.mime.as_deref(), Some("image/png"));
+        assert_eq!(parsed.size, Some(1234));
+        assert_eq!(parsed.kind.as_deref(), Some("image"));
+        assert_eq!(parsed.path.as_deref(), Some("C:/tmp/cat.png"));
+    }
 }

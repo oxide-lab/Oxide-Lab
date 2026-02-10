@@ -18,6 +18,7 @@ pub struct EngineSessionInfo {
     pub engine_id: EngineId,
     pub model_id: String,
     pub model_path: String,
+    pub mmproj_path: Option<String>,
     pub pid: i32,
     pub port: u16,
     pub api_key: String,
@@ -30,5 +31,6 @@ pub struct EngineSessionInfo {
 pub struct ResolvedModelSource {
     pub model_id: String,
     pub model_path: String,
+    pub mmproj_path: Option<String>,
     pub context_length: usize,
 }

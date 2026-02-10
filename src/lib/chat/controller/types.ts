@@ -17,6 +17,8 @@ export type ChatControllerCtx = {
     set revision(v: string);
     get hubGgufFilename(): string;
     set hubGgufFilename(v: string);
+    get mmprojPath(): string;
+    set mmprojPath(v: string);
     get prompt(): string;
     set prompt(v: string);
     get messages(): ChatMessage[];

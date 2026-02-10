@@ -28,13 +28,7 @@
   import ShortcutsModal from '$lib/components/ui/ShortcutsModal.svelte';
   import { cn } from '../../utils';
   import { t } from '$lib/i18n';
-  import { chatState } from '$lib/stores/chat';
   import { Input } from '$lib/components/ui/input';
-
-  type AttachDetail = {
-    filename: string;
-    content: string;
-  };
 
   const TEXT_EXTENSIONS = [
     'txt',
@@ -49,6 +43,9 @@
     'html',
   ];
   const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+  const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'ogg'];
+  const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'mkv'];
+  const MAX_ATTACHMENTS_PER_MESSAGE = 4;
   const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
   interface Props {
@@ -67,14 +64,13 @@
     isLoaderPanelVisible?: boolean;
     isChatHistoryVisible?: boolean;
     hasMessages?: boolean;
-    onSend?: () => void;
+    onSend?: (message?: PromptInputMessage) => void | Promise<void>;
     onStop?: () => void;
     onRetrievalUrlToggle?: (enabled: boolean) => void;
     onRetrievalUrlsChange?: (urls: string[]) => void;
     onRetrievalLocalToggle?: (enabled: boolean) => void;
     onMcpToggle?: (enabled: boolean) => void;
     onClear?: () => void;
-    onAttach?: (detail: AttachDetail) => void;
     onToggleLoaderPanel?: () => void;
     onToggleChatHistory?: () => void;
   }
@@ -102,7 +98,6 @@
     onRetrievalLocalToggle,
     onMcpToggle,
     onClear,
-    onAttach,
     onToggleLoaderPanel,
     onToggleChatHistory: _onToggleChatHistory,
   }: Props = $props();
@@ -115,12 +110,15 @@
 
   // Build accept string for file input
   const accept = $derived(buildAccept());
-  const sendDisabled = $derived(!isLoaded || (!busy && !prompt.trim()));
+  const hasPendingAttachments = $derived((attachmentsContext?.files.length ?? 0) > 0);
+  const sendDisabled = $derived(!isLoaded || (!busy && !prompt.trim() && !hasPendingAttachments));
 
   function buildAccept() {
     const extensions: string[] = [];
     if (supports_text) extensions.push(...TEXT_EXTENSIONS.map((ext) => `.${ext}`));
     if (supports_image) extensions.push(...IMAGE_EXTENSIONS.map((ext) => `.${ext}`));
+    if (_supports_audio) extensions.push(...AUDIO_EXTENSIONS.map((ext) => `.${ext}`));
+    if (_supports_video) extensions.push(...VIDEO_EXTENSIONS.map((ext) => `.${ext}`));
     return extensions.join(',') || TEXT_EXTENSIONS.map((ext) => `.${ext}`).join(',');
   }
 
@@ -138,12 +136,6 @@
       attachError = null;
       errorTimer = null;
     }, 4000);
-  }
-
-  function triggerSend() {
-    // Use $chatState for proper reactivity (props may not update correctly)
-    if ($chatState.busy || !$chatState.isLoaded || !prompt.trim()) return;
-    onSend?.();
   }
 
   function triggerStop() {
@@ -167,14 +159,8 @@
     onToggleLoaderPanel?.();
   }
 
-  function handleSubmit(message: PromptInputMessage) {
-    // Handle attached files
-    for (const file of message.files ?? []) {
-      if (file.filename && file.url) {
-        onAttach?.({ filename: file.filename, content: file.url });
-      }
-    }
-    triggerSend();
+  async function handleSubmit(message: PromptInputMessage) {
+    await onSend?.(message);
   }
 
   function handleError(err: { code: string; message: string }) {
@@ -230,7 +216,8 @@
     class="composer"
     {accept}
     bind:attachmentsContext
-    multiple={false}
+    multiple={true}
+    maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
     maxFileSize={MAX_FILE_SIZE}
     onSubmit={handleSubmit}
     onError={handleError}
@@ -258,14 +245,18 @@
             placeholder="https://example.com/article"
             oninput={(event) => updateUrlList((event.currentTarget as HTMLInputElement).value)}
           />
-          <p class="pt-1 text-[11px] text-muted-foreground">One URL per line (or comma-separated)</p>
+          <p class="pt-1 text-[11px] text-muted-foreground">
+            One URL per line (or comma-separated)
+          </p>
         </div>
       {/if}
 
       <!-- Toolbar -->
       <div class="flex justify-between items-center gap-2 p-2">
         <PromptInputTools class="flex gap-0">
-          <div class="flex items-center gap-1 rounded-full border border-border/80 bg-muted/35 px-1 py-1 mr-1 overflow-x-auto">
+          <div
+            class="flex items-center gap-1 rounded-full border border-border/80 bg-muted/35 px-1 py-1 mr-1 overflow-x-auto"
+          >
             <button
               type="button"
               class={cn(
@@ -369,12 +360,12 @@
             variant="default"
             size="icon"
             class="rounded-full size-9"
-            onclick={busy ? triggerStop : triggerSend}
+            onclick={busy ? triggerStop : undefined}
             disabled={sendDisabled}
             aria-label={busy
               ? $t('chat.composer.stop') || 'Stop'
               : $t('chat.composer.send') || 'Send'}
-            type="button"
+            type={busy ? 'button' : 'submit'}
           >
             {#if busy}
               <Stop size={16} weight="bold" />
@@ -417,7 +408,7 @@
     outline: none !important;
     box-shadow: none !important;
     padding: 0.75rem 1rem;
-    font-size: 1rem;
+    font-size: 0.875rem;
     line-height: 1.3;
   }
 

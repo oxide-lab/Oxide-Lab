@@ -1,5 +1,6 @@
 use super::adapter::EngineAdapter;
 use super::types::{EngineId, EngineSessionInfo, EngineSessionKind, ResolvedModelSource};
+use crate::core::modality::model_id_looks_vision;
 use crate::core::types::{GenerateRequest, LlamaRuntimeConfig, LlamaSessionKind, LoadRequest};
 use crate::inference::llamacpp::{http_client, state::LlamaCppState};
 use oxide_llamacpp::args::LlamacppConfig;
@@ -7,6 +8,7 @@ use oxide_llamacpp::commands;
 use oxide_llamacpp::state::SessionInfo as PluginSessionInfo;
 use std::collections::HashMap;
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
@@ -66,6 +68,7 @@ impl LlamaCppAdapter {
             engine_id: EngineId::Llamacpp,
             model_id: info.model_id,
             model_path: info.model_path,
+            mmproj_path: info.mmproj_path,
             pid: info.pid,
             port: Self::to_port(info.port)?,
             api_key: info.api_key,
@@ -536,6 +539,161 @@ impl LlamaCppAdapter {
         )
     }
 
+    fn is_mmproj_filename(name: &str) -> bool {
+        let lower = name.to_ascii_lowercase();
+        if !lower.ends_with(".gguf") {
+            return false;
+        }
+        lower.contains("mmproj") || (lower.contains("vision") && lower.contains("proj"))
+    }
+
+    fn local_mmproj_candidates(model_path: &str) -> Vec<String> {
+        let model = Path::new(model_path);
+        let Some(dir) = model.parent() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let entries = match fs::read_dir(dir) {
+            Ok(v) => v,
+            Err(_) => return out,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+                continue;
+            };
+            if Self::is_mmproj_filename(name) {
+                out.push(path.to_string_lossy().to_string());
+            }
+        }
+        out.sort_unstable();
+        out
+    }
+
+    fn validate_manual_mmproj_path(path: &str) -> Result<String, String> {
+        let candidate = PathBuf::from(path);
+        if !candidate.exists() || !candidate.is_file() {
+            return Err(format!(
+                "mmproj file does not exist: {}",
+                candidate.display()
+            ));
+        }
+        Ok(candidate.to_string_lossy().to_string())
+    }
+
+    fn hf_mmproj_siblings(repo_id: &str, revision: &str) -> Result<Vec<String>, String> {
+        #[derive(serde::Deserialize)]
+        struct HfSibling {
+            rfilename: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct HfModelEntry {
+            #[serde(default)]
+            siblings: Vec<HfSibling>,
+        }
+
+        let encoded = urlencoding::encode(repo_id);
+        let url = format!("https://huggingface.co/api/models/{encoded}");
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("oxide-lab/0.15")
+            .build()
+            .map_err(|e| e.to_string())?;
+        let response = client
+            .get(url)
+            .query(&[("revision", revision)])
+            .send()
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Ok(Vec::new());
+        }
+        let entry: HfModelEntry = response.json().map_err(|e| e.to_string())?;
+        let mut candidates: Vec<String> = entry
+            .siblings
+            .into_iter()
+            .map(|s| s.rfilename)
+            .filter(|name| Self::is_mmproj_filename(name))
+            .collect();
+        candidates.sort_unstable();
+        Ok(candidates)
+    }
+
+    fn maybe_download_hub_file(
+        repo_id: &str,
+        revision: &str,
+        filename: &str,
+    ) -> Result<Option<String>, String> {
+        let api = hf_hub::api::sync::Api::new().map_err(|e| e.to_string())?;
+        let repo = hf_hub::Repo::with_revision(
+            repo_id.to_string(),
+            hf_hub::RepoType::Model,
+            revision.to_string(),
+        );
+        match api.repo(repo).get(filename) {
+            Ok(path) => Ok(Some(path.to_string_lossy().to_string())),
+            Err(_) => Ok(None),
+        }
+    }
+
+    fn resolve_local_mmproj(
+        model_id: &str,
+        model_path: &str,
+        manual_mmproj: Option<&String>,
+    ) -> Result<Option<String>, String> {
+        if let Some(manual) = manual_mmproj
+            && !manual.trim().is_empty()
+        {
+            return Self::validate_manual_mmproj_path(manual).map(Some);
+        }
+
+        let auto = Self::local_mmproj_candidates(model_path).into_iter().next();
+        if model_id_looks_vision(model_id) && auto.is_none() {
+            return Err(
+                "Vision model detected but mmproj is missing. Set mmproj_path.".to_string(),
+            );
+        }
+        Ok(auto)
+    }
+
+    fn resolve_hub_mmproj(
+        repo_id: &str,
+        revision: &str,
+        model_path: &str,
+        manual_mmproj: Option<&String>,
+    ) -> Result<Option<String>, String> {
+        if let Some(manual) = manual_mmproj
+            && !manual.trim().is_empty()
+        {
+            if let Ok(valid) = Self::validate_manual_mmproj_path(manual) {
+                return Ok(Some(valid));
+            }
+            if let Some(downloaded) = Self::maybe_download_hub_file(repo_id, revision, manual)? {
+                return Ok(Some(downloaded));
+            }
+            return Err(format!(
+                "mmproj not found. Tried local path and HF file '{}'",
+                manual
+            ));
+        }
+
+        for sibling in Self::hf_mmproj_siblings(repo_id, revision)? {
+            if let Some(downloaded) = Self::maybe_download_hub_file(repo_id, revision, &sibling)? {
+                return Ok(Some(downloaded));
+            }
+        }
+
+        let auto_local = Self::local_mmproj_candidates(model_path).into_iter().next();
+        if model_id_looks_vision(repo_id) && auto_local.is_none() {
+            return Err(
+                "Vision model detected from repo id, but mmproj was not found. Set mmproj_path."
+                    .to_string(),
+            );
+        }
+        Ok(auto_local)
+    }
+
     async fn start_new_session(
         &self,
         kind: EngineSessionKind,
@@ -565,7 +723,7 @@ impl LlamaCppAdapter {
                 port,
                 config.clone(),
                 envs,
-                None,
+                source.mmproj_path.clone(),
                 is_embedding,
                 timeout,
             )
@@ -602,31 +760,50 @@ impl EngineAdapter for LlamaCppAdapter {
         match req {
             LoadRequest::Gguf {
                 model_path,
+                mmproj_path,
                 context_length,
                 ..
-            } => Ok(ResolvedModelSource {
-                model_id: Self::model_id_from_path(model_path),
-                model_path: model_path.clone(),
-                context_length: *context_length,
-            }),
+            } => {
+                let model_id = Self::model_id_from_path(model_path);
+                let resolved_mmproj =
+                    Self::resolve_local_mmproj(&model_id, model_path, mmproj_path.as_ref())?;
+                Ok(ResolvedModelSource {
+                    model_id,
+                    model_path: model_path.clone(),
+                    mmproj_path: resolved_mmproj,
+                    context_length: *context_length,
+                })
+            }
             LoadRequest::HubGguf {
                 repo_id,
                 revision,
                 filename,
+                mmproj_path,
                 context_length,
                 ..
             } => {
                 let revision = revision.clone().unwrap_or_else(|| "main".to_string());
                 let api = hf_hub::api::sync::Api::new().map_err(|e| e.to_string())?;
-                let repo =
-                    hf_hub::Repo::with_revision(repo_id.clone(), hf_hub::RepoType::Model, revision);
+                let repo = hf_hub::Repo::with_revision(
+                    repo_id.clone(),
+                    hf_hub::RepoType::Model,
+                    revision.clone(),
+                );
                 let path = api
                     .repo(repo)
                     .get(filename)
                     .map_err(|e| format!("hf_hub get {} failed: {}", filename, e))?;
+                let model_path = path.to_string_lossy().to_string();
+                let resolved_mmproj = Self::resolve_hub_mmproj(
+                    repo_id,
+                    &revision,
+                    &model_path,
+                    mmproj_path.as_ref(),
+                )?;
                 Ok(ResolvedModelSource {
                     model_id: repo_id.clone(),
-                    model_path: path.to_string_lossy().to_string(),
+                    model_path,
+                    mmproj_path: resolved_mmproj,
                     context_length: *context_length,
                 })
             }
@@ -672,6 +849,7 @@ impl EngineAdapter for LlamaCppAdapter {
         let source = ResolvedModelSource {
             model_id: session.model_id.clone(),
             model_path: session.model_path.clone(),
+            mmproj_path: session.mmproj_path.clone(),
             context_length: runtime_cfg.ctx_size.max(1) as usize,
         };
         self.start_session(session.kind, &source, runtime_cfg).await
@@ -730,6 +908,8 @@ impl EngineAdapter for LlamaCppAdapter {
 mod tests {
     use super::LlamaCppAdapter;
     use crate::core::types::LlamaRuntimeConfig;
+    use std::fs;
+    use std::path::PathBuf;
 
     fn runtime_with_mapping(mapping: Option<&str>) -> LlamaRuntimeConfig {
         let mut cfg = LlamaRuntimeConfig::default();
@@ -806,5 +986,75 @@ mod tests {
             Some("b7951/win-cuda-12-common_cpus-x64"),
         );
         assert!(should_use);
+    }
+
+    fn make_temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("oxide-mmproj-tests-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn local_mmproj_candidates_find_expected_patterns() {
+        let dir = make_temp_dir();
+        let model = dir.join("qwen3-vl-8b.gguf");
+        let mmproj = dir.join("qwen3-vl-mmproj-f16.gguf");
+        let vision_proj = dir.join("qwen3-vl-vision-proj.gguf");
+        let ignored = dir.join("readme.txt");
+        fs::write(&model, b"model").expect("model");
+        fs::write(&mmproj, b"mmproj").expect("mmproj");
+        fs::write(&vision_proj, b"vision proj").expect("vision proj");
+        fs::write(&ignored, b"ignore").expect("ignored");
+
+        let candidates = LlamaCppAdapter::local_mmproj_candidates(&model.to_string_lossy());
+        assert!(
+            candidates
+                .iter()
+                .any(|p| p.ends_with("qwen3-vl-mmproj-f16.gguf"))
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|p| p.ends_with("qwen3-vl-vision-proj.gguf"))
+        );
+        assert!(!candidates.iter().any(|p| p.ends_with("readme.txt")));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_local_mmproj_prefers_manual_over_auto() {
+        let dir = make_temp_dir();
+        let model = dir.join("qwen3-vl-8b.gguf");
+        let auto = dir.join("qwen3-vl-mmproj-f16.gguf");
+        let manual = dir.join("manual-mmproj.gguf");
+        fs::write(&model, b"model").expect("model");
+        fs::write(&auto, b"auto").expect("auto");
+        fs::write(&manual, b"manual").expect("manual");
+
+        let manual_str = manual.to_string_lossy().to_string();
+        let resolved = LlamaCppAdapter::resolve_local_mmproj(
+            "qwen3-vl-8b",
+            &model.to_string_lossy(),
+            Some(&manual_str),
+        )
+        .expect("resolved");
+
+        assert_eq!(resolved.as_deref(), Some(manual_str.as_str()));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn resolve_local_mmproj_errors_for_vision_without_mmproj() {
+        let dir = make_temp_dir();
+        let model = dir.join("qwen3-vl-8b.gguf");
+        fs::write(&model, b"model").expect("model");
+
+        let err =
+            LlamaCppAdapter::resolve_local_mmproj("qwen3-vl-8b", &model.to_string_lossy(), None)
+                .expect_err("expected vision error");
+        assert!(err.contains("mmproj"));
+
+        let _ = fs::remove_dir_all(dir);
     }
 }

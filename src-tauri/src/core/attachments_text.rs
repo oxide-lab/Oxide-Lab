@@ -1,9 +1,7 @@
 use base64::Engine as _;
 
+use crate::core::limits::{MAX_ATTACHMENT_SIZE_BYTES, MAX_ATTACHMENTS_PER_MESSAGE};
 use crate::core::types::Attachment;
-
-const MAX_FILES: usize = 5;
-const MAX_SIZE_BYTES: u64 = 20 * 1024 * 1024; // 20 MiB
 
 fn is_txt_md(att: &Attachment) -> bool {
     let mut ok = false;
@@ -28,24 +26,24 @@ fn is_txt_md(att: &Attachment) -> bool {
     ok
 }
 
-fn read_bytes(att: &Attachment) -> Result<Option<Vec<u8>>, String> {
+pub(crate) fn read_attachment_bytes(att: &Attachment) -> Result<Option<Vec<u8>>, String> {
     if let Some(b64) = &att.bytes_b64 {
         // Быстрая оценка размера без декодирования: ~3/4 длины base64
         let est = (b64.len() as u64) * 3 / 4;
-        if est > MAX_SIZE_BYTES {
+        if est > MAX_ATTACHMENT_SIZE_BYTES {
             return Err(format!(
                 "Файл в base64 превышает лимит {} МБ (оценка ~{:.2} МБ)",
-                MAX_SIZE_BYTES / (1024 * 1024),
+                MAX_ATTACHMENT_SIZE_BYTES / (1024 * 1024),
                 est as f64 / (1024.0 * 1024.0)
             ));
         }
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("Failed to decode base64 attachment: {}", e))?;
-        if decoded.len() as u64 > MAX_SIZE_BYTES {
+        if decoded.len() as u64 > MAX_ATTACHMENT_SIZE_BYTES {
             return Err(format!(
                 "Файл превышает лимит {} МБ ({} байт)",
-                MAX_SIZE_BYTES / (1024 * 1024),
+                MAX_ATTACHMENT_SIZE_BYTES / (1024 * 1024),
                 decoded.len()
             ));
         }
@@ -54,22 +52,22 @@ fn read_bytes(att: &Attachment) -> Result<Option<Vec<u8>>, String> {
     if let Some(p) = &att.path {
         // Проверяем размер по метаданным до чтения
         if let Ok(meta) = std::fs::metadata(p)
-            && meta.len() > MAX_SIZE_BYTES
+            && meta.len() > MAX_ATTACHMENT_SIZE_BYTES
         {
             return Err(format!(
                 "Файл '{}' превышает лимит {} МБ ({} байт)",
                 p,
-                MAX_SIZE_BYTES / (1024 * 1024),
+                MAX_ATTACHMENT_SIZE_BYTES / (1024 * 1024),
                 meta.len()
             ));
         }
         let bytes = std::fs::read(p)
             .map_err(|e| format!("Failed to read attachment from path {}: {}", p, e))?;
-        if bytes.len() as u64 > MAX_SIZE_BYTES {
+        if bytes.len() as u64 > MAX_ATTACHMENT_SIZE_BYTES {
             return Err(format!(
                 "Файл '{}' превышает лимит {} МБ после чтения ({} байт)",
                 p,
-                MAX_SIZE_BYTES / (1024 * 1024),
+                MAX_ATTACHMENT_SIZE_BYTES / (1024 * 1024),
                 bytes.len()
             ));
         }
@@ -90,17 +88,17 @@ pub fn gather_text_from_attachments(attachments: &[Attachment]) -> Result<String
     if txt_md.is_empty() {
         return Ok(String::new());
     }
-    if txt_md.len() > MAX_FILES {
+    if txt_md.len() > MAX_ATTACHMENTS_PER_MESSAGE {
         return Err(format!(
             "Слишком много файлов .txt/.md: {} (максимум {})",
             txt_md.len(),
-            MAX_FILES
+            MAX_ATTACHMENTS_PER_MESSAGE
         ));
     }
 
     let mut out = String::new();
     for att in txt_md.into_iter() {
-        let bytes_opt = read_bytes(att)?;
+        let bytes_opt = read_attachment_bytes(att)?;
         if let Some(bytes) = bytes_opt {
             let text = String::from_utf8_lossy(&bytes);
             if !out.is_empty() {
