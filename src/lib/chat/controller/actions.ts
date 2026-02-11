@@ -560,7 +560,7 @@ export function createActions(ctx: ChatControllerCtx) {
                 max_new_tokens: maxNewTokens,
                 seed: seedValue,
                 stop_sequences: stopSequences,
-                reasoning_parse_enabled: !!ctx.reasoning_parse_enabled,
+                reasoning_parse_enabled: ctx.reasoning_parse_enabled !== false,
                 structured_output_enabled: !!ctx.structured_output_enabled,
             });
 
@@ -586,7 +586,7 @@ export function createActions(ctx: ChatControllerCtx) {
                     seed: seedValue,
                     repeat_last_n: 64,
                     stop_sequences: stopSequences.length > 0 ? stopSequences : null,
-                    reasoning_parse_enabled: !!ctx.reasoning_parse_enabled,
+                    reasoning_parse_enabled: ctx.reasoning_parse_enabled !== false,
                     reasoning_start_tag: ctx.reasoning_start_tag || '<think>',
                     reasoning_end_tag: ctx.reasoning_end_tag || '</think>',
                     structured_output_enabled: !!ctx.structured_output_enabled,
@@ -823,7 +823,7 @@ export function createActions(ctx: ChatControllerCtx) {
                     seed: seedValue,
                     repeat_last_n: 64,
                     stop_sequences: stopSequences.length > 0 ? stopSequences : null,
-                    reasoning_parse_enabled: !!ctx.reasoning_parse_enabled,
+                    reasoning_parse_enabled: ctx.reasoning_parse_enabled !== false,
                     reasoning_start_tag: ctx.reasoning_start_tag || '<think>',
                     reasoning_end_tag: ctx.reasoning_end_tag || '</think>',
                     structured_output_enabled: !!ctx.structured_output_enabled,

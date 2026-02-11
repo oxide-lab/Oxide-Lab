@@ -535,16 +535,26 @@ impl LlamaCppAdapter {
     }
 
     fn apply_plan_to_config(config: &mut LlamacppConfig, plan: &ModelPlan, has_mmproj: bool) {
-        config.n_gpu_layers = Self::saturating_u64_to_i32(plan.gpu_layers);
         if plan.max_context_length > 0 {
-            config.ctx_size = Self::saturating_u64_to_i32(plan.max_context_length).max(512);
+            let planned_ctx = Self::saturating_u64_to_i32(plan.max_context_length).max(512);
+            config.ctx_size = config.ctx_size.min(planned_ctx).max(512);
         }
 
         let planned_batch = Self::saturating_u64_to_i32(plan.batch_size).max(1);
-        config.batch_size = planned_batch;
-        config.ubatch_size = planned_batch;
-        config.no_kv_offload = plan.no_offload_kv_cache;
-        config.offload_mmproj = has_mmproj && plan.offload_mmproj;
+        config.batch_size = config.batch_size.min(planned_batch).max(1);
+        config.ubatch_size = config.ubatch_size.min(config.batch_size).max(1);
+
+        // Preserve explicit runtime GPU preferences for multimodal models.
+        // If planner can only produce CPU mode, force CPU-safe fallback.
+        if matches!(plan.mode, ModelMode::CPU) {
+            config.n_gpu_layers = 0;
+            config.no_kv_offload = true;
+        }
+
+        // Never offload projector to GPU if projector is missing or run is effectively CPU-only.
+        if !has_mmproj || config.n_gpu_layers <= 0 || config.no_kv_offload {
+            config.offload_mmproj = false;
+        }
     }
 
     async fn apply_multimodal_plan(
@@ -1338,7 +1348,7 @@ mod tests {
         };
 
         LlamaCppAdapter::apply_plan_to_config(&mut config, &plan, true);
-        assert_eq!(config.n_gpu_layers, 37);
+        assert_eq!(config.n_gpu_layers, runtime.n_gpu_layers);
         assert_eq!(config.ctx_size, 2048);
         assert_eq!(config.batch_size, 256);
         assert_eq!(config.ubatch_size, 256);
@@ -1360,10 +1370,29 @@ mod tests {
         };
 
         LlamaCppAdapter::apply_plan_to_config(&mut config, &plan, false);
-        assert_eq!(config.n_gpu_layers, 10);
+        assert_eq!(config.n_gpu_layers, runtime.n_gpu_layers);
         assert_eq!(config.ctx_size, 1024);
         assert_eq!(config.batch_size, 64);
         assert_eq!(config.ubatch_size, 64);
+        assert!(!config.no_kv_offload);
+        assert!(!config.offload_mmproj);
+    }
+
+    #[test]
+    fn apply_plan_to_config_forces_cpu_safe_mmproj_mode_when_plan_is_cpu() {
+        let runtime = LlamaRuntimeConfig::default();
+        let mut config = LlamaCppAdapter::build_config(&runtime);
+        let plan = ModelPlan {
+            gpu_layers: 0,
+            max_context_length: 2048,
+            no_offload_kv_cache: true,
+            offload_mmproj: false,
+            batch_size: 64,
+            mode: ModelMode::CPU,
+        };
+
+        LlamaCppAdapter::apply_plan_to_config(&mut config, &plan, true);
+        assert_eq!(config.n_gpu_layers, 0);
         assert!(config.no_kv_offload);
         assert!(!config.offload_mmproj);
     }

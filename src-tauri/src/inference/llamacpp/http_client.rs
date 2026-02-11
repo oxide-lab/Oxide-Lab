@@ -80,6 +80,12 @@ struct ChatCompletionRequest {
     tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking_forced_open: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chat_template_kwargs: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +105,8 @@ struct ChatChunkChoice {
 struct ChatDelta {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +126,8 @@ struct ChatCompletionChoice {
 struct ChatCompletionMessage {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    reasoning_content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<ChatCompletionToolCall>>,
 }
@@ -148,6 +158,30 @@ pub struct ChatCompletionMessageResult {
     pub content: String,
     pub finish_reason: Option<String>,
     pub tool_calls: Vec<ToolCallMessage>,
+}
+
+fn should_start_in_implicit_thinking_mode(
+    model_id: &str,
+    reasoning_start: &str,
+    reasoning_end: &str,
+) -> bool {
+    if reasoning_start != "<think>" || reasoning_end != "</think>" {
+        return false;
+    }
+
+    let id = model_id.to_ascii_lowercase();
+
+    // Some reasoning models stream CoT without emitting <think>, but still
+    // terminate with </think>. Enable implicit mode for those families/variants.
+    let explicit_reasoning_variant = id.contains("think") || id.contains("reason");
+    let known_implicit_families = id.contains("glm-4.6")
+        || id.contains("glm4.6")
+        || id.contains("deepseek-r1")
+        || id.contains("qwq");
+
+    (id.contains("qwen3") && explicit_reasoning_variant)
+        || explicit_reasoning_variant
+        || known_implicit_families
 }
 
 fn attachment_hint(att: &Attachment) -> String {
@@ -570,6 +604,20 @@ fn response_format_from_request(req: &GenerateRequest) -> Option<Value> {
     }
 }
 
+fn reasoning_format_from_request(req: &GenerateRequest) -> String {
+    if req.reasoning_parse_enabled.unwrap_or(true) {
+        "deepseek".to_string()
+    } else {
+        "none".to_string()
+    }
+}
+
+fn chat_template_kwargs_from_request(req: &GenerateRequest) -> Value {
+    json!({
+        "enable_thinking": req.reasoning_parse_enabled.unwrap_or(true)
+    })
+}
+
 pub async fn health_check(session: &EngineSessionInfo) -> bool {
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_millis(600))
@@ -614,6 +662,9 @@ pub async fn stream_chat_completion(
         stop: req.stop_sequences.clone(),
         tool_choice: req.tool_choice.clone(),
         response_format,
+        reasoning_format: Some(reasoning_format_from_request(&req)),
+        thinking_forced_open: Some(req.reasoning_parse_enabled.unwrap_or(true)),
+        chat_template_kwargs: Some(chat_template_kwargs_from_request(&req)),
     };
 
     let client = reqwest::Client::builder()
@@ -644,16 +695,21 @@ pub async fn stream_chat_completion(
     let reasoning_start = req.reasoning_start_tag.as_deref().unwrap_or("<think>");
     let reasoning_end = req.reasoning_end_tag.as_deref().unwrap_or("</think>");
     let mut thinking_parser = if reasoning_enabled {
-        Some(
-            if reasoning_start == "<think>" && reasoning_end == "</think>" {
-                ThinkingParser::new()
-            } else {
-                ThinkingParser::with_tags(reasoning_start, reasoning_end)
-            },
-        )
+        Some(if should_start_in_implicit_thinking_mode(
+            &session.model_id,
+            reasoning_start,
+            reasoning_end,
+        ) {
+            ThinkingParser::new_in_thinking_mode()
+        } else if reasoning_start == "<think>" && reasoning_end == "</think>" {
+            ThinkingParser::new()
+        } else {
+            ThinkingParser::with_tags(reasoning_start, reasoning_end)
+        })
     } else {
         None
     };
+    let mut server_split_reasoning = false;
 
     while let Some(event) = events.next().await {
         if CANCEL_GENERATION.load(Ordering::SeqCst) {
@@ -675,29 +731,69 @@ pub async fn stream_chat_completion(
         };
 
         for choice in parsed.choices {
-            if let Some(delta) = choice.delta
-                && let Some(content) = delta.content
-                && !content.is_empty()
-            {
-                if let Some(parser) = thinking_parser.as_mut() {
-                    let chunk = parser.process_token(&content);
-                    if !chunk.thinking.is_empty() || !chunk.content.is_empty() {
-                        let _ = app.emit(
-                            "message",
-                            StreamMessage {
-                                thinking: chunk.thinking,
-                                content: chunk.content,
-                            },
-                        );
+            if let Some(delta) = choice.delta {
+                if let Some(reasoning_piece) = delta.reasoning_content
+                    && !reasoning_piece.is_empty()
+                {
+                    if !server_split_reasoning {
+                        // If llama.cpp streams reasoning_content separately, disable local
+                        // tag-based parser to avoid splitting the same content twice.
+                        if let Some(parser) = thinking_parser.as_mut() {
+                            let tail = parser.flush();
+                            if !tail.thinking.is_empty() || !tail.content.is_empty() {
+                                let _ = app.emit(
+                                    "message",
+                                    StreamMessage {
+                                        thinking: tail.thinking,
+                                        content: tail.content,
+                                    },
+                                );
+                            }
+                        }
+                        thinking_parser = None;
+                        server_split_reasoning = true;
                     }
-                } else {
+
                     let _ = app.emit(
                         "message",
                         StreamMessage {
-                            thinking: String::new(),
-                            content,
+                            thinking: reasoning_piece,
+                            content: String::new(),
                         },
                     );
+                }
+
+                if let Some(content) = delta.content
+                    && !content.is_empty()
+                {
+                    if server_split_reasoning {
+                        let _ = app.emit(
+                            "message",
+                            StreamMessage {
+                                thinking: String::new(),
+                                content,
+                            },
+                        );
+                    } else if let Some(parser) = thinking_parser.as_mut() {
+                        let chunk = parser.process_token(&content);
+                        if !chunk.thinking.is_empty() || !chunk.content.is_empty() {
+                            let _ = app.emit(
+                                "message",
+                                StreamMessage {
+                                    thinking: chunk.thinking,
+                                    content: chunk.content,
+                                },
+                            );
+                        }
+                    } else {
+                        let _ = app.emit(
+                            "message",
+                            StreamMessage {
+                                thinking: String::new(),
+                                content,
+                            },
+                        );
+                    }
                 }
             }
             if choice.finish_reason.is_some() {
@@ -748,6 +844,9 @@ pub async fn chat_completion_once(
         stop: req.stop_sequences.clone(),
         tool_choice: req.tool_choice.clone(),
         response_format,
+        reasoning_format: Some(reasoning_format_from_request(&req)),
+        thinking_forced_open: Some(req.reasoning_parse_enabled.unwrap_or(true)),
+        chat_template_kwargs: Some(chat_template_kwargs_from_request(&req)),
     };
 
     let client = reqwest::Client::builder()
@@ -784,7 +883,7 @@ pub async fn chat_completion_once(
     let message = choice
         .message
         .ok_or_else(|| "llama-server returned empty assistant message".to_string())?;
-    let content = message.content.unwrap_or_default();
+    let content = message.content.or(message.reasoning_content).unwrap_or_default();
 
     let mut tool_calls = Vec::new();
     if let Some(calls) = message.tool_calls {
@@ -880,6 +979,7 @@ pub fn preflight_chat_messages(req: &GenerateRequest) -> Result<Vec<ChatMessage>
 #[cfg(test)]
 mod tests {
     use super::parse_tool_calls_from_content;
+    use super::should_start_in_implicit_thinking_mode;
     use super::{MessageContent, build_user_message_content};
     use crate::core::modality::ModalitySupport;
     use crate::core::types::{Attachment, GenerateRequest};
@@ -997,6 +1097,9 @@ stores
             stop: None,
             tool_choice: None,
             response_format: None,
+            reasoning_format: None,
+            thinking_forced_open: None,
+            chat_template_kwargs: None,
         };
 
         let json = serde_json::to_value(payload).expect("payload should serialize");
@@ -1009,6 +1112,40 @@ stores
             tools[0].get("function").and_then(|v| v.get("name")),
             Some(&json!("mcp_context7_resolve_library_id"))
         );
+    }
+
+    #[test]
+    fn qwen3_think_models_start_in_implicit_thinking_mode() {
+        assert!(should_start_in_implicit_thinking_mode(
+            "Qwen/Qwen3-30B-A3B-Thinking-GGUF",
+            "<think>",
+            "</think>",
+        ));
+        assert!(should_start_in_implicit_thinking_mode(
+            "qwen3-14b-think",
+            "<think>",
+            "</think>",
+        ));
+        assert!(!should_start_in_implicit_thinking_mode(
+            "Qwen/Qwen3-8B-GGUF",
+            "<think>",
+            "</think>",
+        ));
+        assert!(!should_start_in_implicit_thinking_mode(
+            "Qwen/Qwen3-30B-A3B-Thinking-GGUF",
+            "<reasoning>",
+            "</reasoning>",
+        ));
+        assert!(should_start_in_implicit_thinking_mode(
+            "THUDM/GLM-4.6",
+            "<think>",
+            "</think>",
+        ));
+        assert!(should_start_in_implicit_thinking_mode(
+            "deepseek-r1-distill-14b",
+            "<think>",
+            "</think>",
+        ));
     }
 
     #[test]

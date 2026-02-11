@@ -44,10 +44,45 @@
   let regenerateTooltipOpen = $state(false);
   let rawTooltipOpen = $state(false);
 
+  function cleanThinking(text: string): string {
+    return text.replace(/<\/?think>/gi, '').trim();
+  }
+
+  function splitInlineThinking(content: string): { thinking: string; content: string } {
+    const source = content ?? '';
+    const closeTag = '</think>';
+    const openTag = '<think>';
+    const lower = source.toLowerCase();
+    const openIdx = lower.indexOf(openTag);
+    const closeIdx = lower.indexOf(closeTag);
+
+    if (openIdx >= 0 && closeIdx > openIdx) {
+      const thinking = source.slice(openIdx + openTag.length, closeIdx).trim();
+      const contentWithoutThinking = `${source.slice(0, openIdx)}${source.slice(closeIdx + closeTag.length)}`.trimStart();
+      return { thinking, content: contentWithoutThinking };
+    }
+
+    if (openIdx < 0 && closeIdx >= 0) {
+      const thinking = source.slice(0, closeIdx).trim();
+      const contentWithoutThinking = source.slice(closeIdx + closeTag.length).trimStart();
+      return { thinking, content: contentWithoutThinking };
+    }
+
+    return { thinking: '', content: source };
+  }
+
   // Derived values
-  let thinkingContent = $derived(message.thinking?.replace(/<think>/g, '').trim());
+  let fallbackThinking = $derived(
+    !message.thinking ? splitInlineThinking(message.content ?? '') : { thinking: '', content: message.content ?? '' },
+  );
+  let thinkingContent = $derived(
+    message.thinking ? cleanThinking(message.thinking) : cleanThinking(fallbackThinking.thinking),
+  );
+  let renderedContent = $derived(
+    message.thinking ? (message.content ?? '') : fallbackThinking.content,
+  );
   let hasThinking = $derived(!!thinkingContent);
-  let showActions = $derived(!isStreaming && message.content);
+  let showActions = $derived(!isStreaming && !!(renderedContent || hasThinking));
   let retrievalSources = $derived(message.sources ?? []);
   let retrievalWarnings = $derived(message.retrievalWarnings ?? []);
   let inlineToolCalls = $derived((message.mcpToolCalls ?? []) as McpToolCallView[]);
@@ -60,8 +95,8 @@
 
   function handleCopy() {
     closeActionTooltips();
-    onCopy?.(message.content);
-    navigator.clipboard.writeText(message.content);
+    onCopy?.(renderedContent || '');
+    navigator.clipboard.writeText(renderedContent || '');
   }
 
   function handleRegenerate() {
@@ -96,7 +131,7 @@
     if (message.thinking) {
       raw += '<think>\n' + message.thinking + '\n</think>\n';
     }
-    raw += message.content;
+    raw += message.content ?? '';
     return raw;
   }
 
@@ -132,7 +167,7 @@
     {/if}
 
     <!-- Main content -->
-    <Markdown content={message.content} class="prose prose-sm dark:prose-invert max-w-none" />
+    <Markdown content={renderedContent} class="prose prose-sm dark:prose-invert max-w-none" />
   {/if}
 
   {#if inlineToolCalls.length > 0}

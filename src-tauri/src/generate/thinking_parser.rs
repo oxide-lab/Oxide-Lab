@@ -5,6 +5,7 @@
 //!
 //! Key behaviors:
 //! - If non-whitespace content appears BEFORE `<think>`, thinking is skipped entirely
+//! - If `</think>` appears before `<think>`, treat preceding text as implicit thinking
 //! - Whitespace between tags and content is trimmed
 //! - Partial tags are buffered until disambiguated
 //! - Only the first `<think>...</think>` block is treated as thinking
@@ -175,6 +176,44 @@ impl ThinkingParser {
                     (events, true)
                 } else if self.opening_tag.starts_with(trimmed) && !trimmed.is_empty() {
                     // Partial opening tag seen, keep accumulating
+                    (events, false)
+                } else if let Some(close_pos) = buf_str.find(&self.closing_tag) {
+                    let open_pos = buf_str.find(&self.opening_tag);
+
+                    // Some models may omit the opening tag but still emit a closing tag.
+                    // If we see </think> before any <think>, treat the prefix as thinking.
+                    if open_pos.is_none_or(|pos| pos > close_pos) {
+                        let thinking = buf_str[..close_pos].trim_end().to_string();
+                        let remaining = buf_str[close_pos + self.closing_tag.len()..]
+                            .trim_start()
+                            .to_string();
+
+                        self.buffer.clear();
+
+                        if !thinking.is_empty() {
+                            events.push(ParseEvent::Thinking(thinking));
+                        }
+
+                        if remaining.is_empty() {
+                            self.state = ThinkingState::ThinkingDoneEatingWhitespace;
+                        } else {
+                            self.state = ThinkingState::CollectingContent;
+                            self.buffer.push_str(&remaining);
+                        }
+
+                        (events, true)
+                    } else if trimmed.is_empty() {
+                        // Whitespace only, keep accumulating
+                        (events, false)
+                    } else {
+                        // Non-whitespace content before opening tag - skip thinking entirely
+                        self.state = ThinkingState::CollectingContent;
+                        let content = std::mem::take(&mut self.buffer);
+                        events.push(ParseEvent::Content(content));
+                        (events, false)
+                    }
+                } else if overlap(&buf_str, &self.closing_tag).is_some() {
+                    // Potential partial closing tag in implicit-thinking mode.
                     (events, false)
                 } else if trimmed.is_empty() {
                     // Whitespace only, keep accumulating
@@ -539,6 +578,29 @@ mod tests {
         let r2 = parser.process_token("</think>answer");
         assert_eq!(r2.thinking, "");
         assert_eq!(r2.content, "answer");
+    }
+
+    #[test]
+    fn missing_opening_tag_with_closing_tag_parses_thinking() {
+        let mut parser = ThinkingParser::new();
+        let r1 = parser.process_token("reasoning trace</think>final answer");
+        assert_eq!(r1.thinking, "reasoning trace");
+        assert_eq!(r1.content, "final answer");
+        assert_eq!(parser.state(), ThinkingState::CollectingContent);
+    }
+
+    #[test]
+    fn missing_opening_tag_partial_closing_tag_is_buffered() {
+        let mut parser = ThinkingParser::new();
+        let r1 = parser.process_token("reasoning trace</thi");
+        assert_eq!(r1.thinking, "");
+        assert_eq!(r1.content, "");
+        assert_eq!(parser.state(), ThinkingState::LookingForOpening);
+
+        let r2 = parser.process_token("nk>final answer");
+        assert_eq!(r2.thinking, "reasoning trace");
+        assert_eq!(r2.content, "final answer");
+        assert_eq!(parser.state(), ThinkingState::CollectingContent);
     }
 
     #[test]
