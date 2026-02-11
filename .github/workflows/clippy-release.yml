@@ -1,0 +1,71 @@
+name: 'Manual Clippy Release'
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clippy:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-14'
+            rust_targets: ''
+            cargo_args: ''
+            llama_backend: 'macos-arm64'
+
+          - platform: 'macos-14'
+            rust_targets: 'x86_64-apple-darwin'
+            cargo_args: '--target x86_64-apple-darwin'
+            llama_backend: 'macos-x64'
+
+          - platform: 'ubuntu-22.04'
+            rust_targets: ''
+            cargo_args: ''
+            llama_backend: 'ubuntu-x64'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust stable + clippy
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential
+
+      - name: Prepare llama.cpp binaries for bundling
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLAMA_CPP_REPO: ggml-org/llama.cpp
+          LLAMA_BACKEND: ${{ matrix.llama_backend }}
+        run: node scripts/prepare-llama-binaries.mjs
+
+      - name: Clippy (release, deny warnings)
+        working-directory: src-tauri
+        run: cargo clippy --package oxide-lab --release ${{ matrix.cargo_args }} -- -D warnings

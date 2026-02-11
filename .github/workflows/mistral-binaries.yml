@@ -1,0 +1,191 @@
+name: 'Manual Build Mistral.rs Binaries'
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve latest mistral.rs release tag
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = await github.rest.repos.getLatestRelease({
+              owner: 'EricLBuehler',
+              repo: 'mistral.rs',
+            });
+
+            let tag = (release.data.tag_name || '').trim();
+            if (!tag) {
+              core.setFailed('Latest mistral.rs release tag is empty');
+              return;
+            }
+
+            if (!tag.startsWith('v')) {
+              tag = `v${tag}`;
+            }
+
+            core.info(`Using mistral.rs release tag: ${tag}`);
+            core.setOutput('tag', tag);
+
+  build:
+    needs: resolve-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-14'
+            rust_targets: ''
+            cargo_target: ''
+            features: 'accelerate,metal'
+            asset_suffix: 'macos-cpu+gpu-arm64'
+            archive_ext: 'tar.gz'
+            clear_build_rustflags: 'false'
+            clear_target_rustflags_key: ''
+
+          - platform: 'macos-14'
+            rust_targets: 'x86_64-apple-darwin'
+            cargo_target: 'x86_64-apple-darwin'
+            features: 'accelerate,metal'
+            asset_suffix: 'macos-cpu+gpu-x64'
+            archive_ext: 'tar.gz'
+            clear_build_rustflags: 'true'
+            clear_target_rustflags_key: 'target.x86_64-apple-darwin.rustflags'
+
+          - platform: 'ubuntu-22.04'
+            rust_targets: ''
+            cargo_target: ''
+            features: ''
+            asset_suffix: 'ubuntu-cpu-x64'
+            archive_ext: 'tar.gz'
+            clear_build_rustflags: 'false'
+            clear_target_rustflags_key: ''
+
+          - platform: 'windows-latest'
+            rust_targets: ''
+            cargo_target: ''
+            features: ''
+            asset_suffix: 'win-cpu-x64'
+            archive_ext: 'zip'
+            clear_build_rustflags: 'false'
+            clear_target_rustflags_key: ''
+
+          - platform: 'windows-latest'
+            rust_targets: 'aarch64-pc-windows-msvc'
+            cargo_target: 'aarch64-pc-windows-msvc'
+            features: ''
+            asset_suffix: 'win-cpu-arm64'
+            archive_ext: 'zip'
+            clear_build_rustflags: 'true'
+            clear_target_rustflags_key: ''
+
+    runs-on: ${{ matrix.platform }}
+    env:
+      MISTRAL_TAG: ${{ needs.resolve-version.outputs.tag }}
+      ASSET_NAME: mistral-${{ needs.resolve-version.outputs.tag }}-bin-${{ matrix.asset_suffix }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './example/backends/mistral.rs -> target'
+
+      - name: Build mistralrs binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          config_args=()
+          if [[ "${{ matrix.clear_build_rustflags }}" == "true" ]]; then
+            config_args+=(--config "build.rustflags=[]")
+          fi
+          if [[ -n "${{ matrix.clear_target_rustflags_key }}" ]]; then
+            config_args+=(--config "${{ matrix.clear_target_rustflags_key }}=[]")
+          fi
+
+          cargo_args=()
+          if [[ -n "${{ matrix.cargo_target }}" ]]; then
+            cargo_args+=(--target "${{ matrix.cargo_target }}")
+          fi
+          if [[ -n "${{ matrix.features }}" ]]; then
+            cargo_args+=(--features "${{ matrix.features }}")
+          fi
+
+          echo "Building ${ASSET_NAME} from mistral.rs ${MISTRAL_TAG}"
+          cd example/backends/mistral.rs
+          packages=(mistralrs-server)
+          for pkg in "${packages[@]}"; do
+            cargo "${config_args[@]}" build -p "$pkg" --release "${cargo_args[@]}"
+          done
+
+      - name: Package archive (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          target_dir="example/backends/mistral.rs/target/release"
+          if [[ -n "${{ matrix.cargo_target }}" ]]; then
+            target_dir="example/backends/mistral.rs/target/${{ matrix.cargo_target }}/release"
+          fi
+
+          mkdir -p "dist/stage/${ASSET_NAME}"
+          binaries=(mistralrs-server)
+          for bin in "${binaries[@]}"; do
+            bin_path="${target_dir}/${bin}"
+            if [[ ! -f "$bin_path" ]]; then
+              echo "Binary not found: $bin_path"
+              exit 1
+            fi
+            cp "$bin_path" "dist/stage/${ASSET_NAME}/${bin}"
+            chmod +x "dist/stage/${ASSET_NAME}/${bin}"
+          done
+          tar -czf "dist/${ASSET_NAME}.tar.gz" -C dist/stage "${ASSET_NAME}"
+
+      - name: Package archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $targetDir = "example/backends/mistral.rs/target/release"
+          if ("${{ matrix.cargo_target }}" -ne "") {
+            $targetDir = "example/backends/mistral.rs/target/${{ matrix.cargo_target }}/release"
+          }
+
+          $stageDir = Join-Path "dist/stage" $env:ASSET_NAME
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+          $binaries = @("mistralrs-server.exe")
+          foreach ($bin in $binaries) {
+            $binPath = Join-Path $targetDir $bin
+            if (-not (Test-Path $binPath)) {
+              throw "Binary not found: $binPath"
+            }
+            Copy-Item $binPath (Join-Path $stageDir $bin) -Force
+          }
+
+          $archivePath = "dist/$($env:ASSET_NAME).zip"
+          if (Test-Path $archivePath) {
+            Remove-Item $archivePath -Force
+          }
+          Compress-Archive -Path "$stageDir/*" -DestinationPath $archivePath -Force
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
+          path: dist/${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
+          if-no-files-found: error
