@@ -11,7 +11,11 @@ unsafe fn set_inference_thread_affinity() {
     // USER_INTERACTIVE has the highest scheduling priority that user code
     // can request and is most likely to be scheduled on P-cores.
     use libc::{pthread_set_qos_class_self_np, qos_class_t::QOS_CLASS_USER_INTERACTIVE};
-    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    // SAFETY: This applies QoS to the current thread only and uses a valid
+    // constant class with relative priority 0, matching Apple's API contract.
+    unsafe {
+        pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
