@@ -104,21 +104,16 @@ jobs:
           releaseBody: |
             ## 🚀 Oxide-Lab v__VERSION__
 
-            ### CPU-Optimized Builds
-
             **macOS**
             - 🍎 Apple Silicon (M1/M2/M3/M4): Metal + Accelerate
             - 🍎 Intel: Accelerate framework
 
             **Linux**
-            - 🐧 x86_64: Intel MKL optimizations
+            - 🐧 x86_64: CPU+GPU (Vulkan) 
 
             **Windows**
-            - 🪟 x86_64: CPU-only
+            - 🪟 x86_64: CPU+GPU (CUDA, Vulkan)
             - 🪟 ARM64: CPU-only
-
-            ### 🎮 CUDA Version
-            For NVIDIA GPU users
 
           releaseDraft: true
           prerelease: false
