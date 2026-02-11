@@ -129,6 +129,9 @@ licenses.json
 
 # Scripts (local dev scripts)
 /scripts/
+!/scripts/
+/scripts/*
+!/scripts/prepare-llama-binaries.mjs
 
 # Misc
 *.bak
