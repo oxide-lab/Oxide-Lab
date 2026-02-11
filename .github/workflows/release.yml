@@ -89,7 +89,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLAMA_CPP_REPO: ggml-org/llama.cpp
-          LLAMA_CPP_TAG: b7951
           LLAMA_BACKEND: ${{ matrix.llama_backend }}
         run: node scripts/prepare-llama-binaries.mjs
 
