@@ -90,6 +90,7 @@ jobs:
     env:
       MISTRAL_TAG: ${{ needs.resolve-version.outputs.tag }}
       ASSET_NAME: mistral-${{ needs.resolve-version.outputs.tag }}-bin-${{ matrix.asset_suffix }}
+      MISTRAL_SRC_DIR: ./.mistral-rs-src
 
     steps:
       - name: Checkout repository
@@ -103,13 +104,14 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './mistral.rs -> target'
+          workspaces: './.mistral-rs-src -> target'
 
       - name: Clone mistral.rs
         shell: bash
         run: |
+          rm -rf "${MISTRAL_SRC_DIR}"
           git clone --depth 1 --branch "${MISTRAL_TAG}" \
-            https://github.com/EricLBuehler/mistral.rs.git mistral.rs
+            https://github.com/EricLBuehler/mistral.rs.git "${MISTRAL_SRC_DIR}"
 
       - name: Build mistralrs binary
         shell: bash
@@ -133,7 +135,7 @@ jobs:
           fi
 
           echo "Building ${ASSET_NAME} from mistral.rs ${MISTRAL_TAG}"
-          cd mistral.rs
+          cd "${MISTRAL_SRC_DIR}"
           packages=(mistralrs-server)
           for pkg in "${packages[@]}"; do
             cargo ${config_args[@]+"${config_args[@]}"} build -p "$pkg" --release ${cargo_args[@]+"${cargo_args[@]}"}
@@ -145,9 +147,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          target_dir="mistral.rs/target/release"
+          target_dir="${MISTRAL_SRC_DIR}/target/release"
           if [[ -n "${{ matrix.cargo_target }}" ]]; then
-            target_dir="mistral.rs/target/${{ matrix.cargo_target }}/release"
+            target_dir="${MISTRAL_SRC_DIR}/target/${{ matrix.cargo_target }}/release"
           fi
 
           mkdir -p "dist/stage/${ASSET_NAME}"
@@ -167,9 +169,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $targetDir = "mistral.rs/target/release"
+          $targetDir = "$env:MISTRAL_SRC_DIR/target/release"
           if ("${{ matrix.cargo_target }}" -ne "") {
-            $targetDir = "mistral.rs/target/${{ matrix.cargo_target }}/release"
+            $targetDir = "$env:MISTRAL_SRC_DIR/target/${{ matrix.cargo_target }}/release"
           }
 
           $stageDir = Join-Path "dist/stage" $env:ASSET_NAME
