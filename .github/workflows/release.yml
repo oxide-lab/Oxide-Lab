@@ -18,12 +18,12 @@ jobs:
           - platform: 'macos-14'
             args: ''
             rust_targets: ''
-            cargo_features: 'metal,fast-cpu-accelerate'
+            cargo_features: ''
 
           - platform: 'macos-14'
             args: '--target x86_64-apple-darwin'
             rust_targets: 'x86_64-apple-darwin'
-            cargo_features: 'fast-cpu-accelerate'
+            cargo_features: ''
 
           - platform: 'ubuntu-22.04'
             args: ''

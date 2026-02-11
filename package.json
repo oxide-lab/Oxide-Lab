@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "dev": "vite dev --host",
-    "build": "vite build",
+    "build": "svelte-kit sync && vite build",
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,js,svelte}\" --ext .ts,.js,.svelte",
     "lint:fix": "eslint \"src/**/*.{ts,js,svelte}\" --ext .ts,.js,.svelte --fix",
