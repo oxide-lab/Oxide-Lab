@@ -1042,16 +1042,6 @@
     };
 
     try {
-      const userResponse = await fetch(`https://huggingface.co/api/users/${normalized}/overview`, {
-        credentials: 'omit',
-      });
-      if (userResponse.ok) {
-        const userData = await userResponse.json();
-        const avatar = extractAvatarUrl(userData);
-        ownerAvatarByPublisher = { ...ownerAvatarByPublisher, [normalized]: avatar ?? '' };
-        return;
-      }
-
       const orgResponse = await fetch(
         `https://huggingface.co/api/organizations/${normalized}/overview`,
         {
@@ -1061,6 +1051,16 @@
       if (orgResponse.ok) {
         const orgData = await orgResponse.json();
         const avatar = extractAvatarUrl(orgData);
+        ownerAvatarByPublisher = { ...ownerAvatarByPublisher, [normalized]: avatar ?? '' };
+        return;
+      }
+
+      const userResponse = await fetch(`https://huggingface.co/api/users/${normalized}/overview`, {
+        credentials: 'omit',
+      });
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        const avatar = extractAvatarUrl(userData);
         ownerAvatarByPublisher = { ...ownerAvatarByPublisher, [normalized]: avatar ?? '' };
         return;
       }
