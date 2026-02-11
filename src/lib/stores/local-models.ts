@@ -5,7 +5,9 @@
  * Uses LocalModelsService for all backend communication (SRP/DIP).
  */
 
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type {
     ModelInfo,
     LocalModelsCache,
@@ -16,7 +18,6 @@ import type {
 import { LocalModelsService } from '$lib/services/local-models';
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
-const STORAGE_KEY = 'local_models_folder_path';
 
 function isMmprojCompanion(model: ModelInfo): boolean {
     const path = String(model.path ?? '').toLowerCase();
@@ -28,24 +29,15 @@ function isMmprojCompanion(model: ModelInfo): boolean {
  * Store for selected folder path
  */
 function createFolderPathStore() {
-    const savedPath =
-        typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) || '' : '';
+    const savedPath = '';
 
     const { subscribe, set } = writable<string>(savedPath);
 
     return {
         subscribe,
-        set: (path: string) => {
-            set(path);
-            if (typeof localStorage !== 'undefined') {
-                localStorage.setItem(STORAGE_KEY, path);
-            }
-        },
+        set,
         clear: () => {
             set('');
-            if (typeof localStorage !== 'undefined') {
-                localStorage.removeItem(STORAGE_KEY);
-            }
         },
     };
 }
@@ -100,7 +92,7 @@ export const totalModelsSize = derived(models, ($models) => $models.reduce((acc,
  * Initialize loaded models watcher: fetch initial list and subscribe to load_progress events
  */
 export async function initLoadedModels(): Promise<() => void> {
-    if (typeof window === 'undefined') return () => {};
+    if (typeof window === 'undefined') return () => { };
     const normalizeLoadedIds = (ids: string[] | null | undefined): string[] => {
         if (!Array.isArray(ids)) return [];
         const seen = new Set<string>();
@@ -117,7 +109,6 @@ export async function initLoadedModels(): Promise<() => void> {
 
     const refreshLoadedModels = async () => {
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
             const ids = await invoke<string[]>('get_loaded_models');
             const normalized = normalizeLoadedIds(ids);
             if (normalized.length > 0) {
@@ -150,8 +141,6 @@ export async function initLoadedModels(): Promise<() => void> {
     }
 
     try {
-        const { listen } = await import('@tauri-apps/api/event');
-
         // On load/unload progress, refresh loaded models snapshot via command.
         const unlisten = await listen('load_progress', async () => {
             await refreshLoadedModels();
@@ -172,7 +161,12 @@ export async function initLoadedModels(): Promise<() => void> {
         );
 
         // Ensure immediate UI sync after explicit unload notifications.
-        const unlistenModelUnloaded = await listen('model_unloaded', async () => {
+        const unlistenModelUnloaded = await listen<string>('model_unloaded', async (event) => {
+            const unloaded = String(event.payload ?? '').trim();
+            if (unloaded) {
+                loadedModelIds.update((ids) => ids.filter((id) => id !== unloaded));
+                return;
+            }
             await refreshLoadedModels();
         });
 
@@ -183,7 +177,7 @@ export async function initLoadedModels(): Promise<() => void> {
         };
     } catch (err) {
         console.warn('Failed to attach load_progress listener', err);
-        return () => {};
+        return () => { };
     }
 }
 
@@ -274,10 +268,7 @@ function isCacheValid(cachedData: LocalModelsCache | null, path: string): boolea
 export async function scanFolder(path: string, forceRefresh: boolean = false): Promise<void> {
     // Check cache first if not forcing refresh
     if (!forceRefresh) {
-        let cachedData: LocalModelsCache | null = null;
-        cache.subscribe((value) => {
-            cachedData = value;
-        })();
+        const cachedData = get(cache);
 
         if (isCacheValid(cachedData, path)) {
             models.set(cachedData!.models);

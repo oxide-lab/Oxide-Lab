@@ -10,7 +10,6 @@
   import Paperclip from 'phosphor-svelte/lib/Paperclip';
   import Broom from 'phosphor-svelte/lib/Broom';
   import SlidersHorizontal from 'phosphor-svelte/lib/SlidersHorizontal';
-  import Microphone from 'phosphor-svelte/lib/Microphone';
   import Globe from 'phosphor-svelte/lib/Globe';
   import Command from 'phosphor-svelte/lib/Command';
   import FileText from 'phosphor-svelte/lib/FileText';
@@ -320,15 +319,6 @@
             aria-label={$t('chat.composer.shortcuts') || 'Shortcuts'}
           >
             <Command size={16} weight="bold" />
-          </PromptInputButton>
-
-          <!-- Voice input button -->
-          <PromptInputButton
-            onclick={() => console.log('Voice input triggered')}
-            disabled={busy || !isLoaded}
-            aria-label={$t('chat.composer.voice') || 'Voice input'}
-          >
-            <Microphone size={16} weight="bold" />
           </PromptInputButton>
 
           <!-- Clear button -->

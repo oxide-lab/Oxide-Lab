@@ -8,10 +8,15 @@
 
 import { ensureDownloadManager, stopDownloadManager } from '$lib/stores/download-manager';
 import { loadModelCards } from '$lib/stores/model-cards';
-import { performanceService } from '$lib/services/performance-service';
 
 // Track initialization state
 let isInitialized = false;
+const isDev = import.meta.env.DEV;
+
+function debugLog(message: string, ...args: unknown[]) {
+    if (!isDev) return;
+    console.log(message, ...args);
+}
 
 /**
  * Initialize all backend connections.
@@ -19,37 +24,23 @@ let isInitialized = false;
  */
 export async function initializeBackend(): Promise<void> {
     if (isInitialized) {
-        console.log('[Backend] Already initialized, skipping...');
+        debugLog('[Backend] Already initialized, skipping...');
         return;
     }
 
-    console.log('[Backend] Initializing backend connections...');
+    debugLog('[Backend] Initializing backend connections...');
 
     try {
         // Initialize download manager (sets up event listeners)
         await ensureDownloadManager();
-        console.log('[Backend] Download manager initialized');
+        debugLog('[Backend] Download manager initialized');
 
         // Load model cards from backend
         await loadModelCards();
-        console.log('[Backend] Model cards loaded');
-
-        // Set up performance event listeners
-        await performanceService.setupEventListeners(
-            (modelLoadMetrics) => {
-                console.log('[Backend] Model load metrics:', modelLoadMetrics);
-            },
-            (inferenceMetrics) => {
-                console.log('[Backend] Inference metrics:', inferenceMetrics);
-            },
-            (startupMetrics) => {
-                console.log('[Backend] Startup metrics:', startupMetrics);
-            },
-        );
-        console.log('[Backend] Performance listeners initialized');
+        debugLog('[Backend] Model cards loaded');
 
         isInitialized = true;
-        console.log('[Backend] All backend connections initialized successfully');
+        debugLog('[Backend] All backend connections initialized successfully');
     } catch (error) {
         console.error('[Backend] Failed to initialize backend:', error);
         throw error;
@@ -65,16 +56,13 @@ export function cleanupBackend(): void {
         return;
     }
 
-    console.log('[Backend] Cleaning up backend connections...');
+    debugLog('[Backend] Cleaning up backend connections...');
 
     // Stop download manager
     stopDownloadManager();
 
-    // Cleanup performance listeners
-    performanceService.cleanup();
-
     isInitialized = false;
-    console.log('[Backend] Backend cleanup complete');
+    debugLog('[Backend] Backend cleanup complete');
 }
 
 /**

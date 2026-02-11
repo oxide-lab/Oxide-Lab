@@ -231,9 +231,9 @@ export async function searchModels(
         })) {
             if (count >= limit) break;
 
-            // Convert ModelEntry to RemoteModelInfo
-            const remoteModel = await convertToRemoteModelInfo(model);
-            if (remoteModel && remoteModel.gguf_files.length > 0) {
+            // Convert model info without per-item file listing to avoid N+1 HTTP requests.
+            const remoteModel = await convertToRemoteModelInfo(model, false);
+            if (remoteModel) {
                 items.push(remoteModel);
                 count++;
             }
@@ -371,7 +371,10 @@ export async function getModelReadme(repoId: string): Promise<string> {
  * Convert @huggingface/hub ModelEntry to our RemoteModelInfo type
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function convertToRemoteModelInfo(model: ModelEntry & Record<string, any>): Promise<RemoteModelInfo | null> {
+async function convertToRemoteModelInfo(
+    model: ModelEntry & Record<string, any>,
+    includeGgufFiles: boolean = true,
+): Promise<RemoteModelInfo | null> {
     const repoId = model.name;
     const [author, ...nameParts] = repoId.split('/');
     const name = nameParts.join('/') || author;
@@ -379,8 +382,8 @@ async function convertToRemoteModelInfo(model: ModelEntry & Record<string, any>)
     // Get tags
     const tags: string[] = Array.isArray(model.tags) ? model.tags : [];
 
-    // Get GGUF files
-    const ggufFiles = await listGGUFFiles(repoId);
+    // GGUF files are expensive (extra Hub calls), so load lazily for search results.
+    const ggufFiles = includeGgufFiles ? await listGGUFFiles(repoId) : [];
 
     // Extract parameter count
     let parameterCount: string | undefined;

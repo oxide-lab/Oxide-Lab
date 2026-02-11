@@ -1,7 +1,4 @@
-/**
- * Application version and license information
- * These values are synchronized with package.json
- */
+import pkg from '../../package.json';
 
-export const APP_VERSION = '0.14.0';
-export const APP_LICENSE = 'Apache-2.0';
+export const APP_VERSION = pkg.version;
+export const APP_LICENSE = pkg.license;

@@ -184,4 +184,11 @@ describe('settings-search store', () => {
     expect(batchEntry?.section).toBe('hardware');
     expect(memoryModeEntry?.section).toBe('hardware');
   });
+
+  it('uses correct title for model selector search setting', () => {
+    const entry = settingsSearchStore.registry.find(
+      (item) => item.id === 'models_storage.model_selector_search',
+    );
+    expect(entry?.title).toBe('Model Search');
+  });
 });

@@ -6,6 +6,7 @@
 
 import { sanitizeForPrompt } from '$lib/chat/sanitize';
 import type { ChatMessage } from '$lib/chat/types';
+import { invoke } from '@tauri-apps/api/core';
 
 /**
  * Build prompt with chat template from backend if available.
@@ -27,7 +28,6 @@ export async function buildPromptWithChatTemplate(history: ChatMessage[]): Promi
 
     let tpl: string | null = null;
     try {
-        const { invoke } = await import('@tauri-apps/api/core');
         tpl = await invoke<string | null>('get_chat_template').catch(() => null);
     } catch {
         tpl = null;
@@ -39,7 +39,6 @@ export async function buildPromptWithChatTemplate(history: ChatMessage[]): Promi
         // Render via backend using minijinja for native template support
         const hist = history.map((m) => ({ role: m.role, content: sanitizeForPrompt(m.content) }));
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
             let out = await invoke<string>('render_prompt', { messages: hist });
             console.log('[template] applied (backend render), prefix=', out.slice(0, 160));
 
@@ -53,7 +52,8 @@ export async function buildPromptWithChatTemplate(history: ChatMessage[]): Promi
         }
     }
 
-    // Fallback: Qwen-compatible format
+    // Fallback: model-agnostic transcript format.
+    // Avoid model-specific tokens when backend template is unavailable.
     let text = '';
 
     for (const m of history) {
@@ -62,14 +62,13 @@ export async function buildPromptWithChatTemplate(history: ChatMessage[]): Promi
             let payload = clean;
             // Remove only control command prefix, preserve rest of user text
             payload = payload.replace(/^\s*\/(?:no_think|think)\b[ \t]*/i, '').trim();
-            text += `<|im_start|>user\n${payload}<|im_end|>\n`;
+            text += `User: ${payload}\n`;
         } else {
-            text += `<|im_start|>assistant\n${clean}<|im_end|>\n`;
+            text += `Assistant: ${clean}\n`;
         }
     }
 
-    // Open assistant for current response
-    text += `<|im_start|>assistant\n`;
+    text += 'Assistant: ';
 
     // Official way to disable thinking - insert empty <think>...</think> block
     if (control === 'no_think') {

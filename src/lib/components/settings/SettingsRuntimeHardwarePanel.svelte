@@ -367,11 +367,7 @@
   async function reloadModelNow() {
     reloadActionMessage = '';
     if (typeof window === 'undefined') return;
-    const bridge = (window as any).__oxide as
-      | {
-          reloadSelectedModel?: () => Promise<void> | void;
-        }
-      | undefined;
+    const bridge = window.__oxide;
 
     if (!bridge?.reloadSelectedModel) {
       reloadActionMessage = 'Reload action is unavailable right now. Open chat view and reload the model there.';

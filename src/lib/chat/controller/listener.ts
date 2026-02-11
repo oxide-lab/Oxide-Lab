@@ -5,11 +5,12 @@
  * Backend handles <think> tag parsing, frontend only renders.
  */
 
-import { finalizeStreaming } from '$lib/chat/stream_render';
+
 import { get } from 'svelte/store';
 import { chatHistory } from '$lib/stores/chat-history';
 import type { ChatControllerCtx } from './types';
 import type {
+    ChatMessage,
     McpToolCallErrorEvent,
     McpToolCallFinishedEvent,
     McpToolCallStartedEvent,
@@ -46,22 +47,32 @@ interface ToolingLogEvent {
 }
 
 export function createStreamListener(ctx: ChatControllerCtx) {
-    let unlistenStart: (() => void) | null = null;
-    let unlistenMessage: (() => void) | null = null;
-    let unlistenDone: (() => void) | null = null;
-    let unlistenRetrievalContext: (() => void) | null = null;
-    let unlistenRetrievalWarning: (() => void) | null = null;
-    let unlistenRetrievalUrlCandidates: (() => void) | null = null;
-    let unlistenToolingLog: (() => void) | null = null;
-    let unlistenMcpPermission: (() => void) | null = null;
-    let unlistenMcpCallStarted: (() => void) | null = null;
-    let unlistenMcpCallFinished: (() => void) | null = null;
-    let unlistenMcpCallError: (() => void) | null = null;
+    const state = ctx.state;
+    const listeners: Array<() => void> = [];
     let rafId: number | null = null;
     let pendingThinking = '';
     let pendingContent = '';
     let pendingSources: RetrievalSource[] = [];
     let pendingWarnings: string[] = [];
+
+    function updateLastAssistantMessage(
+        updater: (message: ChatMessage) => ChatMessage | null,
+    ): boolean {
+        const messages = state.messages;
+        const lastIndex = messages.length - 1;
+        if (lastIndex < 0) return false;
+
+        const last = messages[lastIndex];
+        if (!last || last.role !== 'assistant') return false;
+
+        const updated = updater(last);
+        if (!updated) return false;
+
+        const nextMessages = messages.slice();
+        nextMessages[lastIndex] = updated;
+        state.messages = nextMessages;
+        return true;
+    }
 
     function scheduleUpdate() {
         if (rafId !== null) return;
@@ -74,32 +85,41 @@ export function createStreamListener(ctx: ChatControllerCtx) {
     function applyPendingUpdates() {
         if (pendingThinking === '' && pendingContent === '') return;
 
-        const msgs = ctx.messages;
-        const last = msgs[msgs.length - 1];
-        if (last && last.role === 'assistant') {
-            let hasUpdates = false;
+        const thinkingChunk = pendingThinking;
+        const contentChunk = pendingContent;
+        let consumedThinking = false;
+        let consumedContent = false;
 
-            if (pendingThinking) {
-                if (!last.thinking) last.thinking = '';
-                last.thinking += pendingThinking;
-                last.isThinking = true;
-                pendingThinking = '';
-                hasUpdates = true;
+        const changed = updateLastAssistantMessage((last) => {
+            let next = last;
+
+            if (thinkingChunk) {
+                next = {
+                    ...next,
+                    thinking: `${next.thinking ?? ''}${thinkingChunk}`,
+                    isThinking: true,
+                };
+                consumedThinking = true;
             }
 
-            if (pendingContent) {
-                last.content += pendingContent;
-                // When content arrives, thinking phase is done
-                if (last.isThinking) {
-                    last.isThinking = false;
-                }
-                pendingContent = '';
-                hasUpdates = true;
+            if (contentChunk) {
+                next = {
+                    ...next,
+                    content: `${next.content}${contentChunk}`,
+                    isThinking: false,
+                };
+                consumedContent = true;
             }
 
-            if (hasUpdates) {
-                ctx.messages = msgs;
+            if (!consumedThinking && !consumedContent) {
+                return null;
             }
+            return next;
+        });
+
+        if (changed) {
+            if (consumedThinking) pendingThinking = '';
+            if (consumedContent) pendingContent = '';
         }
     }
 
@@ -114,14 +134,11 @@ export function createStreamListener(ctx: ChatControllerCtx) {
     }
 
     function applyRetrievalContextToLastMessage() {
-        const msgs = ctx.messages;
-        const last = msgs[msgs.length - 1];
-        if (!last || last.role !== 'assistant') {
-            return;
-        }
-        last.sources = [...pendingSources];
-        last.retrievalWarnings = [...pendingWarnings];
-        ctx.messages = msgs;
+        updateLastAssistantMessage((last) => ({
+            ...last,
+            sources: [...pendingSources],
+            retrievalWarnings: [...pendingWarnings],
+        }));
     }
 
     function handleRetrievalContext(event: RetrievalContextEvent) {
@@ -139,11 +156,11 @@ export function createStreamListener(ctx: ChatControllerCtx) {
     function handleRetrievalUrlCandidates(event: RetrievalUrlCandidatesEvent) {
         const urls = (event.urls ?? []).filter(Boolean);
         if (urls.length === 0) return;
-        if (ctx.retrieval_urls.length === 0) {
-            ctx.retrieval_urls = urls;
+        if (state.retrieval_urls.length === 0) {
+            state.retrieval_urls = urls;
         }
-        if (!ctx.retrieval_url_enabled) {
-            ctx.retrieval_url_enabled = true;
+        if (!state.retrieval_url_enabled) {
+            state.retrieval_url_enabled = true;
         }
         const preview = urls.slice(0, 3).join(', ');
         const suffix = urls.length > 3 ? ` (+${urls.length - 3})` : '';
@@ -173,51 +190,49 @@ export function createStreamListener(ctx: ChatControllerCtx) {
     function upsertToolCallOnLastAssistant(
         event: McpToolCallStartedEvent | McpToolCallFinishedEvent | McpToolCallErrorEvent,
     ) {
-        const msgs = ctx.messages;
-        const lastIndex = msgs.length - 1;
-        if (lastIndex < 0) return;
-        const last = msgs[lastIndex];
-        if (!last || last.role !== 'assistant') return;
+        updateLastAssistantMessage((last) => {
+            const existing = Array.isArray(last.mcpToolCalls) ? [...last.mcpToolCalls] : [];
+            const idx = existing.findIndex((item) => item.call_id === event.call_id);
+            const base: McpToolCallView = idx >= 0
+                ? { ...existing[idx] }
+                : {
+                    call_id: event.call_id,
+                    server_id: event.server_id,
+                    tool_name: event.tool_name,
+                    state: 'input-streaming',
+                    input: null,
+                };
 
-        const existing = Array.isArray(last.mcpToolCalls) ? [...last.mcpToolCalls] : [];
-        const idx = existing.findIndex((item) => item.call_id === event.call_id);
-        const base: McpToolCallView = idx >= 0
-            ? { ...existing[idx] }
-            : {
-                call_id: event.call_id,
-                server_id: event.server_id,
-                tool_name: event.tool_name,
-                state: 'input-streaming',
-                input: null,
+            base.server_id = event.server_id;
+            base.tool_name = event.tool_name;
+
+            if ('result' in event) {
+                base.state = 'output-available';
+                base.output = event.result;
+                base.errorText = undefined;
+            } else if ('error' in event) {
+                base.state = 'output-error';
+                base.output = undefined;
+                base.errorText = event.error ?? 'Tool call failed';
+            } else {
+                const startedEvent = event as McpToolCallStartedEvent;
+                base.state = 'input-available';
+                base.input = startedEvent.arguments ?? base.input ?? null;
+                base.output = undefined;
+                base.errorText = undefined;
+            }
+
+            if (idx >= 0) {
+                existing[idx] = base;
+            } else {
+                existing.push(base);
+            }
+
+            return {
+                ...last,
+                mcpToolCalls: existing,
             };
-
-        base.server_id = event.server_id;
-        base.tool_name = event.tool_name;
-
-        if ('result' in event) {
-            base.state = 'output-available';
-            base.output = event.result;
-            base.errorText = undefined;
-        } else if ('error' in event) {
-            base.state = 'output-error';
-            base.output = undefined;
-            base.errorText = event.error ?? 'Tool call failed';
-        } else {
-            const startedEvent = event as McpToolCallStartedEvent;
-            base.state = 'input-available';
-            base.input = startedEvent.arguments ?? base.input ?? null;
-            base.output = undefined;
-            base.errorText = undefined;
-        }
-
-        if (idx >= 0) {
-            existing[idx] = base;
-        } else {
-            existing.push(base);
-        }
-
-        last.mcpToolCalls = existing;
-        ctx.messages = msgs;
+        });
     }
 
     function handleMcpCallStarted(event: McpToolCallStartedEvent) {
@@ -236,32 +251,31 @@ export function createStreamListener(ctx: ChatControllerCtx) {
     }
 
     function initNewStream() {
-        const msgs = ctx.messages;
-        const last = msgs[msgs.length - 1];
+        const last = state.messages[state.messages.length - 1];
 
         if (!last || last.role !== 'assistant' || last.content !== '') {
-            msgs.push({
-                role: 'assistant',
-                content: '',
-                html: '',
+            state.messages = [
+                ...state.messages,
+                {
+                    role: 'assistant',
+                    content: '',
+                    html: '',
+                    thinking: '',
+                    isThinking: false,
+                    sources: [...pendingSources],
+                    retrievalWarnings: [...pendingWarnings],
+                    mcpToolCalls: [],
+                },
+            ];
+        } else {
+            updateLastAssistantMessage((message) => ({
+                ...message,
                 thinking: '',
                 isThinking: false,
-                sources: [...pendingSources],
-                retrievalWarnings: [...pendingWarnings],
                 mcpToolCalls: [],
-            });
-            ctx.messages = msgs;
-        } else {
-            last.thinking = '';
-            last.isThinking = false;
-            last.mcpToolCalls = [];
-            if (pendingSources.length > 0) {
-                last.sources = [...pendingSources];
-            }
-            if (pendingWarnings.length > 0) {
-                last.retrievalWarnings = [...pendingWarnings];
-            }
-            ctx.messages = msgs;
+                sources: pendingSources.length > 0 ? [...pendingSources] : message.sources,
+                retrievalWarnings: pendingWarnings.length > 0 ? [...pendingWarnings] : message.retrievalWarnings,
+            }));
         }
 
         if (rafId !== null) {
@@ -281,31 +295,28 @@ export function createStreamListener(ctx: ChatControllerCtx) {
         // Apply any remaining pending updates
         applyPendingUpdates();
 
-        const msgs = ctx.messages;
-        if (msgs.length > 0) {
-            const idx = msgs.length - 1;
-            const last = msgs[idx];
+        if (state.messages.length > 0) {
+            const last = state.messages[state.messages.length - 1];
 
             // Ensure thinking state is finalized
-            if (last && last.isThinking) {
-                last.isThinking = false;
-                ctx.messages = msgs;
+            if (last && last.role === 'assistant' && last.isThinking) {
+                updateLastAssistantMessage((message) => ({
+                    ...message,
+                    isThinking: false,
+                }));
             }
 
-            finalizeStreaming(idx);
-
             // Persist the complete assistant message to SQLite
-            const state = get(chatHistory);
-            if (state.currentSessionId) {
-                if (last && last.role === 'assistant') {
-                    await chatHistory.saveAssistantMessage(
-                        state.currentSessionId,
-                        last.content,
-                        last.thinking,
-                        last.sources ?? [],
-                        last.retrievalWarnings ?? [],
-                    );
-                }
+            const historyState = get(chatHistory);
+            const latestMessage = state.messages[state.messages.length - 1];
+            if (historyState.currentSessionId && latestMessage?.role === 'assistant') {
+                await chatHistory.saveAssistantMessage(
+                    historyState.currentSessionId,
+                    latestMessage.content,
+                    latestMessage.thinking,
+                    latestMessage.sources ?? [],
+                    latestMessage.retrievalWarnings ?? [],
+                );
             }
         }
 
@@ -314,153 +325,38 @@ export function createStreamListener(ctx: ChatControllerCtx) {
     }
 
     async function ensureListener() {
-        if (unlistenMessage) return;
+        if (listeners.length > 0) return;
 
         const { listen } = await import('@tauri-apps/api/event');
 
-        // Stream start signal - creates assistant message
-        unlistenStart = await listen('message_start', () => {
-            initNewStream();
-        });
+        // Helper to push and track listeners
+        const add = async (event: string, handler: (e: any) => void) => {
+            listeners.push(await listen(event, handler));
+        };
 
-        // Primary: structured message events from backend
-        unlistenMessage = await listen<StreamMessage>('message', (event) => {
-            const msg = event.payload;
-            if (msg) {
-                handleStreamMessage(msg);
-            }
+        await add('message_start', () => initNewStream());
+        await add('message', (event) => {
+            if (event.payload) handleStreamMessage(event.payload);
         });
-
-        // Stream completion signal
-        unlistenDone = await listen('message_done', () => {
-            void finalizeStream();
-        });
-
-        unlistenRetrievalContext = await listen<RetrievalContextEvent>('retrieval_context', (event) => {
-            handleRetrievalContext(event.payload ?? {});
-        });
-
-        unlistenRetrievalWarning = await listen<RetrievalWarningEvent>('retrieval_warning', (event) => {
-            handleRetrievalWarning(event.payload ?? {});
-        });
-        unlistenRetrievalUrlCandidates = await listen<RetrievalUrlCandidatesEvent>(
-            'retrieval_url_candidates',
-            (event) => {
-                handleRetrievalUrlCandidates(event.payload ?? {});
-            },
-        );
-        unlistenToolingLog = await listen<ToolingLogEvent>('tooling_log', (event) => {
-            handleToolingLog(event.payload ?? {});
-        });
-        unlistenMcpPermission = await listen<McpToolPermissionRequestEvent>(
-            'mcp_tool_permission_request',
-            (event) => {
-                handleMcpPermissionRequest(event.payload);
-            },
-        );
-        unlistenMcpCallStarted = await listen<McpToolCallStartedEvent>('mcp_tool_call_started', (event) => {
-            handleMcpCallStarted(event.payload);
-        });
-        unlistenMcpCallFinished = await listen<McpToolCallFinishedEvent>(
-            'mcp_tool_call_finished',
-            (event) => {
-                handleMcpCallFinished(event.payload);
-            },
-        );
-        unlistenMcpCallError = await listen<McpToolCallErrorEvent>('mcp_tool_call_error', (event) => {
-            handleMcpCallError(event.payload);
-        });
+        await add('message_done', () => void finalizeStream());
+        await add('retrieval_context', (event) => handleRetrievalContext(event.payload ?? {}));
+        await add('retrieval_warning', (event) => handleRetrievalWarning(event.payload ?? {}));
+        await add('retrieval_url_candidates', (event) => handleRetrievalUrlCandidates(event.payload ?? {}));
+        await add('tooling_log', (event) => handleToolingLog(event.payload ?? {}));
+        await add('mcp_tool_permission_request', (event) => handleMcpPermissionRequest(event.payload));
+        await add('mcp_tool_call_started', (event) => handleMcpCallStarted(event.payload));
+        await add('mcp_tool_call_finished', (event) => handleMcpCallFinished(event.payload));
+        await add('mcp_tool_call_error', (event) => handleMcpCallError(event.payload));
     }
 
     function destroy() {
-        if (unlistenStart) {
+        for (const unlisten of listeners) {
             try {
-                unlistenStart();
-            } catch {
-                /* ignore */
-            }
-            unlistenStart = null;
+                unlisten();
+            } catch { /* ignore */ }
         }
-        if (unlistenMessage) {
-            try {
-                unlistenMessage();
-            } catch {
-                /* ignore */
-            }
-            unlistenMessage = null;
-        }
-        if (unlistenDone) {
-            try {
-                unlistenDone();
-            } catch {
-                /* ignore */
-            }
-            unlistenDone = null;
-        }
-        if (unlistenRetrievalContext) {
-            try {
-                unlistenRetrievalContext();
-            } catch {
-                /* ignore */
-            }
-            unlistenRetrievalContext = null;
-        }
-        if (unlistenRetrievalWarning) {
-            try {
-                unlistenRetrievalWarning();
-            } catch {
-                /* ignore */
-            }
-            unlistenRetrievalWarning = null;
-        }
-        if (unlistenRetrievalUrlCandidates) {
-            try {
-                unlistenRetrievalUrlCandidates();
-            } catch {
-                /* ignore */
-            }
-            unlistenRetrievalUrlCandidates = null;
-        }
-        if (unlistenToolingLog) {
-            try {
-                unlistenToolingLog();
-            } catch {
-                /* ignore */
-            }
-            unlistenToolingLog = null;
-        }
-        if (unlistenMcpPermission) {
-            try {
-                unlistenMcpPermission();
-            } catch {
-                /* ignore */
-            }
-            unlistenMcpPermission = null;
-        }
-        if (unlistenMcpCallStarted) {
-            try {
-                unlistenMcpCallStarted();
-            } catch {
-                /* ignore */
-            }
-            unlistenMcpCallStarted = null;
-        }
-        if (unlistenMcpCallFinished) {
-            try {
-                unlistenMcpCallFinished();
-            } catch {
-                /* ignore */
-            }
-            unlistenMcpCallFinished = null;
-        }
-        if (unlistenMcpCallError) {
-            try {
-                unlistenMcpCallError();
-            } catch {
-                /* ignore */
-            }
-            unlistenMcpCallError = null;
-        }
+        listeners.length = 0;
+
         clearMcpPendingPermission();
         if (rafId !== null) {
             cancelAnimationFrame(rafId);
@@ -470,5 +366,17 @@ export function createStreamListener(ctx: ChatControllerCtx) {
         pendingWarnings = [];
     }
 
-    return { ensureListener, destroy };
+    function reset() {
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        pendingThinking = '';
+        pendingContent = '';
+        pendingSources = [];
+        pendingWarnings = [];
+    }
+
+    return { ensureListener, destroy, reset };
 }
+

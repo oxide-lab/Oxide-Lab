@@ -40,8 +40,9 @@ function createInferenceMetricsStore() {
         // Remove metrics for a specific index
         removeMetrics(messageIndex: number) {
             update((map) => {
-                map.delete(messageIndex);
-                return map;
+                const newMap = new Map(map);
+                newMap.delete(messageIndex);
+                return newMap;
             });
         },
     };

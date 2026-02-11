@@ -8,29 +8,11 @@
 import { writable, derived, get } from 'svelte/store';
 import type { ChatMessage } from './chat';
 import type { RetrievalSource } from '$lib/chat/types';
-
-const DB_NAME = 'sqlite:chat_history.db';
-
-// Types matching the SQLite schema
-export type DbSession = {
-    id: string;
-    title: string;
-    model_path: string | null;
-    repo_id: string | null;
-    created_at: number;
-    updated_at: number;
-};
-
-export type DbMessage = {
-    id: number;
-    session_id: string;
-    role: string;
-    content: string;
-    thinking: string;
-    sources_json: string;
-    attachments_json: string;
-    created_at: number;
-};
+import {
+    chatHistoryRepository,
+    dbMessageToChatMessage,
+    type DbSession,
+} from './chat-history-repository';
 
 export type ChatSession = {
     id: string;
@@ -48,112 +30,38 @@ export type ChatHistoryState = {
     isInitialized: boolean;
 };
 
-// Lazy-load Database to avoid SSR issues
-let Database: typeof import('@tauri-apps/plugin-sql').default | null = null;
-let dbInstance: Awaited<ReturnType<typeof import('@tauri-apps/plugin-sql').default.load>> | null =
-    null;
-
-async function getDb() {
-    if (dbInstance) return dbInstance;
-
-    if (!Database) {
-        const mod = await import('@tauri-apps/plugin-sql');
-        Database = mod.default;
-    }
-
-    dbInstance = await Database.load(DB_NAME);
-    return dbInstance;
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
 }
 
-type AttachmentPathRow = {
-    attachments_json: string;
-};
-
-async function collectAttachmentPathsForSession(sessionId: string): Promise<string[]> {
-    const db = await getDb();
-    const rows = await db.select<AttachmentPathRow[]>(
-        'SELECT attachments_json FROM messages WHERE session_id = ?',
-        [sessionId],
-    );
-    const paths: string[] = [];
-    for (const row of rows) {
-        try {
-            const parsed = JSON.parse(row.attachments_json || '[]');
-            if (!Array.isArray(parsed)) continue;
-            for (const item of parsed) {
-                if (item && typeof item.path === 'string' && item.path.trim()) {
-                    paths.push(item.path);
-                }
-            }
-        } catch {
-            // Ignore malformed rows.
+function normalizeImportedMessages(value: unknown): ChatMessage[] {
+    if (!Array.isArray(value)) return [];
+    const normalized: ChatMessage[] = [];
+    for (const raw of value) {
+        if (!isRecord(raw)) continue;
+        const role = raw.role;
+        if (role !== 'user' && role !== 'assistant') continue;
+        const content = typeof raw.content === 'string' ? raw.content : '';
+        const message: ChatMessage = { role, content };
+        if (typeof raw.thinking === 'string') {
+            message.thinking = raw.thinking;
         }
-    }
-    return Array.from(new Set(paths));
-}
-
-async function collectAttachmentPathsForAllSessions(): Promise<string[]> {
-    const db = await getDb();
-    const rows = await db.select<AttachmentPathRow[]>(
-        'SELECT attachments_json FROM messages',
-        [],
-    );
-    const paths: string[] = [];
-    for (const row of rows) {
-        try {
-            const parsed = JSON.parse(row.attachments_json || '[]');
-            if (!Array.isArray(parsed)) continue;
-            for (const item of parsed) {
-                if (item && typeof item.path === 'string' && item.path.trim()) {
-                    paths.push(item.path);
-                }
-            }
-        } catch {
-            // Ignore malformed rows.
+        if (Array.isArray(raw.sources)) {
+            message.sources = raw.sources as RetrievalSource[];
         }
-    }
-    return Array.from(new Set(paths));
-}
-
-async function cleanupAttachmentPaths(paths: string[]) {
-    if (!paths.length) return;
-    try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('delete_chat_attachment_files', { paths });
-    } catch (err) {
-        console.warn('Failed to cleanup attachment files:', err);
-    }
-}
-
-function dbMessageToChatMessage(msg: DbMessage): ChatMessage {
-    let sources: RetrievalSource[] = [];
-    try {
-        const parsed = JSON.parse(msg.sources_json || '[]');
-        if (Array.isArray(parsed)) {
-            sources = parsed as RetrievalSource[];
+        if (Array.isArray(raw.attachments)) {
+            message.attachments = raw.attachments as ChatMessage['attachments'];
         }
-    } catch {
-        sources = [];
-    }
-
-    let attachments: ChatMessage['attachments'] = [];
-    try {
-        const parsed = JSON.parse(msg.attachments_json || '[]');
-        if (Array.isArray(parsed)) {
-            attachments = parsed as ChatMessage['attachments'];
+        if (Array.isArray(raw.retrievalWarnings)) {
+            message.retrievalWarnings = raw.retrievalWarnings.filter(
+                (item): item is string => typeof item === 'string',
+            );
         }
-    } catch {
-        attachments = [];
+        normalized.push(message);
     }
-
-    return {
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-        thinking: msg.thinking || undefined,
-        sources,
-        attachments,
-    };
+    return normalized;
 }
+
 
 function createChatHistoryStore() {
     const { subscribe, update, set } = writable<ChatHistoryState>({
@@ -167,12 +75,7 @@ function createChatHistoryStore() {
 
         init: async () => {
             try {
-                const db = await getDb();
-
-                // Load all sessions
-                const rows = await db.select<DbSession[]>(
-                    'SELECT id, title, model_path, repo_id, created_at, updated_at FROM sessions ORDER BY updated_at DESC',
-                );
+                const rows = await chatHistoryRepository.loadSessions();
 
                 const sessions: ChatSession[] = rows.map((row) => ({
                     id: row.id,
@@ -201,11 +104,7 @@ function createChatHistoryStore() {
             const now = Date.now();
 
             try {
-                const db = await getDb();
-                await db.execute(
-                    'INSERT INTO sessions (id, title, model_path, repo_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-                    [id, title, modelPath ?? null, repoId ?? null, now, now],
-                );
+                await chatHistoryRepository.createSession(id, title, modelPath, repoId, now);
             } catch (err) {
                 console.error('Failed to create session in DB:', err);
             }
@@ -234,11 +133,7 @@ function createChatHistoryStore() {
             update((s) => ({ ...s, currentSessionId: sessionId }));
 
             try {
-                const db = await getDb();
-                const messages = await db.select<DbMessage[]>(
-                    'SELECT id, session_id, role, content, thinking, sources_json, attachments_json, created_at FROM messages WHERE session_id = ? ORDER BY id ASC',
-                    [sessionId],
-                );
+                const messages = await chatHistoryRepository.loadSessionMessages(sessionId);
 
                 update((s) => {
                     const sessions = s.sessions.map((sess) =>
@@ -255,29 +150,13 @@ function createChatHistoryStore() {
 
         addMessage: async (message: ChatMessage, sessionId?: string) => {
             const now = Date.now();
-            const state = get({ subscribe });
+            const state = get(chatHistory);
             const targetSessionId = sessionId ?? state.currentSessionId;
 
             if (!targetSessionId) return;
 
             try {
-                const db = await getDb();
-                await db.execute(
-                    'INSERT INTO messages (session_id, role, content, thinking, sources_json, attachments_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [
-                        targetSessionId,
-                        message.role,
-                        message.content,
-                        message.thinking ?? '',
-                        JSON.stringify(message.sources ?? []),
-                        JSON.stringify(message.attachments ?? []),
-                        now,
-                    ],
-                );
-                await db.execute('UPDATE sessions SET updated_at = ? WHERE id = ?', [
-                    now,
-                    targetSessionId,
-                ]);
+                await chatHistoryRepository.insertMessage(targetSessionId, message, now);
             } catch (err) {
                 console.error('Failed to add message to DB:', err);
             }
@@ -293,13 +172,8 @@ function createChatHistoryStore() {
 
                     // Update title in DB if changed
                     if (isFirstUserMessage && titleFromMessage !== sess.title) {
-                        getDb()
-                            .then((db) =>
-                                db.execute('UPDATE sessions SET title = ? WHERE id = ?', [
-                                    titleFromMessage,
-                                    targetSessionId,
-                                ]),
-                            )
+                        chatHistoryRepository
+                            .updateSessionTitle(targetSessionId, titleFromMessage, now)
                             .catch(console.error);
                     }
 
@@ -322,11 +196,11 @@ function createChatHistoryStore() {
             sources?: RetrievalSource[],
         ) => {
             try {
-                const db = await getDb();
-                await db.execute(
-                    `UPDATE messages SET content = ?, thinking = ?, sources_json = ?
-                     WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ?)`,
-                    [content, thinking ?? '', JSON.stringify(sources ?? []), sessionId],
+                await chatHistoryRepository.updateLastMessage(
+                    sessionId,
+                    content,
+                    thinking ?? '',
+                    sources ?? [],
                 );
             } catch (err) {
                 console.error('Failed to update last message in DB:', err);
@@ -379,14 +253,14 @@ function createChatHistoryStore() {
             retrievalWarnings?: string[],
         ) => {
             try {
-                const db = await getDb();
                 const now = Date.now();
-                await db.execute(
-                    `UPDATE messages SET content = ?, thinking = ?, sources_json = ?
-                     WHERE id = (SELECT MAX(id) FROM messages WHERE session_id = ?)`,
-                    [content, thinking ?? '', JSON.stringify(sources ?? []), sessionId],
+                await chatHistoryRepository.updateLastMessage(
+                    sessionId,
+                    content,
+                    thinking ?? '',
+                    sources ?? [],
                 );
-                await db.execute('UPDATE sessions SET updated_at = ? WHERE id = ?', [now, sessionId]);
+                await chatHistoryRepository.touchSession(sessionId, now);
             } catch (err) {
                 console.error('Failed to save assistant message:', err);
             }
@@ -411,18 +285,7 @@ function createChatHistoryStore() {
 
         truncateMessages: async (sessionId: string, keepCount: number) => {
             try {
-                const db = await getDb();
-                await db.execute(
-                    `DELETE FROM messages 
-                     WHERE session_id = ? 
-                     AND id NOT IN (
-                         SELECT id FROM messages 
-                         WHERE session_id = ? 
-                         ORDER BY id ASC 
-                         LIMIT ?
-                     )`,
-                    [sessionId, sessionId, keepCount],
-                );
+                await chatHistoryRepository.truncateMessages(sessionId, keepCount);
             } catch (err) {
                 console.error('Failed to truncate messages:', err);
             }
@@ -440,16 +303,17 @@ function createChatHistoryStore() {
 
         deleteSession: async (sessionId: string) => {
             let deleted = false;
-            const attachmentPaths = await collectAttachmentPathsForSession(sessionId).catch(() => []);
+            let attachmentPaths: string[] = [];
             try {
-                const db = await getDb();
-                await db.execute('DELETE FROM sessions WHERE id = ?', [sessionId]);
+                attachmentPaths = await chatHistoryRepository.deleteSession(sessionId);
                 deleted = true;
             } catch (err) {
                 console.error('Failed to delete session from DB:', err);
             }
             if (!deleted) return;
-            await cleanupAttachmentPaths(attachmentPaths);
+            await chatHistoryRepository.cleanupAttachmentPaths(attachmentPaths).catch((err) => {
+                console.warn('Failed to cleanup attachment files:', err);
+            });
 
             update((s) => {
                 const sessions = s.sessions.filter((sess) => sess.id !== sessionId);
@@ -465,12 +329,7 @@ function createChatHistoryStore() {
             const now = Date.now();
 
             try {
-                const db = await getDb();
-                await db.execute('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?', [
-                    title,
-                    now,
-                    sessionId,
-                ]);
+                await chatHistoryRepository.updateSessionTitle(sessionId, title, now);
             } catch (err) {
                 console.error('Failed to rename session in DB:', err);
             }
@@ -485,16 +344,17 @@ function createChatHistoryStore() {
 
         clearAll: async () => {
             let deleted = false;
-            const attachmentPaths = await collectAttachmentPathsForAllSessions().catch(() => []);
+            let attachmentPaths: string[] = [];
             try {
-                const db = await getDb();
-                await db.execute('DELETE FROM sessions');
+                attachmentPaths = await chatHistoryRepository.clearAll();
                 deleted = true;
             } catch (err) {
                 console.error('Failed to clear chat history:', err);
             }
             if (!deleted) return;
-            await cleanupAttachmentPaths(attachmentPaths);
+            await chatHistoryRepository.cleanupAttachmentPaths(attachmentPaths).catch((err) => {
+                console.warn('Failed to cleanup attachment files:', err);
+            });
 
             update((s) => ({ ...s, sessions: [], currentSessionId: null }));
         },
@@ -505,9 +365,60 @@ function createChatHistoryStore() {
             return session ? JSON.stringify(session, null, 2) : null;
         },
 
-        importSession: async (_json: string) => {
-            // TODO: Implement session import
-            return false;
+        importSession: async (json: string) => {
+            try {
+                const parsed = JSON.parse(json) as unknown;
+                if (!isRecord(parsed)) return false;
+
+                const title = typeof parsed.title === 'string' && parsed.title.trim()
+                    ? parsed.title.trim()
+                    : 'Imported chat';
+                const modelPath = typeof parsed.modelPath === 'string' && parsed.modelPath.trim()
+                    ? parsed.modelPath
+                    : undefined;
+                const repoId = typeof parsed.repoId === 'string' && parsed.repoId.trim()
+                    ? parsed.repoId
+                    : undefined;
+                const createdAt = typeof parsed.createdAt === 'number' && Number.isFinite(parsed.createdAt)
+                    ? parsed.createdAt
+                    : Date.now();
+                const updatedAt = typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+                    ? Math.max(parsed.updatedAt, createdAt)
+                    : createdAt;
+                const messages = normalizeImportedMessages(parsed.messages);
+
+                const id = crypto.randomUUID();
+                await chatHistoryRepository.createSession(id, title, modelPath, repoId, createdAt);
+
+                for (let i = 0; i < messages.length; i += 1) {
+                    await chatHistoryRepository.insertMessage(id, messages[i], createdAt + i);
+                }
+                if (updatedAt !== createdAt) {
+                    await chatHistoryRepository.touchSession(id, updatedAt);
+                }
+
+                update((s) => ({
+                    ...s,
+                    sessions: [
+                        {
+                            id,
+                            title,
+                            modelPath,
+                            repoId,
+                            createdAt,
+                            updatedAt,
+                            messages,
+                        },
+                        ...s.sessions,
+                    ],
+                    currentSessionId: id,
+                }));
+
+                return true;
+            } catch (err) {
+                console.error('Failed to import session:', err);
+                return false;
+            }
         },
     };
 }
@@ -523,9 +434,7 @@ export const sortedSessions = derived(chatHistory, ($h) => {
     return [...$h.sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 });
 
-// Group sessions by time period (like Ollama)
-export const groupedSessions = derived(sortedSessions, ($sessions) => {
-    const now = Date.now();
+export function groupSessionsByDate(sessions: ChatSession[], now = Date.now()) {
     const todayStart = new Date().setHours(0, 0, 0, 0);
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
 
@@ -535,7 +444,7 @@ export const groupedSessions = derived(sortedSessions, ($sessions) => {
         older: [] as ChatSession[],
     };
 
-    for (const session of $sessions) {
+    for (const session of sessions) {
         if (session.updatedAt >= todayStart) {
             groups.today.push(session);
         } else if (session.updatedAt >= weekAgo) {
@@ -546,9 +455,14 @@ export const groupedSessions = derived(sortedSessions, ($sessions) => {
     }
 
     return groups;
+}
+
+// Group sessions by time period (like Ollama)
+export const groupedSessions = derived(sortedSessions, ($sessions) => {
+    return groupSessionsByDate($sessions);
 });
 
 // Auto-initialize on client side
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !import.meta.env?.VITEST) {
     chatHistory.init();
 }

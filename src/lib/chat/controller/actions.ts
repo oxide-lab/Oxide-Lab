@@ -9,7 +9,6 @@ import { createStreamListener } from './listener';
 import { buildPromptWithChatTemplate } from '$lib/chat/prompts';
 import { get } from 'svelte/store';
 import { t } from '$lib/i18n';
-import { chatState } from '$lib/stores/chat';
 import type { Attachment as UiAttachment } from '$lib/chat/types';
 
 type ComposerFile = {
@@ -33,9 +32,10 @@ type BackendAttachment = {
 };
 
 export function createActions(ctx: ChatControllerCtx) {
+    const state = ctx.state;
     const stream = createStreamListener(ctx);
 
-    function toBackendMessages(messages: typeof ctx.messages) {
+    function toBackendMessages(messages: typeof state.messages) {
         return messages
             .filter((m) => m.role === 'user' || m.role === 'assistant')
             .map((m) => ({
@@ -79,7 +79,7 @@ export function createActions(ctx: ChatControllerCtx) {
         );
     }
 
-    function latestUserAttachments(messages: typeof ctx.messages): BackendAttachment[] {
+    function latestUserAttachments(messages: typeof state.messages): BackendAttachment[] {
         for (let i = messages.length - 1; i >= 0; i -= 1) {
             const message = messages[i];
             if (message.role !== 'user') continue;
@@ -90,7 +90,7 @@ export function createActions(ctx: ChatControllerCtx) {
 
     function normalizedRetrievalUrls(): string[] {
         const dedup = new Set<string>();
-        for (const raw of ctx.retrieval_urls ?? []) {
+        for (const raw of state.retrieval_urls ?? []) {
             const url = String(raw ?? '').trim();
             if (!url) continue;
             dedup.add(url);
@@ -99,12 +99,12 @@ export function createActions(ctx: ChatControllerCtx) {
     }
 
     async function resolveUrlCandidatesBeforeSend(text: string): Promise<boolean> {
-        if (!ctx.retrieval_url_enabled) return true;
+        if (!state.retrieval_url_enabled) return true;
 
         const existing = normalizedRetrievalUrls();
         if (existing.length > 0) {
-            if (existing.length !== (ctx.retrieval_urls ?? []).length) {
-                ctx.retrieval_urls = existing;
+            if (existing.length !== (state.retrieval_urls ?? []).length) {
+                state.retrieval_urls = existing;
             }
             return true;
         }
@@ -112,14 +112,14 @@ export function createActions(ctx: ChatControllerCtx) {
         try {
             const { invoke } = await import('@tauri-apps/api/core');
             const candidates = await invoke<string[]>('extract_url_candidates', {
-                messages: toBackendMessages(ctx.messages),
+                messages: toBackendMessages(state.messages),
                 prompt: text,
             });
             const normalized = Array.from(
                 new Set((candidates ?? []).map((value) => String(value ?? '').trim()).filter(Boolean)),
             );
             if (normalized.length === 0) return true;
-            ctx.retrieval_urls = normalized;
+            state.retrieval_urls = normalized;
 
             const { ask } = await import('@tauri-apps/plugin-dialog');
             const preview = normalized.slice(0, 6).map((url) => `- ${url}`).join('\n');
@@ -170,10 +170,10 @@ export function createActions(ctx: ChatControllerCtx) {
             const m = await invoke<{ text?: boolean; image?: boolean; audio?: boolean; video?: boolean }>(
                 'get_modality_support',
             );
-            if (typeof m?.text === 'boolean') ctx.supports_text = m.text;
-            if (typeof m?.image === 'boolean') ctx.supports_image = m.image;
-            if (typeof m?.audio === 'boolean') ctx.supports_audio = m.audio;
-            if (typeof m?.video === 'boolean') ctx.supports_video = m.video;
+            if (typeof m?.text === 'boolean') state.supports_text = m.text;
+            if (typeof m?.image === 'boolean') state.supports_image = m.image;
+            if (typeof m?.audio === 'boolean') state.supports_audio = m.audio;
+            if (typeof m?.video === 'boolean') state.supports_video = m.video;
         } catch {
             // Ignore; modality events will still update state when available.
         }
@@ -195,26 +195,24 @@ export function createActions(ctx: ChatControllerCtx) {
                     console.debug('[load_progress]', { deltaMs: delta, ...p });
                 }
                 if (typeof p.progress === 'number')
-                    ctx.loadingProgress = Math.max(0, Math.min(100, Math.floor(p.progress)));
-                if (typeof p.stage === 'string') ctx.loadingStage = p.stage;
-                if (p.message) ctx.errorText = '';
-                if (p.error) ctx.errorText = String(p.error);
+                    state.loadingProgress = Math.max(0, Math.min(100, Math.floor(p.progress)));
+                if (typeof p.stage === 'string') state.loadingStage = p.stage;
+                if (p.message) state.errorText = '';
+                if (p.error) state.errorText = String(p.error);
 
                 // If start stage, ensure loading indicators are on
                 if (p.stage === 'start') {
-                    ctx.isLoadingModel = true;
-                    ctx.busy = true;
-                    ctx.isLoaded = false;
-                    chatState.update(s => ({ ...s, isLoaded: false, isLoadingModel: true, busy: true }));
+                    state.isLoadingModel = true;
+                    state.busy = true;
+                    state.isLoaded = false;
                 }
                 if (p.done) {
-                    ctx.isLoadingModel = false;
-                    ctx.busy = false;
+                    state.isLoadingModel = false;
+                    state.busy = false;
                     if (!p.error) {
-                        ctx.isLoaded = true;
-                        ctx.loadingProgress = 100;
+                        state.isLoaded = true;
+                        state.loadingProgress = 100;
                         await refreshModalitySupport();
-                        chatState.update(s => ({ ...s, isLoaded: true, isLoadingModel: false, busy: false, loadingProgress: 100 }));
                     }
                 }
             });
@@ -222,10 +220,10 @@ export function createActions(ctx: ChatControllerCtx) {
             // Additional channel: early modality signal from backend
             modalityUnlisten = await listen<{ text?: boolean; image?: boolean; audio?: boolean; video?: boolean }>('modality_support', (e) => {
                 const m = e.payload || {};
-                if (typeof m.text === 'boolean') ctx.supports_text = m.text;
-                if (typeof m.image === 'boolean') ctx.supports_image = m.image;
-                if (typeof m.audio === 'boolean') ctx.supports_audio = m.audio;
-                if (typeof m.video === 'boolean') ctx.supports_video = m.video;
+                if (typeof m.text === 'boolean') state.supports_text = m.text;
+                if (typeof m.image === 'boolean') state.supports_image = m.image;
+                if (typeof m.audio === 'boolean') state.supports_audio = m.audio;
+                if (typeof m.video === 'boolean') state.supports_video = m.video;
             });
 
             await refreshModalitySupport();
@@ -249,14 +247,14 @@ export function createActions(ctx: ChatControllerCtx) {
                 f16c?: boolean;
             }>('get_device_info');
 
-            ctx.cuda_build = !!info?.cuda_build;
-            ctx.cuda_available = !!info?.cuda_available;
-            ctx.current_device = String(info?.current ?? 'CPU');
-            ctx.avx = !!info?.avx;
-            ctx.neon = !!info?.neon;
-            ctx.simd128 = !!info?.simd128;
-            ctx.f16c = !!info?.f16c;
-            ctx.use_gpu = ctx.cuda_available && ctx.current_device === 'CUDA';
+            state.cuda_build = !!info?.cuda_build;
+            state.cuda_available = !!info?.cuda_available;
+            state.current_device = String(info?.current ?? 'CPU');
+            state.avx = !!info?.avx;
+            state.neon = !!info?.neon;
+            state.simd128 = !!info?.simd128;
+            state.f16c = !!info?.f16c;
+            state.use_gpu = state.cuda_available && state.current_device === 'CUDA';
         } catch { /* ignore */ }
     }
 
@@ -264,9 +262,9 @@ export function createActions(ctx: ChatControllerCtx) {
         try {
             const { invoke } = await import('@tauri-apps/api/core');
             if (typeof desired !== 'undefined') {
-                ctx.use_gpu = !!desired;
+                state.use_gpu = !!desired;
             }
-            if (ctx.use_gpu) {
+            if (state.use_gpu) {
                 await invoke('set_device', { pref: { kind: 'cuda', index: 0 } });
             } else {
                 await invoke('set_device', { pref: { kind: 'cpu' } });
@@ -282,8 +280,8 @@ export function createActions(ctx: ChatControllerCtx) {
     void ensureLoadProgressListener();
 
     function cancelLoading() {
-        ctx.isCancelling = true;
-        ctx.loadingStage = 'cancelling';
+        state.isCancelling = true;
+        state.loadingStage = 'cancelling';
         try {
             import('@tauri-apps/api/core').then(({ invoke }) => {
                 void invoke('cancel_model_loading');
@@ -292,12 +290,12 @@ export function createActions(ctx: ChatControllerCtx) {
     }
 
     async function loadGGUF() {
-        ctx.isLoadingModel = true;
-        ctx.loadingProgress = 0;
-        ctx.loadingStage = 'start';
-        ctx.busy = true;
-        ctx.isLoaded = false;
-        ctx.errorText = '';
+        state.isLoadingModel = true;
+        state.loadingProgress = 0;
+        state.loadingStage = 'start';
+        state.busy = true;
+        state.isLoaded = false;
+        state.errorText = '';
 
         let stallTimer: ReturnType<typeof setInterval> | null = null;
         if (isModelLoadDebugEnabled()) {
@@ -320,29 +318,29 @@ export function createActions(ctx: ChatControllerCtx) {
             const { invoke } = await import('@tauri-apps/api/core');
             const { message } = await import('@tauri-apps/plugin-dialog');
 
-            const context_length = Math.max(1, Math.floor(ctx.ctx_limit_value));
-            console.log('[load] frontend params', { context_length, format: ctx.format });
+            const context_length = Math.max(1, Math.floor(state.ctx_limit_value));
+            console.log('[load] frontend params', { context_length, format: state.format });
 
-            if (ctx.isCancelling) return;
+            if (state.isCancelling) return;
 
             // TODO: Integrate with Tauri backend
             // Command: invoke('load_model', { req: {...} })
 
-            if (ctx.format === 'gguf') {
-                if (!ctx.modelPath) {
+            if (state.format === 'gguf') {
+                if (!state.modelPath) {
                     await message('Укажите путь к .gguf', { title: 'Загрузка модели', kind: 'warning' });
                     return;
                 }
                 await invoke('load_model', {
                     req: {
                         format: 'gguf',
-                        model_path: ctx.modelPath,
+                        model_path: state.modelPath,
                         tokenizer_path: null,
                         context_length,
                     },
                 });
-            } else if (ctx.format === 'hub_gguf') {
-                if (!ctx.repoId || !ctx.hubGgufFilename) {
+            } else if (state.format === 'hub_gguf') {
+                if (!state.repoId || !state.hubGgufFilename) {
                     await message('Укажите repoId и имя файла .gguf', {
                         title: 'Загрузка из HF Hub',
                         kind: 'warning',
@@ -352,9 +350,9 @@ export function createActions(ctx: ChatControllerCtx) {
                 await invoke('load_model', {
                     req: {
                         format: 'hub_gguf',
-                        repo_id: ctx.repoId,
-                        revision: ctx.revision || null,
-                        filename: ctx.hubGgufFilename,
+                        repo_id: state.repoId,
+                        revision: state.revision || null,
+                        filename: state.hubGgufFilename,
                         context_length,
                     },
                 });
@@ -367,10 +365,10 @@ export function createActions(ctx: ChatControllerCtx) {
             }
 
             await refreshDeviceInfo();
-            if (ctx.isCancelling) return;
+            if (state.isCancelling) return;
         } catch (e) {
             const err = String(e ?? 'Unknown error');
-            ctx.errorText = err;
+            state.errorText = err;
             try {
                 const { message } = await import('@tauri-apps/plugin-dialog');
                 await message(err, { title: get(t)('chat.errors.loadFailed'), kind: 'error' });
@@ -381,76 +379,48 @@ export function createActions(ctx: ChatControllerCtx) {
     }
 
     async function unloadGGUF() {
-        if (ctx.busy || !ctx.isLoaded) return;
-        ctx.isUnloadingModel = true;
-        ctx.unloadingProgress = 0;
-        ctx.busy = true;
-        ctx.errorText = '';
-        chatState.update((s) => ({
-            ...s,
-            busy: true,
-            isUnloadingModel: true,
-            unloadingProgress: 0,
-            errorText: '',
-        }));
+        if (state.busy || !state.isLoaded) return;
+        state.isUnloadingModel = true;
+        state.unloadingProgress = 0;
+        state.busy = true;
+        state.errorText = '';
 
         try {
             const unloadInterval = setInterval(() => {
-                if (ctx.unloadingProgress < 80) ctx.unloadingProgress += Math.random() * 15 + 5;
+                if (state.unloadingProgress < 80) state.unloadingProgress += Math.random() * 15 + 5;
             }, 100);
 
             const { invoke } = await import('@tauri-apps/api/core');
             await invoke('unload_model');
 
-            ctx.unloadingProgress = 100;
+            state.unloadingProgress = 100;
             clearInterval(unloadInterval);
             await new Promise((r) => setTimeout(r, 300));
-            ctx.isLoaded = false;
-            ctx.modelPath = '';
-            ctx.messages = [];
-            ctx.errorText = get(t)('chat.loading.unloadSuccess');
-            chatState.update((s) => ({
-                ...s,
-                isLoaded: false,
-                modelPath: '',
-                busy: true,
-                isUnloadingModel: true,
-                unloadingProgress: 100,
-                errorText: ctx.errorText,
-            }));
+            state.isLoaded = false;
+            state.modelPath = '';
+            state.messages = [];
+            state.errorText = get(t)('chat.loading.unloadSuccess');
 
             const unloadSuccessText = get(t)('chat.loading.unloadSuccess');
             setTimeout(() => {
-                if (ctx.errorText === unloadSuccessText) ctx.errorText = '';
+                if (state.errorText === unloadSuccessText) state.errorText = '';
             }, 3000);
         } catch (e) {
             const err = String(e ?? 'Unknown error');
-            ctx.errorText = err;
+            state.errorText = err;
         } finally {
-            ctx.isUnloadingModel = false;
-            ctx.unloadingProgress = 0;
-            ctx.busy = false;
-            chatState.update((s) => ({
-                ...s,
-                busy: false,
-                isLoaded: ctx.isLoaded,
-                modelPath: ctx.modelPath,
-                isUnloadingModel: false,
-                unloadingProgress: 0,
-                errorText: ctx.errorText,
-            }));
+            state.isUnloadingModel = false;
+            state.unloadingProgress = 0;
+            state.busy = false;
         }
     }
 
     async function handleSend(payload?: SendPayload) {
-        const text = (payload?.text ?? ctx.prompt).trim();
+        const text = (payload?.text ?? state.prompt).trim();
         const hasFiles = (payload?.files ?? []).some((file) => file.filename && file.url);
-        if ((!text && !hasFiles) || ctx.busy) return;
+        if ((!text && !hasFiles) || state.busy) return;
 
-        // Check both ctx.isLoaded and chatState for model loaded status
-        // (ctx.isLoaded may not update due to Svelte 5 reactivity issues with getter/setter pattern)
-        const storeState = get(chatState);
-        const isModelLoaded = ctx.isLoaded || storeState.isLoaded;
+        const isModelLoaded = state.isLoaded;
         if (!isModelLoaded) {
             const { message } = await import('@tauri-apps/plugin-dialog');
             await message(get(t)('chat.errors.loadModelFirst'), {
@@ -470,10 +440,10 @@ export function createActions(ctx: ChatControllerCtx) {
         const { invoke } = await import('@tauri-apps/api/core');
 
         // Create session if none exists
-        let state = get(chatHistory);
-        if (!state.currentSessionId) {
-            await chatHistory.createSession(ctx.modelPath, ctx.repoId);
-            state = get(chatHistory);
+        let historyState = get(chatHistory);
+        if (!historyState.currentSessionId) {
+            await chatHistory.createSession(state.modelPath, state.repoId);
+            historyState = get(chatHistory);
         }
 
         const rawAttachments: BackendAttachment[] = (payload?.files ?? [])
@@ -486,11 +456,11 @@ export function createActions(ctx: ChatControllerCtx) {
 
         let persistedAttachments: BackendAttachment[] = [];
         if (rawAttachments.length > 0) {
-            if (!state.currentSessionId) {
+            if (!historyState.currentSessionId) {
                 throw new Error('Missing current session id for attachment persistence');
             }
             persistedAttachments = await invoke<BackendAttachment[]>('persist_chat_attachments', {
-                sessionId: state.currentSessionId,
+                sessionId: historyState.currentSessionId,
                 attachments: rawAttachments,
             });
         }
@@ -509,30 +479,30 @@ export function createActions(ctx: ChatControllerCtx) {
         });
 
         // Update local context
-        const msgs = ctx.messages;
-        msgs.push({ role: 'user', content: text, attachments: uiAttachments });
-        msgs.push({
-            role: 'assistant',
-            content: '',
-            thinking: '',
-            isThinking: false,
-            sources: [],
-            retrievalWarnings: [],
-            mcpToolCalls: [],
-        });
-        ctx.messages = msgs;
+        state.messages = [
+            ...state.messages,
+            { role: 'user', content: text, attachments: uiAttachments },
+            {
+                role: 'assistant',
+                content: '',
+                thinking: '',
+                isThinking: false,
+                sources: [],
+                retrievalWarnings: [],
+                mcpToolCalls: [],
+            },
+        ];
 
-        ctx.prompt = '';
+        state.prompt = '';
         await generateFromHistory();
     }
 
-    async function generateFromHistory() {
-        ctx.busy = true;
-        chatState.update(s => ({ ...s, busy: true }));
+    async function generateFromHistory(editIndex?: number) {
+        state.busy = true;
         try {
             await stream.ensureListener();
 
-            const msgs = ctx.messages;
+            const msgs = state.messages;
             let hist =
                 msgs[msgs.length - 1]?.role === 'assistant' && msgs[msgs.length - 1]?.content === ''
                     ? msgs.slice(0, -1)
@@ -540,28 +510,28 @@ export function createActions(ctx: ChatControllerCtx) {
 
             const chatPrompt = await buildPromptWithChatTemplate(hist);
             const attachments = latestUserAttachments(hist);
-            const stopSequences = parseStopSequences(ctx.stop_sequences_text);
-            const maxNewTokens = ctx.max_new_tokens_enabled
-                ? Math.max(1, Math.floor(ctx.max_new_tokens_value))
+            const stopSequences = parseStopSequences(state.stop_sequences_text);
+            const maxNewTokens = state.max_new_tokens_enabled
+                ? Math.max(1, Math.floor(state.max_new_tokens_value))
                 : null;
-            const seedValue = ctx.seed_enabled ? Math.max(0, Math.floor(ctx.seed_value)) : null;
+            const seedValue = state.seed_enabled ? Math.max(0, Math.floor(state.seed_value)) : null;
 
             console.log('[infer] frontend params', {
-                use_custom_params: ctx.use_custom_params,
-                temperature: ctx.use_custom_params && ctx.temperature_enabled ? ctx.temperature : null,
-                top_k: ctx.use_custom_params && ctx.top_k_enabled ? Math.max(1, Math.floor(ctx.top_k_value)) : null,
-                top_p: ctx.use_custom_params && ctx.top_p_enabled
-                    ? ctx.top_p_value > 0 && ctx.top_p_value <= 1 ? ctx.top_p_value : 0.9
+                use_custom_params: state.use_custom_params,
+                temperature: state.use_custom_params && state.temperature_enabled ? state.temperature : null,
+                top_k: state.use_custom_params && state.top_k_enabled ? Math.max(1, Math.floor(state.top_k_value)) : null,
+                top_p: state.use_custom_params && state.top_p_enabled
+                    ? state.top_p_value > 0 && state.top_p_value <= 1 ? state.top_p_value : 0.9
                     : null,
-                min_p: ctx.use_custom_params && ctx.min_p_enabled
-                    ? ctx.min_p_value > 0 && ctx.min_p_value <= 1 ? ctx.min_p_value : 0.05
+                min_p: state.use_custom_params && state.min_p_enabled
+                    ? state.min_p_value > 0 && state.min_p_value <= 1 ? state.min_p_value : 0.05
                     : null,
-                repeat_penalty: ctx.use_custom_params && ctx.repeat_penalty_enabled ? ctx.repeat_penalty_value : null,
+                repeat_penalty: state.use_custom_params && state.repeat_penalty_enabled ? state.repeat_penalty_value : null,
                 max_new_tokens: maxNewTokens,
                 seed: seedValue,
                 stop_sequences: stopSequences,
-                reasoning_parse_enabled: ctx.reasoning_parse_enabled !== false,
-                structured_output_enabled: !!ctx.structured_output_enabled,
+                reasoning_parse_enabled: state.reasoning_parse_enabled !== false,
+                structured_output_enabled: !!state.structured_output_enabled,
             });
 
             const { invoke } = await import('@tauri-apps/api/core');
@@ -570,58 +540,62 @@ export function createActions(ctx: ChatControllerCtx) {
                     prompt: chatPrompt,
                     messages: toBackendMessages(hist),
                     attachments: attachments.length > 0 ? attachments : null,
-                    use_custom_params: ctx.use_custom_params,
-                    temperature: ctx.use_custom_params && ctx.temperature_enabled ? ctx.temperature : null,
-                    top_p: ctx.use_custom_params && ctx.top_p_enabled
-                        ? ctx.top_p_value > 0 && ctx.top_p_value <= 1 ? ctx.top_p_value : 0.9
+                    use_custom_params: state.use_custom_params,
+                    temperature: state.use_custom_params && state.temperature_enabled ? state.temperature : null,
+                    top_p: state.use_custom_params && state.top_p_enabled
+                        ? state.top_p_value > 0 && state.top_p_value <= 1 ? state.top_p_value : 0.9
                         : null,
-                    top_k: ctx.use_custom_params && ctx.top_k_enabled
-                        ? Math.max(1, Math.floor(ctx.top_k_value))
+                    top_k: state.use_custom_params && state.top_k_enabled
+                        ? Math.max(1, Math.floor(state.top_k_value))
                         : null,
-                    min_p: ctx.use_custom_params && ctx.min_p_enabled
-                        ? ctx.min_p_value > 0 && ctx.min_p_value <= 1 ? ctx.min_p_value : 0.05
+                    min_p: state.use_custom_params && state.min_p_enabled
+                        ? state.min_p_value > 0 && state.min_p_value <= 1 ? state.min_p_value : 0.05
                         : null,
-                    repeat_penalty: ctx.use_custom_params && ctx.repeat_penalty_enabled ? ctx.repeat_penalty_value : null,
+                    repeat_penalty: state.use_custom_params && state.repeat_penalty_enabled ? state.repeat_penalty_value : null,
                     max_new_tokens: maxNewTokens,
                     seed: seedValue,
                     repeat_last_n: 64,
                     stop_sequences: stopSequences.length > 0 ? stopSequences : null,
-                    reasoning_parse_enabled: ctx.reasoning_parse_enabled !== false,
-                    reasoning_start_tag: ctx.reasoning_start_tag || '<think>',
-                    reasoning_end_tag: ctx.reasoning_end_tag || '</think>',
-                    structured_output_enabled: !!ctx.structured_output_enabled,
-                    split_prompt: !!ctx.split_prompt,
-                    verbose_prompt: !!ctx.verbose_prompt,
-                    tracing: !!ctx.tracing,
+                    reasoning_parse_enabled: state.reasoning_parse_enabled !== false,
+                    reasoning_start_tag: state.reasoning_start_tag || '<think>',
+                    reasoning_end_tag: state.reasoning_end_tag || '</think>',
+                    structured_output_enabled: !!state.structured_output_enabled,
+                    split_prompt: !!state.split_prompt,
+                    verbose_prompt: !!state.verbose_prompt,
+                    tracing: !!state.tracing,
+                    edit_index: editIndex,
                     retrieval: {
                         web: {
-                            enabled: ctx.retrieval_url_enabled,
+                            enabled: state.retrieval_url_enabled,
                             urls: normalizedRetrievalUrls(),
                         },
                         local: {
-                            enabled: ctx.retrieval_local_enabled,
+                            enabled: state.retrieval_local_enabled,
                         },
                     },
                     mcp: {
-                        enabled: ctx.mcp_enabled,
+                        enabled: state.mcp_enabled,
                     },
                 },
             });
         } catch (e) {
             const err = String(e ?? 'Unknown error');
-            const msgs = ctx.messages;
-            const last = msgs[msgs.length - 1];
-            if (last && last.role === 'assistant' && last.content === '') {
-                last.content = `${get(t)('chat.errors.generationFailed')}: ${err}`;
-                ctx.messages = msgs;
+            const lastIndex = state.messages.length - 1;
+            const last = state.messages[lastIndex];
+            if (lastIndex >= 0 && last && last.role === 'assistant' && last.content === '') {
+                const nextMessages = state.messages.slice();
+                nextMessages[lastIndex] = {
+                    ...last,
+                    content: `${get(t)('chat.errors.generationFailed')}: ${err}`,
+                };
+                state.messages = nextMessages;
             }
             try {
                 const { message } = await import('@tauri-apps/plugin-dialog');
                 await message(err, { title: get(t)('chat.errors.generationFailed'), kind: 'error' });
             } catch { /* ignore */ }
         } finally {
-            ctx.busy = false;
-            chatState.update(s => ({ ...s, busy: false }));
+            state.busy = false;
         }
     }
 
@@ -635,13 +609,13 @@ export function createActions(ctx: ChatControllerCtx) {
 
             // Save partial generation
             const { chatHistory } = await import('$lib/stores/chat-history');
-            const state = get(chatHistory);
-            if (state.currentSessionId) {
-                const msgs = ctx.messages;
+            const historyState = get(chatHistory);
+            if (historyState.currentSessionId) {
+                const msgs = state.messages;
                 const last = msgs[msgs.length - 1];
                 if (last && last.role === 'assistant' && last.content) {
                     await chatHistory.saveAssistantMessage(
-                        state.currentSessionId,
+                        historyState.currentSessionId,
                         last.content,
                         last.thinking,
                         last.sources ?? [],
@@ -659,10 +633,9 @@ export function createActions(ctx: ChatControllerCtx) {
      * Truncates history at editIndex, updates the message content, and regenerates.
      */
     async function handleEdit(editIndex: number, newContent: string) {
-        if (ctx.busy) return;
+        if (state.busy) return;
 
-        const storeState = get(chatState);
-        const isModelLoaded = ctx.isLoaded || storeState.isLoaded;
+        const isModelLoaded = state.isLoaded;
         if (!isModelLoaded) {
             const { message } = await import('@tauri-apps/plugin-dialog');
             await message(get(t)('chat.errors.loadModelFirst'), {
@@ -676,7 +649,7 @@ export function createActions(ctx: ChatControllerCtx) {
         const historyState = get(chatHistory);
 
         // Truncate messages to editIndex (inclusive) and update content
-        const msgs = ctx.messages.slice(0, editIndex + 1);
+        const msgs = state.messages.slice(0, editIndex + 1);
         if (msgs[editIndex]) {
             msgs[editIndex].content = newContent;
         }
@@ -708,9 +681,9 @@ export function createActions(ctx: ChatControllerCtx) {
             retrievalWarnings: [],
             mcpToolCalls: [],
         });
-        ctx.messages = msgs;
+        state.messages = msgs;
 
-        await generateFromHistoryWithIndex(editIndex);
+        await generateFromHistory(editIndex);
     }
 
     /**
@@ -718,10 +691,9 @@ export function createActions(ctx: ChatControllerCtx) {
      * Finds the last user message and regenerates from that point.
      */
     async function handleRegenerate(messageIndex: number) {
-        if (ctx.busy) return;
+        if (state.busy) return;
 
-        const storeState = get(chatState);
-        const isModelLoaded = ctx.isLoaded || storeState.isLoaded;
+        const isModelLoaded = state.isLoaded;
         if (!isModelLoaded) {
             const { message } = await import('@tauri-apps/plugin-dialog');
             await message(get(t)('chat.errors.loadModelFirst'), {
@@ -733,11 +705,11 @@ export function createActions(ctx: ChatControllerCtx) {
 
         // Find the user message before this assistant message
         let userIndex = messageIndex;
-        if (ctx.messages[messageIndex]?.role === 'assistant') {
+        if (state.messages[messageIndex]?.role === 'assistant') {
             userIndex = messageIndex - 1;
         }
 
-        if (userIndex < 0 || ctx.messages[userIndex]?.role !== 'user') {
+        if (userIndex < 0 || state.messages[userIndex]?.role !== 'user') {
             console.warn('[regenerate] Could not find user message to regenerate from');
             return;
         }
@@ -746,7 +718,7 @@ export function createActions(ctx: ChatControllerCtx) {
         const historyState = get(chatHistory);
 
         // Truncate to include the user message, remove the assistant response
-        const msgs = ctx.messages.slice(0, userIndex + 1);
+        const msgs = state.messages.slice(0, userIndex + 1);
 
         // Sync with database
         if (historyState.currentSessionId) {
@@ -773,105 +745,20 @@ export function createActions(ctx: ChatControllerCtx) {
             retrievalWarnings: [],
             mcpToolCalls: [],
         });
-        ctx.messages = msgs;
+        state.messages = msgs;
 
-        await generateFromHistoryWithIndex(userIndex);
-    }
-
-    /**
-     * Generate from history with edit_index for truncating on backend if needed.
-     */
-    async function generateFromHistoryWithIndex(editIndex?: number) {
-        ctx.busy = true;
-        chatState.update(s => ({ ...s, busy: true }));
-        try {
-            await stream.ensureListener();
-
-            const msgs = ctx.messages;
-            let hist =
-                msgs[msgs.length - 1]?.role === 'assistant' && msgs[msgs.length - 1]?.content === ''
-                    ? msgs.slice(0, -1)
-                    : msgs.slice();
-
-            const chatPrompt = await buildPromptWithChatTemplate(hist);
-            const attachments = latestUserAttachments(hist);
-            const stopSequences = parseStopSequences(ctx.stop_sequences_text);
-            const maxNewTokens = ctx.max_new_tokens_enabled
-                ? Math.max(1, Math.floor(ctx.max_new_tokens_value))
-                : null;
-            const seedValue = ctx.seed_enabled ? Math.max(0, Math.floor(ctx.seed_value)) : null;
-
-            const { invoke } = await import('@tauri-apps/api/core');
-            await invoke('generate_stream', {
-                req: {
-                    prompt: chatPrompt,
-                    messages: toBackendMessages(hist),
-                    attachments: attachments.length > 0 ? attachments : null,
-                    use_custom_params: ctx.use_custom_params,
-                    temperature: ctx.use_custom_params && ctx.temperature_enabled ? ctx.temperature : null,
-                    top_p: ctx.use_custom_params && ctx.top_p_enabled
-                        ? ctx.top_p_value > 0 && ctx.top_p_value <= 1 ? ctx.top_p_value : 0.9
-                        : null,
-                    top_k: ctx.use_custom_params && ctx.top_k_enabled
-                        ? Math.max(1, Math.floor(ctx.top_k_value))
-                        : null,
-                    min_p: ctx.use_custom_params && ctx.min_p_enabled
-                        ? ctx.min_p_value > 0 && ctx.min_p_value <= 1 ? ctx.min_p_value : 0.05
-                        : null,
-                    repeat_penalty: ctx.use_custom_params && ctx.repeat_penalty_enabled ? ctx.repeat_penalty_value : null,
-                    max_new_tokens: maxNewTokens,
-                    seed: seedValue,
-                    repeat_last_n: 64,
-                    stop_sequences: stopSequences.length > 0 ? stopSequences : null,
-                    reasoning_parse_enabled: ctx.reasoning_parse_enabled !== false,
-                    reasoning_start_tag: ctx.reasoning_start_tag || '<think>',
-                    reasoning_end_tag: ctx.reasoning_end_tag || '</think>',
-                    structured_output_enabled: !!ctx.structured_output_enabled,
-                    split_prompt: !!ctx.split_prompt,
-                    verbose_prompt: !!ctx.verbose_prompt,
-                    tracing: !!ctx.tracing,
-                    edit_index: editIndex,
-                    retrieval: {
-                        web: {
-                            enabled: ctx.retrieval_url_enabled,
-                            urls: normalizedRetrievalUrls(),
-                        },
-                        local: {
-                            enabled: ctx.retrieval_local_enabled,
-                        },
-                    },
-                    mcp: {
-                        enabled: ctx.mcp_enabled,
-                    },
-                },
-            });
-        } catch (e) {
-            const err = String(e ?? 'Unknown error');
-            const msgs = ctx.messages;
-            const last = msgs[msgs.length - 1];
-            if (last && last.role === 'assistant' && last.content === '') {
-                last.content = `${get(t)('chat.errors.generationFailed')}: ${err}`;
-                ctx.messages = msgs;
-            }
-            try {
-                const { message } = await import('@tauri-apps/plugin-dialog');
-                await message(err, { title: get(t)('chat.errors.generationFailed'), kind: 'error' });
-            } catch { /* ignore */ }
-        } finally {
-            ctx.busy = false;
-            chatState.update(s => ({ ...s, busy: false }));
-        }
+        await generateFromHistory(userIndex);
     }
 
     async function pickModel() {
         const { open, message } = await import('@tauri-apps/plugin-dialog');
 
-        if (ctx.format === 'gguf') {
+        if (state.format === 'gguf') {
             const selected = await open({
                 multiple: false,
                 filters: [{ name: 'GGUF', extensions: ['gguf'] }],
             });
-            if (typeof selected === 'string') ctx.modelPath = selected;
+            if (typeof selected === 'string') state.modelPath = selected;
         } else {
             await message(
                 'Для загрузки из HF Hub заполните repoId, revision (по желанию) и, для GGUF, имя файла.',
@@ -908,5 +795,6 @@ export function createActions(ctx: ChatControllerCtx) {
         refreshDeviceInfo,
         setDeviceByToggle,
         ensureStreamListener: stream.ensureListener,
+        resetStreamState: stream.reset,
     };
 }

@@ -11,6 +11,13 @@ declare global {
     }
 }
 
+const isDev = import.meta.env.DEV;
+
+function debugLog(message: string, ...args: unknown[]) {
+    if (!isDev) return;
+    console.log(message, ...args);
+}
+
 /**
  * Global store for experimental features state
  * Provides reactive access to experimental features enabled/disabled state
@@ -21,7 +28,9 @@ class ExperimentalFeaturesStore {
     private _initialized = $state(false);
 
     constructor() {
-        this.loadState();
+        void this.loadState().catch((err) => {
+            console.warn('Failed to initialize experimental features state:', err);
+        });
     }
 
     get enabled() {
@@ -39,7 +48,7 @@ class ExperimentalFeaturesStore {
     async loadState() {
         try {
             this._loading = true;
-            console.log('Loading experimental features state...');
+            debugLog('Loading experimental features state...');
 
             // TODO: Integrate with Tauri backend
             // Command: invoke('get_experimental_features_enabled')
@@ -47,13 +56,13 @@ class ExperimentalFeaturesStore {
                 try {
                     const { invoke } = await import('@tauri-apps/api/core');
                     this._enabled = await invoke<boolean>('get_experimental_features_enabled');
-                    console.log('Experimental features loaded:', this._enabled);
+                    debugLog('Experimental features loaded:', this._enabled);
                 } catch (err) {
                     console.warn('Failed to invoke get_experimental_features_enabled:', err);
                     this._enabled = false;
                 }
             } else {
-                console.log('Tauri context not available, using default (false)');
+                debugLog('Tauri context not available, using default (false)');
                 this._enabled = false;
             }
 
@@ -70,7 +79,7 @@ class ExperimentalFeaturesStore {
 
     async setEnabled(enabled: boolean) {
         try {
-            console.log('Setting experimental features to:', enabled);
+            debugLog('Setting experimental features to:', enabled);
 
             // TODO: Integrate with Tauri backend
             // Command: invoke('set_experimental_features_enabled', { enabled })
@@ -84,7 +93,7 @@ class ExperimentalFeaturesStore {
             }
 
             this._enabled = enabled;
-            console.log('Experimental features set to:', this._enabled);
+            debugLog('Experimental features set to:', this._enabled);
         } catch (err) {
             const error = err as Error;
             console.error('Failed to save experimental features state:', error);

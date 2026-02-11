@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { get } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { t } from '$lib/i18n';
@@ -22,6 +23,7 @@
   } from '$lib/components/settings';
   import { settingsV2Store } from '$lib/stores/settings-v2';
   import { settingsSearchStore } from '$lib/stores/settings-search';
+  import { chatUiMounted } from '$lib/stores/chat';
   import {
     clearUserData,
     exportUserData,
@@ -376,9 +378,12 @@
                 onChange={(next) => settings.updateSection('chat_presets', next)}
                 onApplyPresetToChat={(presetId) => {
                   localStorage.setItem('chat.quickPreset', presetId);
-                  const oxide = (window as any).__oxide;
-                  if (oxide?.applyPresetById) {
-                    oxide.applyPresetById(presetId, 'settings');
+                  if (get(chatUiMounted)) {
+                    window.dispatchEvent(
+                      new CustomEvent('oxide:apply-preset', {
+                        detail: { presetId, source: 'settings' },
+                      }),
+                    );
                   } else {
                     transientNotice = $t('settings.v2.chat_presets.apply_later_notice');
                   }

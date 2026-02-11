@@ -237,6 +237,36 @@ async function resolveInstalledBackendExecutable(
     });
 }
 
+async function resolveCurrentBackend(runtime: LlamaRuntimeConfig): Promise<string | null> {
+    const inferredCurrentBackend = inferBackendFromServerPath(runtime.server_path);
+    const currentBackend = inferredCurrentBackend ?? runtime.selected_backend ?? null;
+
+    if (inferredCurrentBackend && inferredCurrentBackend !== runtime.selected_backend) {
+        await saveRuntimeConfig({
+            ...runtime,
+            selected_backend: inferredCurrentBackend,
+        });
+    }
+
+    return currentBackend;
+}
+
+function ensureCurrentBackendListed(
+    backends: BackendVersion[],
+    currentBackend: string | null,
+): BackendVersion[] {
+    const currentEntry = parseBackendString(currentBackend);
+    if (!currentEntry) return backends;
+    if (
+        backends.some(
+            (item) => item.version === currentEntry.version && item.backend === currentEntry.backend,
+        )
+    ) {
+        return backends;
+    }
+    return [currentEntry, ...backends];
+}
+
 export class LlamaBackendService {
     async getRuntimeConfig(): Promise<LlamaRuntimeConfig> {
         return await getRuntimeConfig();
@@ -257,15 +287,7 @@ export class LlamaBackendService {
             getBackendsDir(),
             getSystemInfo(),
         ]);
-        const inferredCurrentBackend = inferBackendFromServerPath(runtime.server_path);
-        const currentBackend = inferredCurrentBackend ?? runtime.selected_backend ?? null;
-
-        if (inferredCurrentBackend && inferredCurrentBackend !== runtime.selected_backend) {
-            await saveRuntimeConfig({
-                ...runtime,
-                selected_backend: inferredCurrentBackend,
-            });
-        }
+        const currentBackend = await resolveCurrentBackend(runtime);
 
         const features = await getSupportedFeatures(sysInfo);
         const supportedNames = await getSupportedBackendNames(sysInfo, features);
@@ -273,27 +295,10 @@ export class LlamaBackendService {
             getLocalInstalledBackends(backendsDir),
             getRemoteSupportedBackends(supportedNames),
         ]);
-        const currentEntry = parseBackendString(currentBackend);
-        if (
-            currentEntry &&
-            !installed.some(
-                (item) =>
-                    item.version === currentEntry.version && item.backend === currentEntry.backend,
-            )
-        ) {
-            installed = [currentEntry, ...installed];
-        }
+        installed = ensureCurrentBackendListed(installed, currentBackend);
 
         let available = await listMergedBackends(remote, installed);
-        if (
-            currentEntry &&
-            !available.some(
-                (item) =>
-                    item.version === currentEntry.version && item.backend === currentEntry.backend,
-            )
-        ) {
-            available = [currentEntry, ...available];
-        }
+        available = ensureCurrentBackendListed(available, currentBackend);
         available.sort(compareBackendVersion);
 
         return {
@@ -310,27 +315,10 @@ export class LlamaBackendService {
         installed: BackendVersion[];
     }> {
         const [runtime, backendsDir] = await Promise.all([getRuntimeConfig(), getBackendsDir()]);
-        const inferredCurrentBackend = inferBackendFromServerPath(runtime.server_path);
-        const currentBackend = inferredCurrentBackend ?? runtime.selected_backend ?? null;
-
-        if (inferredCurrentBackend && inferredCurrentBackend !== runtime.selected_backend) {
-            await saveRuntimeConfig({
-                ...runtime,
-                selected_backend: inferredCurrentBackend,
-            });
-        }
+        const currentBackend = await resolveCurrentBackend(runtime);
 
         let installed = await getLocalInstalledBackends(backendsDir);
-        const currentEntry = parseBackendString(currentBackend);
-        if (
-            currentEntry &&
-            !installed.some(
-                (item) =>
-                    item.version === currentEntry.version && item.backend === currentEntry.backend,
-            )
-        ) {
-            installed = [currentEntry, ...installed];
-        }
+        installed = ensureCurrentBackendListed(installed, currentBackend);
         installed.sort(compareBackendVersion);
 
         return {

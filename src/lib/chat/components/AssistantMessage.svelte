@@ -19,6 +19,8 @@
   import Code from 'phosphor-svelte/lib/Code';
   import { t } from '$lib/i18n';
   import { cn } from '../../utils';
+  import { cleanThinking, splitInlineThinking } from '../utils';
+  import { openUrl, openPath, getParentFolder } from '$lib/utils/tauri';
 
   interface Props {
     message: ChatMessage;
@@ -44,36 +46,11 @@
   let regenerateTooltipOpen = $state(false);
   let rawTooltipOpen = $state(false);
 
-  function cleanThinking(text: string): string {
-    return text.replace(/<\/?think>/gi, '').trim();
-  }
-
-  function splitInlineThinking(content: string): { thinking: string; content: string } {
-    const source = content ?? '';
-    const closeTag = '</think>';
-    const openTag = '<think>';
-    const lower = source.toLowerCase();
-    const openIdx = lower.indexOf(openTag);
-    const closeIdx = lower.indexOf(closeTag);
-
-    if (openIdx >= 0 && closeIdx > openIdx) {
-      const thinking = source.slice(openIdx + openTag.length, closeIdx).trim();
-      const contentWithoutThinking = `${source.slice(0, openIdx)}${source.slice(closeIdx + closeTag.length)}`.trimStart();
-      return { thinking, content: contentWithoutThinking };
-    }
-
-    if (openIdx < 0 && closeIdx >= 0) {
-      const thinking = source.slice(0, closeIdx).trim();
-      const contentWithoutThinking = source.slice(closeIdx + closeTag.length).trimStart();
-      return { thinking, content: contentWithoutThinking };
-    }
-
-    return { thinking: '', content: source };
-  }
-
   // Derived values
   let fallbackThinking = $derived(
-    !message.thinking ? splitInlineThinking(message.content ?? '') : { thinking: '', content: message.content ?? '' },
+    !message.thinking
+      ? splitInlineThinking(message.content ?? '')
+      : { thinking: '', content: message.content ?? '' },
   );
   let thinkingContent = $derived(
     message.thinking ? cleanThinking(message.thinking) : cleanThinking(fallbackThinking.thinking),
@@ -109,20 +86,11 @@
     showRaw = !showRaw;
   }
 
-  async function openWebSource(url: string) {
-    const { openUrl } = await import('@tauri-apps/plugin-opener');
+  async function handleOpenWebSource(url: string) {
     await openUrl(url);
   }
 
-  function getParentFolder(path: string): string {
-    const normalized = path.replaceAll('/', '\\');
-    const idx = normalized.lastIndexOf('\\');
-    if (idx <= 0) return path;
-    return normalized.slice(0, idx);
-  }
-
-  async function openLocalSourceFolder(path: string) {
-    const { openPath } = await import('@tauri-apps/plugin-opener');
+  async function handleOpenLocalSourceFolder(path: string) {
     await openPath(getParentFolder(path));
   }
 
@@ -217,7 +185,7 @@
                 <Button
                   variant="outline"
                   size="sm"
-                  onclick={() => source.url && openWebSource(source.url)}
+                  onclick={() => source.url && handleOpenWebSource(source.url)}
                 >
                   Open
                 </Button>
@@ -225,7 +193,7 @@
                 <Button
                   variant="outline"
                   size="sm"
-                  onclick={() => source.path && openLocalSourceFolder(source.path)}
+                  onclick={() => source.path && handleOpenLocalSourceFolder(source.path)}
                 >
                   Open folder
                 </Button>

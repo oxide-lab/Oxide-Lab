@@ -1,231 +1,100 @@
 import { writable } from 'svelte/store';
-import type { SettingsSearchItem } from '$lib/types/settings-v2';
-import type { SettingsSearchResult } from '$lib/types/settings-v2';
+import type { SettingsSearchItem, SettingsSearchResult } from '$lib/types/settings-v2';
 import { searchSettingsV2 } from '$lib/services/settings-v2';
 
 const SEARCH_HISTORY_KEY = 'settings.search.history.v2';
 
-const registry: SettingsSearchItem[] = [
+type RegistryDef = {
+  id: string;
+  section: SettingsSearchItem['section'];
+  title?: string;
+  description?: string;
+  keywords?: string[];
+  devOnly?: boolean;
+};
+
+const REGISTRY_DEFS: RegistryDef[] = [
+  { id: 'general.locale', section: 'general', title: 'Language' },
+  { id: 'general.theme', section: 'general', title: 'Theme' },
+  { id: 'general.expert_mode', section: 'general', title: 'Expert Mode' },
+  { id: 'general.developer_mode', section: 'general', title: 'Developer Mode' },
+  { id: 'general.search_history_enabled', section: 'general', title: 'Search History' },
+  { id: 'models_storage.models_dir', section: 'models_storage', title: 'Models Directory' },
+  { id: 'models_storage.cache_dir', section: 'models_storage', title: 'Cache Directory' },
   {
-    id: 'general.locale',
-    section: 'general',
-    title: 'Language',
-    description: 'Application locale',
-    keywords: ['locale', 'language', 'i18n'],
-    synonyms: ['idioma', 'язык', 'lingua', 'lang'],
-  },
-  {
-    id: 'general.theme',
-    section: 'general',
-    title: 'Theme',
-    description: 'Light, dark, or system mode',
-    keywords: ['theme', 'appearance', 'dark', 'light'],
-    synonyms: ['ui style', 'tema', 'тема'],
-  },
-  {
-    id: 'general.expert_mode',
-    section: 'general',
-    title: 'Expert Mode',
-    description: 'Show advanced settings',
-    keywords: ['expert', 'advanced', 'basic'],
-    synonyms: ['power mode', 'продвинутый', 'avancado'],
-  },
-  {
-    id: 'general.developer_mode',
-    section: 'general',
-    title: 'Developer Mode',
-    description: 'Reveal developer settings',
-    keywords: ['developer', 'dev', 'network'],
-    synonyms: ['unsafe', 'advanced dev', 'разработчик', 'desenvolvedor'],
-  },
-  {
-    id: 'models_storage.models_dir',
+    id: 'models_storage.model_selector_search',
     section: 'models_storage',
-    title: 'Models Directory',
-    description: 'Folder where models are stored',
-    keywords: ['models', 'path', 'folder', 'directory'],
-    synonyms: ['model path', 'путь к моделям', 'pasta modelos'],
+    title: 'Model Search',
+    description: 'Show search in model selector',
+    keywords: ['model search', 'selector search'],
   },
-  {
-    id: 'models_storage.cache_dir',
-    section: 'models_storage',
-    title: 'Cache Directory',
-    description: 'Folder where caches are stored',
-    keywords: ['cache', 'path', 'folder'],
-    synonyms: ['kv cache path', 'кэш', 'cache pasta'],
-  },
-  {
-    id: 'performance.ctx_size',
-    section: 'performance',
-    title: 'Context Size',
-    description: 'Runtime context window size',
-    keywords: ['context', 'ctx', 'tokens'],
-    synonyms: ['window size', 'контекст', 'contexto'],
-  },
+  { id: 'performance.ctx_size', section: 'performance', title: 'Context Size' },
   {
     id: 'performance.hardware.gpu_offload',
     section: 'hardware',
     title: 'Hardware GPU Offload',
-    description: 'GPU offload layers and VRAM estimation',
-    keywords: ['hardware', 'gpu', 'offload', 'layers', 'vram'],
-    synonyms: ['gpu layers', 'аппаратное ускорение', 'camadas gpu'],
   },
   {
     id: 'performance.hardware.gpu_selection',
     section: 'hardware',
     title: 'Hardware GPU Selection',
-    description: 'Choose runtime GPU for model execution',
-    keywords: ['hardware', 'gpu', 'device', 'selection'],
-    synonyms: ['main gpu', 'выбор gpu', 'selecao gpu'],
   },
   {
     id: 'performance.hardware.cpu_threads',
     section: 'hardware',
     title: 'Hardware CPU Threads',
-    description: 'CPU thread tuning for llama runtime',
-    keywords: ['hardware', 'cpu', 'threads', 'n_threads'],
-    synonyms: ['thread limit', 'потоки cpu', 'threads cpu'],
   },
-  {
-    id: 'performance.hardware.memory_mapping',
-    section: 'hardware',
-    title: 'Memory Mapping',
-    description: 'Load model in RAM or memory-mapped I/O',
-    keywords: ['hardware', 'memory', 'mmap', 'ram'],
-    synonyms: ['no mmap', 'карта памяти', 'mapeamento'],
-  },
-  {
-    id: 'performance.hardware.split_gpus',
-    section: 'hardware',
-    title: 'Split Across GPUs',
-    description: 'Distribute model layers across detected GPUs',
-    keywords: ['hardware', 'gpu', 'split', 'multi-gpu'],
-    synonyms: ['split mode', 'несколько gpu', 'multi gpu'],
-  },
-  {
-    id: 'performance.hardware.batch_size',
-    section: 'hardware',
-    title: 'Hardware Batch Size',
-    description: 'Batch size tuning for throughput and latency',
-    keywords: ['hardware', 'batch', 'throughput', 'latency'],
-    synonyms: ['token batch', 'размер батча', 'tamanho batch'],
-  },
-  {
-    id: 'performance.hardware.memory_mode',
-    section: 'hardware',
-    title: 'Hardware Memory Mode',
-    description: 'Planner strategy for memory pressure',
-    keywords: ['hardware', 'memory mode', 'planner'],
-    synonyms: ['memory profile', 'режим памяти', 'modo memoria'],
-  },
-  {
-    id: 'chat_presets.default_preset',
-    section: 'chat_presets',
-    title: 'Default Preset',
-    description: 'Preset applied to new chats',
-    keywords: ['preset', 'default', 'profile'],
-    synonyms: ['template', 'mode', 'профиль', 'predefinicao'],
-  },
-  {
-    id: 'chat_presets.temperature',
-    section: 'chat_presets',
-    title: 'Temperature',
-    description: 'Sampling creativity level',
-    keywords: ['temperature', 'sampling', 'randomness'],
-    synonyms: ['creativity', 'температура', 'criatividade'],
-  },
-  {
-    id: 'models_storage.model_selector_search',
-    section: 'models_storage',
-    title: 'Quantization',
-    description: 'Model quantization metadata',
-    keywords: ['quantization', 'gguf', 'bits'],
-    synonyms: ['4bit', '8bit', 'квантизация', 'quantizacao'],
-  },
-  {
-    id: 'general.search_history_enabled',
-    section: 'general',
-    title: 'Search History',
-    description: 'Save search query history',
-    keywords: ['search', 'history', 'privacy'],
-    synonyms: ['query log', 'история поиска', 'historico busca'],
-  },
-  {
-    id: 'privacy_data.export',
-    section: 'privacy_data',
-    title: 'Export Data',
-    description: 'Export local user data',
-    keywords: ['export', 'backup', 'data'],
-    synonyms: ['archive', 'экспорт', 'exportar'],
-  },
+  { id: 'performance.hardware.memory_mapping', section: 'hardware', title: 'Memory Mapping' },
+  { id: 'performance.hardware.split_gpus', section: 'hardware', title: 'Split Across GPUs' },
+  { id: 'performance.hardware.batch_size', section: 'hardware', title: 'Hardware Batch Size' },
+  { id: 'performance.hardware.memory_mode', section: 'hardware', title: 'Hardware Memory Mode' },
+  { id: 'chat_presets.default_preset', section: 'chat_presets', title: 'Default Preset' },
+  { id: 'chat_presets.temperature', section: 'chat_presets', title: 'Temperature' },
+  { id: 'privacy_data.export', section: 'privacy_data', title: 'Export Data' },
   {
     id: 'web_rag.url_fetch.enabled_by_default',
     section: 'web_rag',
     title: 'URL Fetch',
-    description: 'Default URL retrieval toggle in composer',
-    keywords: ['url', 'fetch', 'retrieval', 'web'],
-    synonyms: ['rag', 'sources', 'ссылки', 'busca por url'],
   },
   {
     id: 'web_rag.embeddings_provider.base_url',
     section: 'web_rag',
     title: 'Embeddings API URL',
-    description: 'OpenAI-compatible embeddings endpoint',
-    keywords: ['embeddings', 'provider', 'url', 'endpoint'],
-    synonyms: ['vector api', 'embed model', 'эмбеддинги', 'vetores'],
   },
-  {
-    id: 'web_rag.local_rag.beta_enabled',
-    section: 'web_rag',
-    title: 'Local RAG',
-    description: 'Enable retrieval from indexed local files',
-    keywords: ['local rag', 'documents', 'index', 'files'],
-    synonyms: ['knowledge base', 'локальные документы', 'base local'],
-  },
-  {
-    id: 'web_rag.mcp.enabled',
-    section: 'web_rag',
-    title: 'MCP Tools',
-    description: 'Enable Model Context Protocol tool servers',
-    keywords: ['mcp', 'tools', 'agents', 'tool calls'],
-    synonyms: ['model context protocol', 'инструменты', 'ferramentas'],
-  },
+  { id: 'web_rag.local_rag.beta_enabled', section: 'web_rag', title: 'Local RAG' },
+  { id: 'web_rag.mcp.enabled', section: 'web_rag', title: 'MCP Tools' },
   {
     id: 'web_rag.mcp.max_tool_rounds',
     section: 'web_rag',
     title: 'MCP Max Tool Rounds',
-    description: 'Maximum tool-loop iterations per response',
-    keywords: ['mcp', 'tools', 'rounds', 'agent'],
-    synonyms: ['loop limit', 'лимит раундов', 'limite de rodadas'],
   },
   {
     id: 'developer.openai_server',
     section: 'developer',
     title: 'OpenAI Server',
-    description: 'Configure local OpenAI-compatible server',
-    keywords: ['api server', 'openai', 'endpoint', 'port', 'host'],
-    synonyms: ['localhost', 'lan', 'сервер', 'servidor'],
     devOnly: true,
   },
-  {
-    id: 'developer.auth_required',
-    section: 'developer',
-    title: 'Auth Required',
-    description: 'Require API key for requests',
-    keywords: ['auth', 'api key', 'security'],
-    synonyms: ['token', 'авторизация', 'autenticacao'],
-    devOnly: true,
-  },
-  {
-    id: 'developer.cors',
-    section: 'developer',
-    title: 'CORS Mode',
-    description: 'Cross-origin request policy',
-    keywords: ['cors', 'origin', 'allowlist', 'any'],
-    synonyms: ['cross origin', 'источник', 'origem'],
-    devOnly: true,
-  },
+  { id: 'developer.auth_required', section: 'developer', title: 'Auth Required', devOnly: true },
+  { id: 'developer.cors', section: 'developer', title: 'CORS Mode', devOnly: true },
 ];
+
+function idToTitle(id: string): string {
+  const tail = id.split('.').at(-1) ?? id;
+  return tail
+    .split('_')
+    .map((word) => (word ? `${word[0].toUpperCase()}${word.slice(1)}` : word))
+    .join(' ');
+}
+
+const registry: SettingsSearchItem[] = REGISTRY_DEFS.map((item) => ({
+  id: item.id,
+  section: item.section,
+  title: item.title ?? idToTitle(item.id),
+  description: item.description ?? '',
+  keywords: item.keywords ?? [],
+  synonyms: [],
+  devOnly: item.devOnly,
+}));
 
 function norm(value: string): string {
   return value.toLowerCase().trim();

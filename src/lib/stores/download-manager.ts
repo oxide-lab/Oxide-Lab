@@ -16,6 +16,7 @@ import { LocalModelsService } from '$lib/services/local-models';
 // Internal state stores
 const snapshot = writable<DownloadManagerSnapshot>({ active: [], history: [] });
 const isReady = writable(false);
+export const downloadManagerError = writable<string | null>(null);
 
 // Event listener cleanup function
 let unlisten: (() => void) | null = null;
@@ -60,8 +61,12 @@ export async function ensureDownloadManager(): Promise<void> {
         const initial = await LocalModelsService.getDownloadSnapshot();
         snapshot.set(initial);
         isReady.set(true);
+        downloadManagerError.set(null);
     } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        downloadManagerError.set(message);
         console.error('Failed to load download snapshot:', error);
+        throw error;
     }
 
     // Set up event listener for real-time download updates
@@ -79,8 +84,12 @@ export async function refreshDownloadSnapshot(): Promise<void> {
         const current = await LocalModelsService.getDownloadSnapshot();
         snapshot.set(current);
         isReady.set(true);
+        downloadManagerError.set(null);
     } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        downloadManagerError.set(message);
         console.error('Failed to refresh download snapshot:', error);
+        throw error;
     }
 }
 

@@ -10,7 +10,6 @@ export * from './chat-history';
 
 // UI stores
 export * from './sidebar';
-export * from './ui-preferences';
 export * from './page-tabs.svelte';
 
 // Model stores
