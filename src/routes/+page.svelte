@@ -1,8 +1,7 @@
 <script lang="ts">
   /**
-   * Home Page - Chat Interface
+   * Home Page
+   *
+   * Chat is mounted by src/routes/+layout.svelte to keep one persistent instance.
    */
-  import { Chat } from '$lib/chat';
 </script>
-
-<Chat />

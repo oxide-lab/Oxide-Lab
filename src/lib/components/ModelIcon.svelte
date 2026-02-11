@@ -14,53 +14,66 @@
 
   let { family = null, size = 24, class: className = '' }: Props = $props();
 
-  // Pre-load all icons using import.meta.glob
-  const iconModules = import.meta.glob('/node_modules/@lobehub/icons-static-svg/icons/*.svg', {
-    query: '?url',
-    import: 'default',
-    eager: true,
-  }) as Record<string, string>;
-
   const rawIconModules = import.meta.glob('/node_modules/@lobehub/icons-static-svg/icons/*.svg', {
     query: '?raw',
     import: 'default',
-    eager: true,
-  }) as Record<string, string>;
+  }) as Record<string, () => Promise<string>>;
 
   let iconName = $derived(getModelIconName(family));
   let hasError = $state(false);
   let isFallbackIcon = $state(false);
   let activeIconName = $derived(isFallbackIcon ? 'huggingface' : iconName);
+  let inlineSvg = $state<string | null>(null);
+  let iconMode = $state<'mono' | 'color'>('mono');
+  let loadToken = 0;
 
-  // Check if color version exists
-  let colorIconSrc = $derived.by(() => {
-    const key = `/node_modules/@lobehub/icons-static-svg/icons/${activeIconName}-color.svg`;
-    return iconModules[key] ?? null;
-  });
-
-  // Get raw SVG for non-color version to support styling (e.g. white color)
-  let inlineSvg = $derived.by(() => {
-    if (colorIconSrc) return null; // Use img tag for color icons
-    const key = `/node_modules/@lobehub/icons-static-svg/icons/${activeIconName}.svg`;
-    return rawIconModules[key] ?? null;
-  });
-
-  // Fallback if no inline SVG and no color icon
-  let fallbackSrc = $derived.by(() => {
-    if (colorIconSrc || inlineSvg) return null;
-    const key = `/node_modules/@lobehub/icons-static-svg/icons/${activeIconName}.svg`;
-    return iconModules[key] ?? null;
-  });
-
-  function handleError() {
-    if (!isFallbackIcon) {
-      isFallbackIcon = true;
-      return;
+  function resolveIconVariant(name: string): { key: string; mode: 'mono' | 'color' } | null {
+    const colorKey = `/node_modules/@lobehub/icons-static-svg/icons/${name}-color.svg`;
+    if (rawIconModules[colorKey]) {
+      return { key: colorKey, mode: 'color' };
     }
-    hasError = true;
+    const monoKey = `/node_modules/@lobehub/icons-static-svg/icons/${name}.svg`;
+    if (rawIconModules[monoKey]) {
+      return { key: monoKey, mode: 'mono' };
+    }
+    return null;
   }
 
-  // Reset error when icon changes
+  $effect(() => {
+    const nextName = activeIconName;
+    const variant = resolveIconVariant(nextName);
+    const token = ++loadToken;
+    hasError = false;
+    inlineSvg = null;
+
+    if (!variant) {
+      if (!isFallbackIcon) {
+        isFallbackIcon = true;
+        return;
+      }
+      inlineSvg = null;
+      hasError = true;
+      return;
+    }
+
+    rawIconModules[variant.key]()
+      .then((svg) => {
+        if (token !== loadToken) return;
+        inlineSvg = svg;
+        iconMode = variant.mode;
+      })
+      .catch(() => {
+        if (token !== loadToken) return;
+        if (!isFallbackIcon) {
+          isFallbackIcon = true;
+          return;
+        }
+        inlineSvg = null;
+        hasError = true;
+      });
+  });
+
+  // Reset hard error when original icon family changes
   $effect(() => {
     iconName;
     hasError = false;
@@ -69,38 +82,21 @@
 </script>
 
 {#if inlineSvg}
-  <!-- Non-color icons are rendered inline to support currentColor (white in dark mode) -->
   <span
     class={`inline-flex items-center justify-center shrink-0 ${
-      activeIconName === 'yandex' ? 'text-red-600 dark:text-red-500' : 'text-foreground'
+      iconMode === 'mono'
+        ? activeIconName === 'yandex'
+          ? 'text-red-600 dark:text-red-500'
+          : 'text-foreground'
+        : ''
     } ${className}`}
     style={`width:${size}px;height:${size}px;`}
     aria-label={family || 'Model'}
   >
-    <span
-      class="inline-block size-full [&&>svg]:size-full [&&>svg]:fill-current [&&>svg]:text-current"
-    >
+    <span class={`inline-block size-full ${iconMode === 'mono' ? 'model-icon-svg-mono' : ''}`}>
       {@html inlineSvg}
     </span>
   </span>
-{:else if colorIconSrc}
-  <img
-    src={colorIconSrc}
-    alt={family || 'Model'}
-    width={size}
-    height={size}
-    class={`shrink-0 ${className}`}
-    onerror={handleError}
-  />
-{:else if fallbackSrc}
-  <img
-    src={fallbackSrc}
-    alt={family || 'Model'}
-    width={size}
-    height={size}
-    class={`shrink-0 ${className}`}
-    onerror={handleError}
-  />
 {:else}
   <div
     class={`inline-flex items-center justify-center rounded-sm bg-muted text-[10px] text-muted-foreground shrink-0 ${className}`}
@@ -111,16 +107,10 @@
 {/if}
 
 <style>
-  img {
-    object-fit: contain;
-  }
-
-  /* Force currentColor for inline SVGs to respect text color (white in dark mode) */
-  :global(.fill-current svg) {
+  :global(.model-icon-svg-mono svg) {
+    width: 100%;
+    height: 100%;
     fill: currentColor !important;
-  }
-
-  :global(.text-current svg) {
     color: currentColor !important;
   }
 </style>

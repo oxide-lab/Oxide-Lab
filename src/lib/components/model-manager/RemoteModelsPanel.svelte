@@ -1028,39 +1028,27 @@
 
     ownerAvatarFetchInFlight = { ...ownerAvatarFetchInFlight, [normalized]: true };
 
-    const extractAvatarUrl = (payload: unknown): string | null => {
-      const data = payload as Record<string, unknown> | null;
-      if (!data) return null;
-      const candidate =
-        (typeof data.avatarUrl === 'string' && data.avatarUrl) ||
-        (typeof data.avatar_url === 'string' && data.avatar_url) ||
-        (typeof data.avatar === 'string' && data.avatar) ||
-        '';
+    const normalizeAvatarUrl = (raw: string): string | null => {
+      const candidate = raw.trim();
       if (!candidate) return null;
       if (candidate.toLowerCase().includes('gravatar.com')) return null;
+      if (candidate.startsWith('//')) {
+        return `https:${candidate}`;
+      }
       return candidate;
     };
 
     try {
-      const orgResponse = await fetch(
-        `https://huggingface.co/api/organizations/${normalized}/overview`,
-        {
-          credentials: 'omit',
-        },
-      );
-      if (orgResponse.ok) {
-        const orgData = await orgResponse.json();
-        const avatar = extractAvatarUrl(orgData);
-        ownerAvatarByPublisher = { ...ownerAvatarByPublisher, [normalized]: avatar ?? '' };
-        return;
-      }
-
-      const userResponse = await fetch(`https://huggingface.co/api/users/${normalized}/overview`, {
+      // Use profile page once instead of users/organizations probing to avoid noisy 404s.
+      const profileResponse = await fetch(`https://huggingface.co/${encodeURIComponent(normalized)}`, {
         credentials: 'omit',
       });
-      if (userResponse.ok) {
-        const userData = await userResponse.json();
-        const avatar = extractAvatarUrl(userData);
+      if (profileResponse.ok) {
+        const html = await profileResponse.text();
+        const match = html.match(
+          /<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i,
+        );
+        const avatar = normalizeAvatarUrl(match?.[1] ?? '');
         ownerAvatarByPublisher = { ...ownerAvatarByPublisher, [normalized]: avatar ?? '' };
         return;
       }

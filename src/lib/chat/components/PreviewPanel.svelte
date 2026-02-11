@@ -59,13 +59,18 @@
   let wrappedHtml = $derived.by(() => {
     const html = $previewHtml ?? '';
     if (!html) return '';
+    // Ignore CSP injected inside generated HTML so preview scripts follow app-level policy.
+    const sanitizedHtml = html.replace(
+      /<meta[^>]+http-equiv=["']content-security-policy["'][^>]*>/gi,
+      '',
+    );
     // Inject styles at the beginning of the HTML
-    if (html.includes('<head>')) {
-      return html.replace('<head>', `<head>${injectedHead}`);
-    } else if (html.includes('<html>')) {
-      return html.replace('<html>', `<html><head>${injectedHead}</head>`);
+    if (sanitizedHtml.includes('<head>')) {
+      return sanitizedHtml.replace('<head>', `<head>${injectedHead}`);
+    } else if (sanitizedHtml.includes('<html>')) {
+      return sanitizedHtml.replace('<html>', `<html><head>${injectedHead}</head>`);
     } else {
-      return `<!DOCTYPE html><html><head>${injectedHead}</head><body>${html}</body></html>`;
+      return `<!DOCTYPE html><html><head>${injectedHead}</head><body>${sanitizedHtml}</body></html>`;
     }
   });
 
