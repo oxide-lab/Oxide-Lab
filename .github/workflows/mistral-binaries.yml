@@ -136,7 +136,7 @@ jobs:
           cd mistral.rs
           packages=(mistralrs-server)
           for pkg in "${packages[@]}"; do
-            cargo "${config_args[@]}" build -p "$pkg" --release "${cargo_args[@]}"
+            cargo ${config_args[@]+"${config_args[@]}"} build -p "$pkg" --release ${cargo_args[@]+"${cargo_args[@]}"}
           done
 
       - name: Package archive (macOS/Linux)
