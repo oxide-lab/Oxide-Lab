@@ -20,30 +20,35 @@ jobs:
             rust_targets: ''
             cargo_features: ''
             llama_backend: 'macos-arm64'
+            bundle_args: '--bundles app,dmg'
 
           - platform: 'macos-14'
             args: '--target x86_64-apple-darwin'
             rust_targets: 'x86_64-apple-darwin'
             cargo_features: ''
             llama_backend: 'macos-x64'
+            bundle_args: '--bundles app,dmg'
 
           - platform: 'ubuntu-22.04'
             args: ''
             rust_targets: ''
             cargo_features: ''
             llama_backend: 'ubuntu-x64'
+            bundle_args: '--bundles deb,appimage,rpm'
 
           - platform: 'windows-latest'
             args: ''
             rust_targets: ''
             cargo_features: ''
             llama_backend: 'win-cpu-x64'
+            bundle_args: '--bundles nsis'
 
           - platform: 'windows-latest'
             args: '--target aarch64-pc-windows-msvc'
             rust_targets: 'aarch64-pc-windows-msvc'
             cargo_features: ''
             llama_backend: 'win-arm64'
+            bundle_args: '--bundles nsis'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -118,5 +123,5 @@ jobs:
 
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}${{ matrix.cargo_features && format(' --features {0}', matrix.cargo_features) || '' }}
+          args: ${{ matrix.args }} ${{ matrix.bundle_args }}${{ matrix.cargo_features && format(' --features {0}', matrix.cargo_features) || '' }}
           updaterJsonPreferNsis: true
