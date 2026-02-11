@@ -205,6 +205,11 @@ jobs:
       MISTRAL_TAG: ${{ needs.resolve-version.outputs.tag }}
       RELEASE_TAG: mistral-${{ needs.resolve-version.outputs.tag }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
