@@ -644,11 +644,13 @@ pub async fn stream_chat_completion(
     let reasoning_start = req.reasoning_start_tag.as_deref().unwrap_or("<think>");
     let reasoning_end = req.reasoning_end_tag.as_deref().unwrap_or("</think>");
     let mut thinking_parser = if reasoning_enabled {
-        Some(if reasoning_start == "<think>" && reasoning_end == "</think>" {
-            ThinkingParser::new()
-        } else {
-            ThinkingParser::with_tags(reasoning_start, reasoning_end)
-        })
+        Some(
+            if reasoning_start == "<think>" && reasoning_end == "</think>" {
+                ThinkingParser::new()
+            } else {
+                ThinkingParser::with_tags(reasoning_start, reasoning_end)
+            },
+        )
     } else {
         None
     };
