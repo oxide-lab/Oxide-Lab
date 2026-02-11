@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   resolve-version:
@@ -195,3 +195,73 @@ jobs:
           name: ${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
           path: dist/${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
           if-no-files-found: error
+
+  publish-draft:
+    needs: [resolve-version, build]
+    runs-on: ubuntu-latest
+    env:
+      MISTRAL_TAG: ${{ needs.resolve-version.outputs.tag }}
+      RELEASE_TAG: mistral-${{ needs.resolve-version.outputs.tag }}
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la dist
+
+          cat > release_notes.md <<EOF
+          ## Binaries
+
+          Prebuilt `mistralrs-server` binaries packaged for Oxide backend integration.
+
+          ### Platforms
+          - macOS Apple Silicon (`accelerate + metal`)
+          - macOS Intel (`accelerate + metal`)
+          - Ubuntu x86_64 (`cpu`)
+          - Windows x86_64 (`cpu`)
+          - Windows ARM64 (`cpu`)
+
+          ### Version Source
+          The packaged binaries are built from upstream `EricLBuehler/mistral.rs` release:
+          - Tag: `${MISTRAL_TAG}`
+          - URL: `https://github.com/EricLBuehler/mistral.rs/releases/tag/${MISTRAL_TAG}`
+
+          ### Included Artifacts
+          EOF
+
+          {
+            for f in dist/*; do
+              [ -f "$f" ] || continue
+              printf -- "- `%s`\n" "$(basename "$f")"
+            done
+          } >> release_notes.md
+
+      - name: Create or update draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="mistral.rs ${MISTRAL_TAG} binaries"
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists, updating draft and assets..."
+            gh release edit "${RELEASE_TAG}" \
+              --title "${title}" \
+              --notes-file release_notes.md \
+              --draft
+            gh release upload "${RELEASE_TAG}" dist/* --clobber
+          else
+            echo "Creating draft release ${RELEASE_TAG}..."
+            gh release create "${RELEASE_TAG}" dist/* \
+              --title "${title}" \
+              --notes-file release_notes.md \
+              --draft
+          fi
