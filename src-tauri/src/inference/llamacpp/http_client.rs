@@ -179,9 +179,7 @@ fn should_start_in_implicit_thinking_mode(
         || id.contains("deepseek-r1")
         || id.contains("qwq");
 
-    (id.contains("qwen3") && explicit_reasoning_variant)
-        || explicit_reasoning_variant
-        || known_implicit_families
+    explicit_reasoning_variant || known_implicit_families
 }
 
 fn attachment_hint(att: &Attachment) -> String {
@@ -695,17 +693,19 @@ pub async fn stream_chat_completion(
     let reasoning_start = req.reasoning_start_tag.as_deref().unwrap_or("<think>");
     let reasoning_end = req.reasoning_end_tag.as_deref().unwrap_or("</think>");
     let mut thinking_parser = if reasoning_enabled {
-        Some(if should_start_in_implicit_thinking_mode(
-            &session.model_id,
-            reasoning_start,
-            reasoning_end,
-        ) {
-            ThinkingParser::new_in_thinking_mode()
-        } else if reasoning_start == "<think>" && reasoning_end == "</think>" {
-            ThinkingParser::new()
-        } else {
-            ThinkingParser::with_tags(reasoning_start, reasoning_end)
-        })
+        Some(
+            if should_start_in_implicit_thinking_mode(
+                &session.model_id,
+                reasoning_start,
+                reasoning_end,
+            ) {
+                ThinkingParser::new_in_thinking_mode()
+            } else if reasoning_start == "<think>" && reasoning_end == "</think>" {
+                ThinkingParser::new()
+            } else {
+                ThinkingParser::with_tags(reasoning_start, reasoning_end)
+            },
+        )
     } else {
         None
     };
@@ -883,7 +883,10 @@ pub async fn chat_completion_once(
     let message = choice
         .message
         .ok_or_else(|| "llama-server returned empty assistant message".to_string())?;
-    let content = message.content.or(message.reasoning_content).unwrap_or_default();
+    let content = message
+        .content
+        .or(message.reasoning_content)
+        .unwrap_or_default();
 
     let mut tool_calls = Vec::new();
     if let Some(calls) = message.tool_calls {

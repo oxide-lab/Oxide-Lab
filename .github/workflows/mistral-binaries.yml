@@ -103,7 +103,13 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './example/backends/mistral.rs -> target'
+          workspaces: './mistral.rs -> target'
+
+      - name: Clone mistral.rs
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "${MISTRAL_TAG}" \
+            https://github.com/EricLBuehler/mistral.rs.git mistral.rs
 
       - name: Build mistralrs binary
         shell: bash
@@ -127,7 +133,7 @@ jobs:
           fi
 
           echo "Building ${ASSET_NAME} from mistral.rs ${MISTRAL_TAG}"
-          cd example/backends/mistral.rs
+          cd mistral.rs
           packages=(mistralrs-server)
           for pkg in "${packages[@]}"; do
             cargo "${config_args[@]}" build -p "$pkg" --release "${cargo_args[@]}"
@@ -139,9 +145,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          target_dir="example/backends/mistral.rs/target/release"
+          target_dir="mistral.rs/target/release"
           if [[ -n "${{ matrix.cargo_target }}" ]]; then
-            target_dir="example/backends/mistral.rs/target/${{ matrix.cargo_target }}/release"
+            target_dir="mistral.rs/target/${{ matrix.cargo_target }}/release"
           fi
 
           mkdir -p "dist/stage/${ASSET_NAME}"
@@ -161,9 +167,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $targetDir = "example/backends/mistral.rs/target/release"
+          $targetDir = "mistral.rs/target/release"
           if ("${{ matrix.cargo_target }}" -ne "") {
-            $targetDir = "example/backends/mistral.rs/target/${{ matrix.cargo_target }}/release"
+            $targetDir = "mistral.rs/target/${{ matrix.cargo_target }}/release"
           }
 
           $stageDir = Join-Path "dist/stage" $env:ASSET_NAME
