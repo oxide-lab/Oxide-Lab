@@ -38,8 +38,9 @@ pub fn model_id_looks_vision(model_id: &str) -> bool {
 }
 
 pub fn detect_modality_support(model_id: &str, mmproj_path: Option<&str>) -> ModalitySupport {
+    let _ = model_id;
     let has_mmproj = mmproj_path.map(|v| !v.trim().is_empty()).unwrap_or(false);
-    let image = has_mmproj || model_id_looks_vision(model_id);
+    let image = has_mmproj;
     ModalitySupport {
         text: true,
         image,

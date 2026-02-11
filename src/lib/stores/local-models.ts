@@ -18,6 +18,12 @@ import { LocalModelsService } from '$lib/services/local-models';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 const STORAGE_KEY = 'local_models_folder_path';
 
+function isMmprojCompanion(model: ModelInfo): boolean {
+    const path = String(model.path ?? '').toLowerCase();
+    const name = String(model.name ?? '').toLowerCase();
+    return path.includes('mmproj') || name.includes('mmproj');
+}
+
 /**
  * Store for selected folder path
  */
@@ -77,6 +83,109 @@ export const error = writable<string | null>(null);
  * Store for cache
  */
 const cache = writable<LocalModelsCache | null>(null);
+
+/**
+ * Store for loaded model ids (derived from active plugin sessions)
+ * This keeps UI in sync with currently loaded models in the inference scheduler.
+ */
+export const loadedModelIds = writable<string[]>([]);
+
+/**
+ * Derived helpers
+ */
+export const modelsCount = derived(models, ($models) => $models.length);
+export const totalModelsSize = derived(models, ($models) => $models.reduce((acc, m) => acc + (m.file_size || 0), 0));
+
+/**
+ * Initialize loaded models watcher: fetch initial list and subscribe to load_progress events
+ */
+export async function initLoadedModels(): Promise<() => void> {
+    if (typeof window === 'undefined') return () => {};
+    const normalizeLoadedIds = (ids: string[] | null | undefined): string[] => {
+        if (!Array.isArray(ids)) return [];
+        const seen = new Set<string>();
+        const normalized: string[] = [];
+        for (const raw of ids) {
+            const value = String(raw ?? '').trim();
+            if (!value) continue;
+            if (seen.has(value)) continue;
+            seen.add(value);
+            normalized.push(value);
+        }
+        return normalized;
+    };
+
+    const refreshLoadedModels = async () => {
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const ids = await invoke<string[]>('get_loaded_models');
+            const normalized = normalizeLoadedIds(ids);
+            if (normalized.length > 0) {
+                loadedModelIds.set(normalized);
+                return;
+            }
+
+            const snapshotLoaded = normalizeLoadedIds(
+                (window as { __oxideSchedulerSnapshot?: { loaded_models?: string[] } })
+                    .__oxideSchedulerSnapshot?.loaded_models,
+            );
+            loadedModelIds.set(snapshotLoaded);
+        } catch (err) {
+            console.warn('Failed to refresh loaded models', err);
+        }
+    };
+
+    const initialSnapshotLoaded = normalizeLoadedIds(
+        (window as { __oxideSchedulerSnapshot?: { loaded_models?: string[] } })
+            .__oxideSchedulerSnapshot?.loaded_models,
+    );
+    if (initialSnapshotLoaded.length > 0) {
+        loadedModelIds.set(initialSnapshotLoaded);
+    }
+
+    try {
+        await refreshLoadedModels();
+    } catch (err) {
+        console.warn('Failed to fetch loaded models', err);
+    }
+
+    try {
+        const { listen } = await import('@tauri-apps/api/event');
+
+        // On load/unload progress, refresh loaded models snapshot via command.
+        const unlisten = await listen('load_progress', async () => {
+            await refreshLoadedModels();
+        });
+
+        // Scheduler snapshots are the most accurate source of loaded model ids.
+        const unlistenSchedulerSnapshot = await listen<{ loaded_models?: string[] }>(
+            'scheduler_snapshot',
+            async (event) => {
+                const loaded = normalizeLoadedIds(event.payload?.loaded_models);
+                if (loaded.length > 0) {
+                    loadedModelIds.set(loaded);
+                    return;
+                }
+                // Fallback in case payload is empty or missing.
+                await refreshLoadedModels();
+            }
+        );
+
+        // Ensure immediate UI sync after explicit unload notifications.
+        const unlistenModelUnloaded = await listen('model_unloaded', async () => {
+            await refreshLoadedModels();
+        });
+
+        return () => {
+            unlisten();
+            unlistenSchedulerSnapshot();
+            unlistenModelUnloaded();
+        };
+    } catch (err) {
+        console.warn('Failed to attach load_progress listener', err);
+        return () => {};
+    }
+}
 
 /**
  * Store for sort options
@@ -183,15 +292,20 @@ export async function scanFolder(path: string, forceRefresh: boolean = false): P
     try {
         // Call Tauri backend through LocalModelsService
         const foundModels = await LocalModelsService.scanFolder(path);
+        const visibleModels = foundModels.filter((model) => !isMmprojCompanion(model));
 
         // Update stores
-        models.set(foundModels);
+        models.set(visibleModels);
         folderPath.set(path);
+        selectedModel.update((current) => {
+            if (!current) return null;
+            return visibleModels.some((model) => model.path === current.path) ? current : null;
+        });
 
         // Update cache
         cache.set({
             folder_path: path,
-            models: foundModels,
+            models: visibleModels,
             cached_at: Date.now(),
             cache_duration: CACHE_DURATION,
         });

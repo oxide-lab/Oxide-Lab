@@ -68,6 +68,17 @@ export function createActions(ctx: ChatControllerCtx) {
         }));
     }
 
+    function parseStopSequences(text: string): string[] {
+        return Array.from(
+            new Set(
+                String(text ?? '')
+                    .split(/\r?\n/g)
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+            ),
+        );
+    }
+
     function latestUserAttachments(messages: typeof ctx.messages): BackendAttachment[] {
         for (let i = messages.length - 1; i >= 0; i -= 1) {
             const message = messages[i];
@@ -151,9 +162,25 @@ export function createActions(ctx: ChatControllerCtx) {
 
     let loadUnlisten: (() => void) | null = null;
     let lastLoadProgressAt = 0;
+    let modalityUnlisten: (() => void) | null = null;
+
+    async function refreshModalitySupport() {
+        try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            const m = await invoke<{ text?: boolean; image?: boolean; audio?: boolean; video?: boolean }>(
+                'get_modality_support',
+            );
+            if (typeof m?.text === 'boolean') ctx.supports_text = m.text;
+            if (typeof m?.image === 'boolean') ctx.supports_image = m.image;
+            if (typeof m?.audio === 'boolean') ctx.supports_audio = m.audio;
+            if (typeof m?.video === 'boolean') ctx.supports_video = m.video;
+        } catch {
+            // Ignore; modality events will still update state when available.
+        }
+    }
 
     async function ensureLoadProgressListener() {
-        if (loadUnlisten) return;
+        if (loadUnlisten && modalityUnlisten) return;
         try {
             // TODO: Integrate with Tauri backend
             // Command: listen('load_progress', callback)
@@ -186,19 +213,22 @@ export function createActions(ctx: ChatControllerCtx) {
                     if (!p.error) {
                         ctx.isLoaded = true;
                         ctx.loadingProgress = 100;
+                        await refreshModalitySupport();
                         chatState.update(s => ({ ...s, isLoaded: true, isLoadingModel: false, busy: false, loadingProgress: 100 }));
                     }
                 }
             });
 
             // Additional channel: early modality signal from backend
-            await listen<{ text?: boolean; image?: boolean; audio?: boolean; video?: boolean }>('modality_support', (e) => {
+            modalityUnlisten = await listen<{ text?: boolean; image?: boolean; audio?: boolean; video?: boolean }>('modality_support', (e) => {
                 const m = e.payload || {};
                 if (typeof m.text === 'boolean') ctx.supports_text = m.text;
                 if (typeof m.image === 'boolean') ctx.supports_image = m.image;
                 if (typeof m.audio === 'boolean') ctx.supports_audio = m.audio;
                 if (typeof m.video === 'boolean') ctx.supports_video = m.video;
             });
+
+            await refreshModalitySupport();
         } catch (err) {
             console.warn('failed to attach load_progress listener', err);
         }
@@ -249,6 +279,7 @@ export function createActions(ctx: ChatControllerCtx) {
 
     // Initialize device info on start
     void refreshDeviceInfo();
+    void ensureLoadProgressListener();
 
     function cancelLoading() {
         ctx.isCancelling = true;
@@ -307,9 +338,7 @@ export function createActions(ctx: ChatControllerCtx) {
                         format: 'gguf',
                         model_path: ctx.modelPath,
                         tokenizer_path: null,
-                        mmproj_path: ctx.mmprojPath?.trim() ? ctx.mmprojPath.trim() : null,
                         context_length,
-                        device: ctx.use_gpu ? { kind: 'cuda', index: 0 } : { kind: 'cpu' },
                     },
                 });
             } else if (ctx.format === 'hub_gguf') {
@@ -326,9 +355,7 @@ export function createActions(ctx: ChatControllerCtx) {
                         repo_id: ctx.repoId,
                         revision: ctx.revision || null,
                         filename: ctx.hubGgufFilename,
-                        mmproj_path: ctx.mmprojPath?.trim() ? ctx.mmprojPath.trim() : null,
                         context_length,
-                        device: ctx.use_gpu ? { kind: 'cuda', index: 0 } : { kind: 'cpu' },
                     },
                 });
             } else {
@@ -513,6 +540,11 @@ export function createActions(ctx: ChatControllerCtx) {
 
             const chatPrompt = await buildPromptWithChatTemplate(hist);
             const attachments = latestUserAttachments(hist);
+            const stopSequences = parseStopSequences(ctx.stop_sequences_text);
+            const maxNewTokens = ctx.max_new_tokens_enabled
+                ? Math.max(1, Math.floor(ctx.max_new_tokens_value))
+                : null;
+            const seedValue = ctx.seed_enabled ? Math.max(0, Math.floor(ctx.seed_value)) : null;
 
             console.log('[infer] frontend params', {
                 use_custom_params: ctx.use_custom_params,
@@ -525,6 +557,11 @@ export function createActions(ctx: ChatControllerCtx) {
                     ? ctx.min_p_value > 0 && ctx.min_p_value <= 1 ? ctx.min_p_value : 0.05
                     : null,
                 repeat_penalty: ctx.use_custom_params && ctx.repeat_penalty_enabled ? ctx.repeat_penalty_value : null,
+                max_new_tokens: maxNewTokens,
+                seed: seedValue,
+                stop_sequences: stopSequences,
+                reasoning_parse_enabled: !!ctx.reasoning_parse_enabled,
+                structured_output_enabled: !!ctx.structured_output_enabled,
             });
 
             const { invoke } = await import('@tauri-apps/api/core');
@@ -545,7 +582,14 @@ export function createActions(ctx: ChatControllerCtx) {
                         ? ctx.min_p_value > 0 && ctx.min_p_value <= 1 ? ctx.min_p_value : 0.05
                         : null,
                     repeat_penalty: ctx.use_custom_params && ctx.repeat_penalty_enabled ? ctx.repeat_penalty_value : null,
+                    max_new_tokens: maxNewTokens,
+                    seed: seedValue,
                     repeat_last_n: 64,
+                    stop_sequences: stopSequences.length > 0 ? stopSequences : null,
+                    reasoning_parse_enabled: !!ctx.reasoning_parse_enabled,
+                    reasoning_start_tag: ctx.reasoning_start_tag || '<think>',
+                    reasoning_end_tag: ctx.reasoning_end_tag || '</think>',
+                    structured_output_enabled: !!ctx.structured_output_enabled,
                     split_prompt: !!ctx.split_prompt,
                     verbose_prompt: !!ctx.verbose_prompt,
                     tracing: !!ctx.tracing,
@@ -751,6 +795,11 @@ export function createActions(ctx: ChatControllerCtx) {
 
             const chatPrompt = await buildPromptWithChatTemplate(hist);
             const attachments = latestUserAttachments(hist);
+            const stopSequences = parseStopSequences(ctx.stop_sequences_text);
+            const maxNewTokens = ctx.max_new_tokens_enabled
+                ? Math.max(1, Math.floor(ctx.max_new_tokens_value))
+                : null;
+            const seedValue = ctx.seed_enabled ? Math.max(0, Math.floor(ctx.seed_value)) : null;
 
             const { invoke } = await import('@tauri-apps/api/core');
             await invoke('generate_stream', {
@@ -770,7 +819,14 @@ export function createActions(ctx: ChatControllerCtx) {
                         ? ctx.min_p_value > 0 && ctx.min_p_value <= 1 ? ctx.min_p_value : 0.05
                         : null,
                     repeat_penalty: ctx.use_custom_params && ctx.repeat_penalty_enabled ? ctx.repeat_penalty_value : null,
+                    max_new_tokens: maxNewTokens,
+                    seed: seedValue,
                     repeat_last_n: 64,
+                    stop_sequences: stopSequences.length > 0 ? stopSequences : null,
+                    reasoning_parse_enabled: !!ctx.reasoning_parse_enabled,
+                    reasoning_start_tag: ctx.reasoning_start_tag || '<think>',
+                    reasoning_end_tag: ctx.reasoning_end_tag || '</think>',
+                    structured_output_enabled: !!ctx.structured_output_enabled,
                     split_prompt: !!ctx.split_prompt,
                     verbose_prompt: !!ctx.verbose_prompt,
                     tracing: !!ctx.tracing,
@@ -825,6 +881,16 @@ export function createActions(ctx: ChatControllerCtx) {
     }
 
     function destroy() {
+        try {
+            loadUnlisten?.();
+        } catch {
+            // ignore
+        }
+        try {
+            modalityUnlisten?.();
+        } catch {
+            // ignore
+        }
         stream.destroy();
     }
 

@@ -22,4 +22,15 @@ export { hardwareService } from './hardware-service';
 // Llama backend service
 export { llamaBackendService } from './llama-backend-service';
 
+// App updater service
+export {
+  checkForAppUpdate,
+  downloadAndInstallUpdate,
+  getUpdateCheckIntervalMs,
+  isAutoUpdaterDisabledByEnv,
+  type AppUpdateHandle,
+  type AppUpdateInfo,
+  type AppUpdateProgressEvent,
+} from './app-updater';
+
 

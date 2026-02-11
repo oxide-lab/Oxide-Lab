@@ -30,19 +30,21 @@
   let {
     ref = $bindable(null),
     class: className,
+    overlayClass,
     side = 'right',
     portalProps,
     children,
     ...restProps
   }: WithoutChildrenOrChild<SheetPrimitive.ContentProps> & {
     portalProps?: SheetPrimitive.PortalProps;
+    overlayClass?: string;
     side?: Side;
     children: Snippet;
   } = $props();
 </script>
 
 <SheetPrimitive.Portal {...portalProps}>
-  <SheetOverlay />
+  <SheetOverlay class={overlayClass} />
   <SheetPrimitive.Content
     bind:ref
     data-slot="sheet-content"

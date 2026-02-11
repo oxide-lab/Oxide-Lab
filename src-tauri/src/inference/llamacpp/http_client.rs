@@ -3,6 +3,7 @@ use crate::core::limits::MAX_ATTACHMENTS_PER_MESSAGE;
 use crate::core::modality::{ModalitySupport, detect_modality_support};
 use crate::core::types::{Attachment, ChatMessage, GenerateRequest, StreamMessage, ToolChoice};
 use crate::generate::cancel::CANCEL_GENERATION;
+use crate::generate::thinking_parser::ThinkingParser;
 use crate::generate::tool_call_parser::ToolCallParser;
 use crate::inference::engine::EngineSessionInfo;
 use base64::Engine;
@@ -77,6 +78,8 @@ struct ChatCompletionRequest {
     stop: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<ToolChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -559,6 +562,14 @@ fn parse_tool_calls_from_content(
     out
 }
 
+fn response_format_from_request(req: &GenerateRequest) -> Option<Value> {
+    if req.structured_output_enabled.unwrap_or(false) {
+        Some(json!({ "type": "json_object" }))
+    } else {
+        None
+    }
+}
+
 pub async fn health_check(session: &EngineSessionInfo) -> bool {
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_millis(600))
@@ -582,6 +593,7 @@ pub async fn stream_chat_completion(
 ) -> Result<(), String> {
     CANCEL_GENERATION.store(false, Ordering::SeqCst);
     let modality = detect_modality_support(&session.model_id, session.mmproj_path.as_deref());
+    let response_format = response_format_from_request(&req);
 
     let payload = ChatCompletionRequest {
         model: session.model_id.clone(),
@@ -601,6 +613,7 @@ pub async fn stream_chat_completion(
         tools: to_openai_tools(req.tools.clone()),
         stop: req.stop_sequences.clone(),
         tool_choice: req.tool_choice.clone(),
+        response_format,
     };
 
     let client = reqwest::Client::builder()
@@ -627,6 +640,18 @@ pub async fn stream_chat_completion(
 
     let mut events = response.bytes_stream().eventsource();
     let _ = app.emit("message_start", ());
+    let reasoning_enabled = req.reasoning_parse_enabled.unwrap_or(true);
+    let reasoning_start = req.reasoning_start_tag.as_deref().unwrap_or("<think>");
+    let reasoning_end = req.reasoning_end_tag.as_deref().unwrap_or("</think>");
+    let mut thinking_parser = if reasoning_enabled {
+        Some(if reasoning_start == "<think>" && reasoning_end == "</think>" {
+            ThinkingParser::new()
+        } else {
+            ThinkingParser::with_tags(reasoning_start, reasoning_end)
+        })
+    } else {
+        None
+    };
 
     while let Some(event) = events.next().await {
         if CANCEL_GENERATION.load(Ordering::SeqCst) {
@@ -652,17 +677,43 @@ pub async fn stream_chat_completion(
                 && let Some(content) = delta.content
                 && !content.is_empty()
             {
-                let _ = app.emit(
-                    "message",
-                    StreamMessage {
-                        thinking: String::new(),
-                        content,
-                    },
-                );
+                if let Some(parser) = thinking_parser.as_mut() {
+                    let chunk = parser.process_token(&content);
+                    if !chunk.thinking.is_empty() || !chunk.content.is_empty() {
+                        let _ = app.emit(
+                            "message",
+                            StreamMessage {
+                                thinking: chunk.thinking,
+                                content: chunk.content,
+                            },
+                        );
+                    }
+                } else {
+                    let _ = app.emit(
+                        "message",
+                        StreamMessage {
+                            thinking: String::new(),
+                            content,
+                        },
+                    );
+                }
             }
             if choice.finish_reason.is_some() {
                 break;
             }
+        }
+    }
+
+    if let Some(parser) = thinking_parser.as_mut() {
+        let tail = parser.flush();
+        if !tail.thinking.is_empty() || !tail.content.is_empty() {
+            let _ = app.emit(
+                "message",
+                StreamMessage {
+                    thinking: tail.thinking,
+                    content: tail.content,
+                },
+            );
         }
     }
 
@@ -675,6 +726,7 @@ pub async fn chat_completion_once(
     req: GenerateRequest,
 ) -> Result<ChatCompletionMessageResult, String> {
     let modality = detect_modality_support(&session.model_id, session.mmproj_path.as_deref());
+    let response_format = response_format_from_request(&req);
     let payload = ChatCompletionRequest {
         model: session.model_id.clone(),
         messages: to_openai_messages(&req, &modality)?,
@@ -693,6 +745,7 @@ pub async fn chat_completion_once(
         tools: to_openai_tools(req.tools.clone()),
         stop: req.stop_sequences.clone(),
         tool_choice: req.tool_choice.clone(),
+        response_format,
     };
 
     let client = reqwest::Client::builder()
@@ -827,7 +880,7 @@ mod tests {
     use super::parse_tool_calls_from_content;
     use super::{MessageContent, build_user_message_content};
     use crate::core::modality::ModalitySupport;
-    use crate::core::types::Attachment;
+    use crate::core::types::{Attachment, GenerateRequest};
     use crate::generate::tool_call_parser::{Tool, ToolFunction};
     use serde_json::{Value, json};
 
@@ -848,6 +901,37 @@ mod tests {
                 },
             },
         ]
+    }
+
+    fn make_generate_request() -> GenerateRequest {
+        GenerateRequest {
+            prompt: "hello".to_string(),
+            messages: None,
+            attachments: None,
+            max_new_tokens: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            min_p: None,
+            repeat_penalty: None,
+            repeat_last_n: 64,
+            use_custom_params: false,
+            seed: None,
+            split_prompt: None,
+            verbose_prompt: None,
+            tracing: None,
+            reasoning_parse_enabled: None,
+            reasoning_start_tag: None,
+            reasoning_end_tag: None,
+            structured_output_enabled: None,
+            edit_index: None,
+            format: None,
+            tools: None,
+            stop_sequences: None,
+            tool_choice: None,
+            retrieval: None,
+            mcp: None,
+        }
     }
 
     #[test]
@@ -910,6 +994,7 @@ stores
             tools: super::to_openai_tools(Some(tools())),
             stop: None,
             tool_choice: None,
+            response_format: None,
         };
 
         let json = serde_json::to_value(payload).expect("payload should serialize");
@@ -922,6 +1007,21 @@ stores
             tools[0].get("function").and_then(|v| v.get("name")),
             Some(&json!("mcp_context7_resolve_library_id"))
         );
+    }
+
+    #[test]
+    fn response_format_enabled_maps_to_json_object() {
+        let mut req = make_generate_request();
+        req.structured_output_enabled = Some(true);
+        let response_format = super::response_format_from_request(&req);
+        assert_eq!(response_format, Some(json!({ "type": "json_object" })));
+    }
+
+    #[test]
+    fn response_format_disabled_is_none() {
+        let req = make_generate_request();
+        let response_format = super::response_format_from_request(&req);
+        assert_eq!(response_format, None);
     }
 
     #[test]

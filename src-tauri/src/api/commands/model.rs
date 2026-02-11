@@ -1,3 +1,4 @@
+use crate::core::modality::{ModalitySupport, detect_modality_support};
 use crate::core::state::SharedState;
 use crate::core::types::{ActiveBackend, LoadRequest};
 use crate::generate::cancel::{CANCEL_LOADING, cancel_model_loading_cmd};
@@ -74,4 +75,17 @@ pub fn is_model_loaded(
         .loaded_sessions
         .iter()
         .any(|s| s.model_id == active && s.kind == EngineSessionKind::Chat))
+}
+
+#[tauri::command]
+pub fn get_modality_support(
+    state: tauri::State<'_, SharedState>,
+) -> Result<ModalitySupport, String> {
+    let guard = state.lock().map_err(|e| e.to_string())?;
+    let model_id = guard.active_model_id.clone().unwrap_or_default();
+    let mmproj = guard.active_mmproj_path.clone();
+    if model_id.is_empty() {
+        return Ok(ModalitySupport::default());
+    }
+    Ok(detect_modality_support(&model_id, mmproj.as_deref()))
 }

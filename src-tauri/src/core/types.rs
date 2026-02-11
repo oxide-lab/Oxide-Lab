@@ -124,6 +124,42 @@ pub struct LlamaRuntimeConfig {
     pub n_predict: i32,
     #[serde(default = "default_flash_attn")]
     pub flash_attn: String,
+    #[serde(default = "default_offload_mmproj")]
+    pub offload_mmproj: bool,
+    #[serde(default)]
+    pub cpu_moe: bool,
+    #[serde(default)]
+    pub n_cpu_moe: i32,
+    #[serde(default)]
+    pub override_tensor_buffer_t: String,
+    #[serde(default = "default_split_mode")]
+    pub split_mode: String,
+    #[serde(default)]
+    pub main_gpu: i32,
+    #[serde(default = "default_n_parallel")]
+    pub n_parallel: i32,
+    #[serde(default = "default_cont_batching")]
+    pub cont_batching: bool,
+    #[serde(default)]
+    pub mlock: bool,
+    #[serde(default)]
+    pub no_kv_offload: bool,
+    #[serde(default = "default_cache_type_k")]
+    pub cache_type_k: String,
+    #[serde(default = "default_cache_type_v")]
+    pub cache_type_v: String,
+    #[serde(default = "default_defrag_thold")]
+    pub defrag_thold: f32,
+    #[serde(default = "default_rope_scaling")]
+    pub rope_scaling: String,
+    #[serde(default = "default_rope_scale")]
+    pub rope_scale: f32,
+    #[serde(default)]
+    pub rope_freq_base: f32,
+    #[serde(default = "default_rope_freq_scale")]
+    pub rope_freq_scale: f32,
+    #[serde(default)]
+    pub ctx_shift: bool,
     #[serde(default)]
     pub extra_env: std::collections::HashMap<String, String>,
     #[serde(default)]
@@ -152,6 +188,36 @@ const fn default_n_predict() -> i32 {
 }
 fn default_flash_attn() -> String {
     "auto".to_string()
+}
+const fn default_offload_mmproj() -> bool {
+    true
+}
+fn default_split_mode() -> String {
+    "layer".to_string()
+}
+const fn default_cont_batching() -> bool {
+    true
+}
+const fn default_n_parallel() -> i32 {
+    1
+}
+fn default_cache_type_k() -> String {
+    "f16".to_string()
+}
+fn default_cache_type_v() -> String {
+    "f16".to_string()
+}
+const fn default_defrag_thold() -> f32 {
+    0.1
+}
+fn default_rope_scaling() -> String {
+    "none".to_string()
+}
+const fn default_rope_scale() -> f32 {
+    1.0
+}
+const fn default_rope_freq_scale() -> f32 {
+    1.0
 }
 const fn default_keep_alive_secs() -> u64 {
     300
@@ -191,6 +257,24 @@ impl Default for LlamaRuntimeConfig {
             ubatch_size: default_ubatch_size(),
             n_predict: default_n_predict(),
             flash_attn: default_flash_attn(),
+            offload_mmproj: default_offload_mmproj(),
+            cpu_moe: false,
+            n_cpu_moe: 0,
+            override_tensor_buffer_t: String::new(),
+            split_mode: default_split_mode(),
+            main_gpu: 0,
+            n_parallel: default_n_parallel(),
+            cont_batching: default_cont_batching(),
+            mlock: false,
+            no_kv_offload: false,
+            cache_type_k: default_cache_type_k(),
+            cache_type_v: default_cache_type_v(),
+            defrag_thold: default_defrag_thold(),
+            rope_scaling: default_rope_scaling(),
+            rope_scale: default_rope_scale(),
+            rope_freq_base: 0.0,
+            rope_freq_scale: default_rope_freq_scale(),
+            ctx_shift: false,
             extra_env: std::collections::HashMap::new(),
             embeddings_strategy: LlamaEmbeddingsStrategy::SeparateSession,
             scheduler: LlamaSchedulerConfig::default(),
@@ -270,6 +354,14 @@ pub struct GenerateRequest {
     pub verbose_prompt: Option<bool>,
     #[serde(default)]
     pub tracing: Option<bool>,
+    #[serde(default)]
+    pub reasoning_parse_enabled: Option<bool>,
+    #[serde(default)]
+    pub reasoning_start_tag: Option<String>,
+    #[serde(default)]
+    pub reasoning_end_tag: Option<String>,
+    #[serde(default)]
+    pub structured_output_enabled: Option<bool>,
     #[serde(default)]
     pub edit_index: Option<usize>,
     #[serde(default)]

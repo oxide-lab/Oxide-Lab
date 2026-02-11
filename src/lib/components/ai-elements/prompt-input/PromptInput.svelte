@@ -43,7 +43,18 @@
   let anchorRef = $state<HTMLSpanElement | null>(null);
   let formRef = $state<HTMLFormElement | null>(null);
 
-  attachmentsContext = new AttachmentsContext(accept, multiple, maxFiles, maxFileSize, onError);
+  if (!attachmentsContext) {
+    attachmentsContext = new AttachmentsContext(accept, multiple, maxFiles, maxFileSize, onError);
+  } else {
+    attachmentsContext.updateConfig({ accept, multiple, maxFiles, maxFileSize, onError });
+  }
+
+  watch(
+    () => [accept, multiple, maxFiles, maxFileSize, onError] as const,
+    ([accept, multiple, maxFiles, maxFileSize, onError]) => {
+      attachmentsContext.updateConfig({ accept, multiple, maxFiles, maxFileSize, onError });
+    },
+  );
 
   // Find nearest form to scope drag & drop
   onMount(() => {

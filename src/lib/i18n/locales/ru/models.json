@@ -17,6 +17,58 @@
     "searchPlaceholder": "Название, архитектура, квантование...",
     "selectFolder": "Выбрать папку",
     "load": "Загрузить",
+    "unload": "Выгрузить",
+    "unknownPublisher": "локально",
+    "folderActions": "Действия с папкой",
+    "rowMenu": "Действия с моделью",
+    "summary": {
+      "models": "моделей"
+    },
+    "sort": {
+      "recent": "Недавно добавленные",
+      "name": "По названию",
+      "size": "По размеру",
+      "architecture": "По архитектуре"
+    },
+    "view": {
+      "list": "Список",
+      "grid": "Сетка"
+    },
+    "tabs": {
+      "info": "Инфо",
+      "load": "Загрузка",
+      "inference": "Инференс"
+    },
+    "storage": {
+      "label": "Хранилище моделей"
+    },
+    "status": {
+      "loaded": "Загружена",
+      "loading": "Загрузка",
+      "unloading": "Выгрузка",
+      "available": "Доступна"
+    },
+    "actions": {
+      "edit": "Редактировать",
+      "copyPath": "Копировать путь",
+      "openFolder": "Открыть папку"
+    },
+    "empty": {
+      "title": "Локальные модели не найдены",
+      "subtitle": "Выберите папку или откройте каталог, чтобы скачать первую модель.",
+      "catalogCta": "Открыть каталог",
+      "noResults": "Ничего не найдено",
+      "tryAnotherQuery": "Попробуйте другой поисковый запрос."
+    },
+    "deleteDialog": {
+      "title": "Удалить модель?",
+      "description": "Удалить \"{name}\" и освободить {size}?",
+      "cancel": "Отмена",
+      "confirm": "Удалить"
+    },
+    "aria": {
+      "modelsList": "Список локальных моделей"
+    },
     "menu": {
       "selectFolder": "Выбрать папку",
       "rescan": "Пересканировать"
@@ -33,6 +85,11 @@
     "details": {
       "delete": "Удалить",
       "loadToChat": "Загрузить в чат",
+      "loadModel": "Загрузить модель",
+      "useInNewChat": "Использовать в новом чате",
+      "modelInformation": "Информация о модели",
+      "placeholderTitle": "Детали модели",
+      "placeholderSubtitle": "Выберите модель в списке, чтобы увидеть подробную информацию.",
       "path": "Путь",
       "size": "Размер",
       "date": "Дата",
@@ -63,6 +120,27 @@
         "alignment": "Выравнивание",
         "tokenCount": "Количество токенов"
       }
+    },
+    "loadTab": {
+      "contextAndOffload": "Контекст и оффлоад",
+      "modelSupports": "Модель поддерживает до {value} токенов",
+      "advanced": "Расширенные параметры",
+      "splitPrompt": "Split prompt",
+      "verbosePrompt": "Подробный prompt",
+      "chromeTracing": "Chrome tracing",
+      "apply": "Применить параметры загрузки"
+    },
+    "inferenceTab": {
+      "systemPrompt": "System Prompt",
+      "systemPromptPlaceholder": "Например: \"Отвечай только в рифму\"",
+      "savePrompt": "Сохранить",
+      "useCustom": "Использовать кастомные параметры сэмплирования",
+      "temperature": "Temperature",
+      "topP": "Top-P",
+      "topK": "Top-K",
+      "repeatPenalty": "Repeat penalty",
+      "minP": "Min-P",
+      "apply": "Применить параметры инференса"
     },
     "errors": {
       "retry": "Повторить"

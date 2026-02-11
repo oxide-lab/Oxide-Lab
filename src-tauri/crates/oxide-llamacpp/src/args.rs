@@ -23,6 +23,7 @@ pub struct LlamacppConfig {
     pub device: String,
     pub split_mode: String,
     pub main_gpu: i32,
+    pub n_parallel: i32,
     pub flash_attn: String,
     pub cont_batching: bool,
     pub no_mmap: bool,
@@ -70,6 +71,11 @@ impl ArgumentBuilder {
         port: u16,
         mmproj_path: Option<String>,
     ) -> Vec<String> {
+        let has_mmproj = mmproj_path
+            .as_deref()
+            .map(|path| !path.trim().is_empty())
+            .unwrap_or(false);
+
         // Disable llama-server webui for non-ik backends
         if !self.backend.starts_with("ik") {
             self.args.push("--no-webui".to_string());
@@ -116,7 +122,7 @@ impl ArgumentBuilder {
         self.add_flash_attention();
 
         // Boolean flags
-        self.add_boolean_flags();
+        self.add_boolean_flags(has_mmproj);
 
         // Embedding vs text generation specific args
         if self.is_embedding {
@@ -224,7 +230,7 @@ impl ArgumentBuilder {
         }
     }
 
-    fn add_boolean_flags(&mut self) {
+    fn add_boolean_flags(&mut self, has_mmproj: bool) {
         if self.config.ctx_shift {
             self.args.push("--context-shift".to_string());
         }
@@ -244,6 +250,14 @@ impl ArgumentBuilder {
         if self.config.no_kv_offload {
             self.args.push("--no-kv-offload".to_string());
         }
+
+        if has_mmproj {
+            if self.config.offload_mmproj {
+                self.args.push("--mmproj-offload".to_string());
+            } else {
+                self.args.push("--no-mmproj-offload".to_string());
+            }
+        }
     }
 
     fn add_embedding_args(&mut self) {
@@ -256,6 +270,11 @@ impl ArgumentBuilder {
         if self.config.ctx_size > 0 {
             self.args.push("--ctx-size".to_string());
             self.args.push(self.config.ctx_size.to_string());
+        }
+
+        if self.config.n_parallel > 1 {
+            self.args.push("--parallel".to_string());
+            self.args.push(self.config.n_parallel.to_string());
         }
 
         if self.config.n_predict > 0 {
@@ -336,6 +355,7 @@ mod tests {
             device: String::new(),
             split_mode: "layer".to_string(),
             main_gpu: 0,
+            n_parallel: 1,
             flash_attn: "auto".to_string(),
             cont_batching: false,
             no_mmap: false,
@@ -402,5 +422,51 @@ mod tests {
         assert!(!args.contains(&"--device".to_string()));
         assert!(!args.contains(&"--chat-template".to_string()));
         assert!(!args.contains(&"--override-tensor".to_string()));
+    }
+
+    #[test]
+    fn test_parallel_flag_added_when_n_parallel_above_one() {
+        let mut config = default_config();
+        config.n_parallel = 4;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert!(args.contains(&"--parallel".to_string()));
+        assert!(args.contains(&"4".to_string()));
+    }
+
+    #[test]
+    fn test_mmproj_offload_enabled_when_mmproj_present() {
+        let mut config = default_config();
+        config.offload_mmproj = true;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, Some("/path/mmproj.gguf".to_string()));
+
+        assert!(args.contains(&"--mmproj-offload".to_string()));
+        assert!(!args.contains(&"--no-mmproj-offload".to_string()));
+    }
+
+    #[test]
+    fn test_mmproj_offload_disabled_when_config_false() {
+        let mut config = default_config();
+        config.offload_mmproj = false;
+
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, Some("/path/mmproj.gguf".to_string()));
+
+        assert!(args.contains(&"--no-mmproj-offload".to_string()));
+        assert!(!args.contains(&"--mmproj-offload".to_string()));
+    }
+
+    #[test]
+    fn test_mmproj_offload_flag_not_added_without_mmproj_path() {
+        let config = default_config();
+        let builder = ArgumentBuilder::new(config, false).unwrap();
+        let args = builder.build("test", "/path", 8080, None);
+
+        assert!(!args.contains(&"--mmproj-offload".to_string()));
+        assert!(!args.contains(&"--no-mmproj-offload".to_string()));
     }
 }

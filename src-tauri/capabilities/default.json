@@ -19,6 +19,8 @@
     "dialog:default",
     "fs:default",
     "store:default",
+    "updater:default",
+    "updater:allow-check",
     "sql:default",
     "hardware:default",
     "llamacpp:default",

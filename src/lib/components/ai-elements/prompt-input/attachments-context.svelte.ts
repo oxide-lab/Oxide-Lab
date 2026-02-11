@@ -21,17 +21,45 @@ export type ChatStatus = "submitted" | "streaming" | "error" | "idle";
 export class AttachmentsContext {
 	files = $state<FileWithId[]>([]);
 	fileInputRef = $state<HTMLInputElement | null>(null);
+	private accept?: string;
+	private multiple?: boolean;
+	private maxFiles?: number;
+	private maxFileSize?: number;
+	private onError?: (err: {
+		code: "max_files" | "max_file_size" | "accept";
+		message: string;
+	}) => void;
 
 	constructor(
-		private accept?: string,
-		private multiple?: boolean,
-		private maxFiles?: number,
-		private maxFileSize?: number,
-		private onError?: (err: {
+		accept?: string,
+		multiple?: boolean,
+		maxFiles?: number,
+		maxFileSize?: number,
+		onError?: (err: {
 			code: "max_files" | "max_file_size" | "accept";
 			message: string;
 		}) => void
-	) {}
+	) {
+		this.accept = accept;
+		this.multiple = multiple;
+		this.maxFiles = maxFiles;
+		this.maxFileSize = maxFileSize;
+		this.onError = onError;
+	}
+
+	updateConfig = (params: {
+		accept?: string;
+		multiple?: boolean;
+		maxFiles?: number;
+		maxFileSize?: number;
+		onError?: (err: { code: "max_files" | "max_file_size" | "accept"; message: string }) => void;
+	}) => {
+		this.accept = params.accept;
+		this.multiple = params.multiple;
+		this.maxFiles = params.maxFiles;
+		this.maxFileSize = params.maxFileSize;
+		this.onError = params.onError;
+	};
 
 	openFileDialog = () => {
 		this.fileInputRef?.click();

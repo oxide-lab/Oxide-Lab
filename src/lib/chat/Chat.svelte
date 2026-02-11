@@ -92,6 +92,15 @@
   let min_p_value = $state<number>(savedState.min_p_value);
   let repeat_penalty_enabled = $state(savedState.repeat_penalty_enabled);
   let repeat_penalty_value = $state<number>(savedState.repeat_penalty_value);
+  let max_new_tokens_enabled = $state(savedState.max_new_tokens_enabled ?? false);
+  let max_new_tokens_value = $state<number>(savedState.max_new_tokens_value ?? 1024);
+  let seed_enabled = $state(savedState.seed_enabled ?? false);
+  let seed_value = $state<number>(savedState.seed_value ?? 42);
+  let stop_sequences_text = $state(savedState.stop_sequences_text ?? '');
+  let reasoning_parse_enabled = $state(savedState.reasoning_parse_enabled ?? true);
+  let reasoning_start_tag = $state(savedState.reasoning_start_tag ?? '<think>');
+  let reasoning_end_tag = $state(savedState.reasoning_end_tag ?? '</think>');
+  let structured_output_enabled = $state(savedState.structured_output_enabled ?? false);
   let ctx_limit_value = $state<number>(savedState.ctx_limit_value);
   let use_custom_params = $state<boolean>(savedState.use_custom_params);
   let split_prompt = $state<boolean>(savedState.split_prompt);
@@ -266,6 +275,60 @@
     },
     set repeat_penalty_value(v) {
       repeat_penalty_value = v;
+    },
+    get max_new_tokens_enabled() {
+      return max_new_tokens_enabled;
+    },
+    set max_new_tokens_enabled(v) {
+      max_new_tokens_enabled = v;
+    },
+    get max_new_tokens_value() {
+      return max_new_tokens_value;
+    },
+    set max_new_tokens_value(v) {
+      max_new_tokens_value = v;
+    },
+    get seed_enabled() {
+      return seed_enabled;
+    },
+    set seed_enabled(v) {
+      seed_enabled = v;
+    },
+    get seed_value() {
+      return seed_value;
+    },
+    set seed_value(v) {
+      seed_value = v;
+    },
+    get stop_sequences_text() {
+      return stop_sequences_text;
+    },
+    set stop_sequences_text(v) {
+      stop_sequences_text = v;
+    },
+    get reasoning_parse_enabled() {
+      return reasoning_parse_enabled;
+    },
+    set reasoning_parse_enabled(v) {
+      reasoning_parse_enabled = v;
+    },
+    get reasoning_start_tag() {
+      return reasoning_start_tag;
+    },
+    set reasoning_start_tag(v) {
+      reasoning_start_tag = v;
+    },
+    get reasoning_end_tag() {
+      return reasoning_end_tag;
+    },
+    set reasoning_end_tag(v) {
+      reasoning_end_tag = v;
+    },
+    get structured_output_enabled() {
+      return structured_output_enabled;
+    },
+    set structured_output_enabled(v) {
+      structured_output_enabled = v;
     },
     get ctx_limit_value() {
       return ctx_limit_value;
@@ -444,6 +507,30 @@
   $effect(() => {
     chatState.update((s) => ({
       ...s,
+      temperature,
+      temperature_enabled,
+      top_k_enabled,
+      top_k_value,
+      top_p_enabled,
+      top_p_value,
+      min_p_enabled,
+      min_p_value,
+      repeat_penalty_enabled,
+      repeat_penalty_value,
+      max_new_tokens_enabled,
+      max_new_tokens_value,
+      seed_enabled,
+      seed_value,
+      stop_sequences_text,
+      reasoning_parse_enabled,
+      reasoning_start_tag,
+      reasoning_end_tag,
+      structured_output_enabled,
+      ctx_limit_value,
+      use_custom_params,
+      split_prompt,
+      verbose_prompt,
+      tracing,
       retrieval_url_enabled,
       retrieval_urls,
       retrieval_local_enabled,
@@ -500,6 +587,11 @@
     min_p_value = preset.sampling.min_p;
     repeat_penalty_enabled = true;
     repeat_penalty_value = preset.sampling.repeat_penalty;
+    max_new_tokens_enabled = true;
+    max_new_tokens_value = Math.max(1, Math.floor(preset.sampling.max_tokens));
+    seed_enabled = preset.sampling.seed !== null;
+    seed_value = preset.sampling.seed ?? 42;
+    stop_sequences_text = (preset.sampling.stop_sequences ?? []).join('\n');
     ctx_limit_value = preset.context;
   }
 
@@ -513,11 +605,209 @@
     }
   }
 
+  type ManagerRuntimePatch = Partial<{
+    ctx_limit_value: number;
+    use_custom_params: boolean;
+    temperature: number;
+    temperature_enabled: boolean;
+    top_k_value: number;
+    top_k_enabled: boolean;
+    top_p_value: number;
+    top_p_enabled: boolean;
+    min_p_value: number;
+    min_p_enabled: boolean;
+    repeat_penalty_value: number;
+    repeat_penalty_enabled: boolean;
+    max_new_tokens_value: number;
+    max_new_tokens_enabled: boolean;
+    seed_value: number;
+    seed_enabled: boolean;
+    stop_sequences_text: string;
+    reasoning_parse_enabled: boolean;
+    reasoning_start_tag: string;
+    reasoning_end_tag: string;
+    structured_output_enabled: boolean;
+    split_prompt: boolean;
+    verbose_prompt: boolean;
+    tracing: boolean;
+  }>;
+
+  type LoadModelFromManagerArgs = {
+    path: string;
+    format: 'gguf';
+    runtime?: ManagerRuntimePatch;
+  };
+
+  function clampNumber(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function applyManagerRuntimePatch(patch?: ManagerRuntimePatch) {
+    if (!patch) return;
+
+    if (typeof patch.ctx_limit_value === 'number' && Number.isFinite(patch.ctx_limit_value)) {
+      ctx_limit_value = Math.max(1, Math.floor(patch.ctx_limit_value));
+    }
+    if (typeof patch.use_custom_params === 'boolean') use_custom_params = patch.use_custom_params;
+    if (typeof patch.temperature === 'number' && Number.isFinite(patch.temperature)) {
+      temperature = clampNumber(patch.temperature, 0, 2);
+    }
+    if (typeof patch.temperature_enabled === 'boolean') {
+      temperature_enabled = patch.temperature_enabled;
+    }
+    if (typeof patch.top_k_value === 'number' && Number.isFinite(patch.top_k_value)) {
+      top_k_value = Math.max(1, Math.floor(patch.top_k_value));
+    }
+    if (typeof patch.top_k_enabled === 'boolean') top_k_enabled = patch.top_k_enabled;
+    if (typeof patch.top_p_value === 'number' && Number.isFinite(patch.top_p_value)) {
+      top_p_value = clampNumber(patch.top_p_value, 0, 1);
+    }
+    if (typeof patch.top_p_enabled === 'boolean') top_p_enabled = patch.top_p_enabled;
+    if (typeof patch.min_p_value === 'number' && Number.isFinite(patch.min_p_value)) {
+      min_p_value = clampNumber(patch.min_p_value, 0, 1);
+    }
+    if (typeof patch.min_p_enabled === 'boolean') min_p_enabled = patch.min_p_enabled;
+    if (
+      typeof patch.repeat_penalty_value === 'number' &&
+      Number.isFinite(patch.repeat_penalty_value)
+    ) {
+      repeat_penalty_value = clampNumber(patch.repeat_penalty_value, 0.1, 2);
+    }
+    if (typeof patch.repeat_penalty_enabled === 'boolean') {
+      repeat_penalty_enabled = patch.repeat_penalty_enabled;
+    }
+    if (
+      typeof patch.max_new_tokens_value === 'number' &&
+      Number.isFinite(patch.max_new_tokens_value)
+    ) {
+      max_new_tokens_value = Math.max(1, Math.floor(patch.max_new_tokens_value));
+    }
+    if (typeof patch.max_new_tokens_enabled === 'boolean') {
+      max_new_tokens_enabled = patch.max_new_tokens_enabled;
+    }
+    if (typeof patch.seed_value === 'number' && Number.isFinite(patch.seed_value)) {
+      seed_value = Math.max(0, Math.floor(patch.seed_value));
+    }
+    if (typeof patch.seed_enabled === 'boolean') {
+      seed_enabled = patch.seed_enabled;
+    }
+    if (typeof patch.stop_sequences_text === 'string') {
+      stop_sequences_text = patch.stop_sequences_text;
+    }
+    if (typeof patch.reasoning_parse_enabled === 'boolean') {
+      reasoning_parse_enabled = patch.reasoning_parse_enabled;
+    }
+    if (typeof patch.reasoning_start_tag === 'string') {
+      reasoning_start_tag = patch.reasoning_start_tag;
+    }
+    if (typeof patch.reasoning_end_tag === 'string') {
+      reasoning_end_tag = patch.reasoning_end_tag;
+    }
+    if (typeof patch.structured_output_enabled === 'boolean') {
+      structured_output_enabled = patch.structured_output_enabled;
+    }
+    if (typeof patch.split_prompt === 'boolean') split_prompt = patch.split_prompt;
+    if (typeof patch.verbose_prompt === 'boolean') verbose_prompt = patch.verbose_prompt;
+    if (typeof patch.tracing === 'boolean') tracing = patch.tracing;
+
+    chatState.update((s) => ({
+      ...s,
+      ctx_limit_value,
+      use_custom_params,
+      temperature,
+      temperature_enabled,
+      top_k_value,
+      top_k_enabled,
+      top_p_value,
+      top_p_enabled,
+      min_p_value,
+      min_p_enabled,
+      repeat_penalty_value,
+      repeat_penalty_enabled,
+      max_new_tokens_value,
+      max_new_tokens_enabled,
+      seed_value,
+      seed_enabled,
+      stop_sequences_text,
+      reasoning_parse_enabled,
+      reasoning_start_tag,
+      reasoning_end_tag,
+      structured_output_enabled,
+      split_prompt,
+      verbose_prompt,
+      tracing,
+    }));
+  }
+
+  function getManagerRuntimeConfig() {
+    return {
+      ctx_limit_value,
+      use_custom_params,
+      temperature,
+      temperature_enabled,
+      top_k_value,
+      top_k_enabled,
+      top_p_value,
+      top_p_enabled,
+      min_p_value,
+      min_p_enabled,
+      repeat_penalty_value,
+      repeat_penalty_enabled,
+      max_new_tokens_value,
+      max_new_tokens_enabled,
+      seed_value,
+      seed_enabled,
+      stop_sequences_text,
+      reasoning_parse_enabled,
+      reasoning_start_tag,
+      reasoning_end_tag,
+      structured_output_enabled,
+      split_prompt,
+      verbose_prompt,
+      tracing,
+      preset_id,
+    };
+  }
+
+  function getActiveSystemPrompt(): string {
+    const snapshot = settingsV2Store.getSnapshot();
+    if (!snapshot) return '';
+    const activePresetId = preset_id ?? snapshot.chat_presets.default_preset_id;
+    const preset = snapshot.chat_presets.presets.find((item) => item.id === activePresetId);
+    return preset?.system_prompt ?? snapshot.chat_presets.default_system_prompt ?? '';
+  }
+
+  async function setActiveSystemPrompt(nextPrompt: string) {
+    const snapshot = settingsV2Store.getSnapshot();
+    if (!snapshot) return;
+
+    const activePresetId = preset_id ?? snapshot.chat_presets.default_preset_id;
+    let found = false;
+    const nextPresets = snapshot.chat_presets.presets.map((item) => {
+      if (item.id !== activePresetId) return item;
+      found = true;
+      return {
+        ...item,
+        system_prompt: nextPrompt,
+      };
+    });
+
+    const nextChatPresets = {
+      ...snapshot.chat_presets,
+      presets: nextPresets,
+      default_system_prompt: nextPrompt,
+    };
+
+    if (!found) return;
+    await settingsV2Store.updateSection('chat_presets', nextChatPresets);
+  }
+
   /**
    * Load a model from the Model Manager or header picker
    */
-  function loadModelFromManager(args: { path: string; format: 'gguf' }) {
+  function loadModelFromManager(args: LoadModelFromManagerArgs) {
     if (!args?.path) return;
+    applyManagerRuntimePatch(args.runtime);
     pendingModelPath = args.path;
     pendingFormat = args.format;
 
@@ -573,6 +863,10 @@
       loadGGUF: controller.loadGGUF,
       unloadGGUF: controller.unloadGGUF,
       cancelLoading: controller.cancelLoading,
+      getRuntimeConfig: getManagerRuntimeConfig,
+      setRuntimeConfig: applyManagerRuntimePatch,
+      getSystemPrompt: getActiveSystemPrompt,
+      setSystemPrompt: setActiveSystemPrompt,
       getState: () => ({
         currentModelPath: modelPath,
         currentFormat: format,
@@ -588,6 +882,30 @@
         busy,
         pendingModelPath,
         pendingFormat,
+        ctx_limit_value,
+        use_custom_params,
+        temperature,
+        temperature_enabled,
+        top_k_value,
+        top_k_enabled,
+        top_p_value,
+        top_p_enabled,
+        min_p_value,
+        min_p_enabled,
+        repeat_penalty_value,
+        repeat_penalty_enabled,
+        max_new_tokens_value,
+        max_new_tokens_enabled,
+        seed_value,
+        seed_enabled,
+        stop_sequences_text,
+        reasoning_parse_enabled,
+        reasoning_start_tag,
+        reasoning_end_tag,
+        structured_output_enabled,
+        split_prompt,
+        verbose_prompt,
+        tracing,
       }),
     };
   }
@@ -696,6 +1014,15 @@
       min_p_value,
       repeat_penalty_enabled,
       repeat_penalty_value,
+      max_new_tokens_enabled,
+      max_new_tokens_value,
+      seed_enabled,
+      seed_value,
+      stop_sequences_text,
+      reasoning_parse_enabled,
+      reasoning_start_tag,
+      reasoning_end_tag,
+      structured_output_enabled,
       ctx_limit_value,
       use_custom_params,
       use_gpu,
@@ -816,7 +1143,6 @@
             bind:repoId
             bind:revision
             bind:hubGgufFilename
-            bind:mmprojPath
             bind:ctx_limit_value
             bind:isLoadingModel
             bind:isUnloadingModel
@@ -827,9 +1153,6 @@
             bind:errorText
             bind:busy
             bind:isLoaded
-            bind:use_gpu
-            bind:cuda_available
-            bind:cuda_build
             bind:avx
             bind:neon
             bind:simd128
@@ -852,7 +1175,6 @@
             presets={presetOptions}
             onPresetSelect={(presetId) => (preset_id = presetId)}
             onPresetApply={applySelectedPreset}
-            onDeviceToggle={(val) => controller.setDeviceByToggle(val)}
           />
         </div>
       </Sheet.Content>

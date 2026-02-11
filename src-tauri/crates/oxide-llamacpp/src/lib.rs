@@ -9,7 +9,7 @@ pub mod cleanup;
 pub mod commands;
 mod device;
 mod error;
-mod gguf;
+pub mod gguf;
 mod path;
 pub mod process;
 pub mod state;

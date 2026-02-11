@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
+  import { Spinner } from '$lib/components/ui/spinner';
   import { t } from '$lib/i18n';
+  import { appUpdaterStore } from '$lib/stores/app-updater';
   import ArrowSquareOut from 'phosphor-svelte/lib/ArrowSquareOut';
   import ArrowClockwise from 'phosphor-svelte/lib/ArrowClockwise';
   import Copy from 'phosphor-svelte/lib/Copy';
@@ -17,12 +20,12 @@
 
   let { appVersion }: Props = $props();
   let copied = $state(false);
+  let checkingUpdates = $state(false);
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
   const appName = 'Oxide Lab';
   const currentYear = new Date().getFullYear();
   const repoUrl = 'https://github.com/FerrisMind/Oxide-Lab';
-  const releasesUrl = `${repoUrl}/releases`;
   const websiteUrl = 'https://oxidelab.tech';
   const privacyUrl = `${repoUrl}/blob/main/README.md`;
   const thirdPartyLicensesUrl = `${repoUrl}/blob/main/THIRD_PARTY_LICENSES.md`;
@@ -48,6 +51,37 @@
       }, 1200);
     } catch (error) {
       console.warn('Failed to copy version:', error);
+    }
+  }
+
+  async function checkForUpdates() {
+    if (checkingUpdates) return;
+
+    const { toast } = await import('svelte-sonner');
+    const updaterState = get(appUpdaterStore);
+    if (updaterState.disabledByEnv) {
+      toast.info($t('settings.v2.about.updater.disabled'));
+      return;
+    }
+
+    checkingUpdates = true;
+    try {
+      const updateInfo = await appUpdaterStore.checkForUpdate({
+        userInitiated: true,
+        resetRemind: true,
+      });
+      if (updateInfo) {
+        toast.success($t('settings.v2.about.updater.new_version', { version: updateInfo.version }));
+        return;
+      }
+      toast.info($t('settings.v2.about.updater.no_update'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error($t('settings.v2.about.updater.check_failed'), {
+        description: message,
+      });
+    } finally {
+      checkingUpdates = false;
     }
   }
 
@@ -89,10 +123,16 @@
         size="sm"
         class="h-8"
         aria-label={$t('settings.v2.about.links.updates')}
-        onclick={() => openExternal(releasesUrl)}
+        disabled={checkingUpdates}
+        onclick={checkForUpdates}
       >
-        <ArrowClockwise class="mr-1 size-4" />
-        {$t('settings.v2.about.check_updates')}
+        {#if checkingUpdates}
+          <Spinner class="mr-1 size-4" />
+          {$t('settings.v2.about.updater.checking')}
+        {:else}
+          <ArrowClockwise class="mr-1 size-4" />
+          {$t('settings.v2.about.check_updates')}
+        {/if}
       </Button>
     </div>
 

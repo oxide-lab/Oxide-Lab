@@ -33,6 +33,24 @@ export interface LlamaRuntimeConfig {
     ubatch_size: number;
     n_predict: number;
     flash_attn: string;
+    offload_mmproj: boolean;
+    cpu_moe: boolean;
+    n_cpu_moe: number;
+    override_tensor_buffer_t: string;
+    split_mode: string;
+    main_gpu: number;
+    n_parallel: number;
+    cont_batching: boolean;
+    mlock: boolean;
+    no_kv_offload: boolean;
+    cache_type_k: string;
+    cache_type_v: string;
+    defrag_thold: number;
+    rope_scaling: string;
+    rope_scale: number;
+    rope_freq_base: number;
+    rope_freq_scale: number;
+    ctx_shift: boolean;
     extra_env: Record<string, string>;
     embeddings_strategy: 'separate_session';
     scheduler: {

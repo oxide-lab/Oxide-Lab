@@ -57,6 +57,7 @@
 
   async function refreshPlanner(modelPathOverride?: string) {
     const modelPath = modelPathOverride ?? get(chatState).modelPath;
+    const mmprojPath = get(chatState).mmprojPath;
     if (!modelPath) {
       planner = null;
       return;
@@ -66,7 +67,7 @@
       planner = await invoke<ModelPlan>('plugin:llamacpp|plan_model_load', {
         path: modelPath,
         memoryMode: value.memory_mode,
-        mmprojPath: null,
+        mmprojPath: mmprojPath?.trim() ? mmprojPath.trim() : null,
         requestedCtx: Math.max(512, value.llama_runtime.ctx_size),
       });
     } catch (error) {

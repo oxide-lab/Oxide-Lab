@@ -47,6 +47,15 @@ export type ChatPersistedState = {
     min_p_value: number;
     repeat_penalty_enabled: boolean;
     repeat_penalty_value: number;
+    max_new_tokens_enabled: boolean;
+    max_new_tokens_value: number;
+    seed_enabled: boolean;
+    seed_value: number;
+    stop_sequences_text: string;
+    reasoning_parse_enabled: boolean;
+    reasoning_start_tag: string;
+    reasoning_end_tag: string;
+    structured_output_enabled: boolean;
     ctx_limit_value: number;
     use_custom_params: boolean;
 
@@ -107,6 +116,15 @@ export function getDefaultChatState(): ChatPersistedState {
         min_p_value: 0.05,
         repeat_penalty_enabled: false,
         repeat_penalty_value: 1.1,
+        max_new_tokens_enabled: false,
+        max_new_tokens_value: 1024,
+        seed_enabled: false,
+        seed_value: 42,
+        stop_sequences_text: '',
+        reasoning_parse_enabled: true,
+        reasoning_start_tag: '<think>',
+        reasoning_end_tag: '</think>',
+        structured_output_enabled: false,
         ctx_limit_value: 4096,
         use_custom_params: false,
 

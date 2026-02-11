@@ -44,6 +44,7 @@
   import * as Command from '$lib/components/ui/command';
   import * as Tabs from '$lib/components/ui/tabs';
   import DownloadManagerModal from '$lib/components/DownloadManagerModal.svelte';
+  import AppUpdaterPrompt from '$lib/components/updater/AppUpdaterPrompt.svelte';
 
   // Core
   import { cn } from '../lib/utils';
@@ -52,10 +53,22 @@
   import { pageTabsList, activePageTab } from '$lib/stores/page-tabs.svelte';
   import type { TabId } from '$lib/stores/page-tabs.svelte';
   import { chatState } from '$lib/stores/chat';
-  import { folderPath, models, scanFolder } from '$lib/stores/local-models';
+  import {
+    folderPath,
+    initLoadedModels,
+    loadedModelIds,
+    models,
+    scanFolder,
+  } from '$lib/stores/local-models';
+  import {
+    areModelPathsEqual,
+    isModelPathLoaded,
+    normalizeModelIdentifier,
+  } from '$lib/model-manager/model-identity';
   import type { ModelInfo } from '$lib/types/local-models';
   import { settingsV2Store } from '$lib/stores/settings-v2';
   import { settingsSearchStore } from '$lib/stores/settings-search';
+  import { appUpdaterStore, getUpdateCheckIntervalMs } from '$lib/stores/app-updater';
   import type { SettingsSectionId } from '$lib/types/settings-v2';
 
   // Pages for mount-all pattern
@@ -90,7 +103,11 @@
   const pendingModelPath = derived(chatState, ($chatState) => $chatState.pendingModelPath);
   const isModelLoading = derived(chatState, ($chatState) => $chatState.isLoadingModel);
   const modelLoadingStage = derived(chatState, ($chatState) => $chatState.loadingStage);
-  const isCurrentModelLoaded = derived(chatState, ($chatState) => Boolean($chatState.isLoaded));
+  const isCurrentModelLoaded = derived(
+    [chatState, loadedModelIds, currentModelPath],
+    ([$chatState, $loadedModelIds, $currentModelPath]) =>
+      Boolean($chatState.isLoaded || isModelPathLoaded($currentModelPath, $loadedModelIds)),
+  );
   const selectedModelPath = derived(
     [pendingModelPath, currentModelPath],
     ([$pending, $current]) => $pending || $current,
@@ -98,7 +115,7 @@
   const selectedModel = derived(
     [quickModels, selectedModelPath],
     ([$quickModels, $selectedModelPath]) =>
-      $quickModels.find((model: ModelInfo) => model.path === $selectedModelPath),
+      $quickModels.find((model: ModelInfo) => areModelPathsEqual(model.path, $selectedModelPath)),
   );
   const currentDisplayName = derived(selectedModel, ($selectedModel) =>
     formatModelLabel($selectedModel),
@@ -151,6 +168,11 @@
     developer: Code,
     about: Info,
   };
+  const modelsTabIconMap: Record<string, any> = {
+    local: Cube,
+    remote: Globe,
+    recommendations: ChatsCircle,
+  };
 
   // Load local models on demand to keep startup responsive.
   $effect(() => {
@@ -182,6 +204,11 @@
   function handleHeaderTabsChange(nextValue: string) {
     if (!nextValue || nextValue === $activePageTab) return;
     activePageTab.set(nextValue as TabId);
+  }
+
+  function getCurrentModelsTab() {
+    const currentId = currentHeaderTabValue();
+    return $pageTabsList.find((tab) => tab.id === currentId) ?? $pageTabsList[0] ?? null;
   }
 
   function formatModelLabel(model: ModelInfo | null | undefined) {
@@ -373,6 +400,8 @@
   }
 
   let unlistenFn: UnlistenFn | null = null;
+  let unlistenLoadedModels: (() => void) | null = null;
+  let updaterCheckInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(async () => {
     // Initialize i18n
@@ -380,10 +409,25 @@
 
     // Load experimental features
     void experimentalFeatures.loadState();
+    unlistenLoadedModels = await initLoadedModels();
 
     // Initialize backend connections (download manager, model cards, performance listeners)
     const { initializeBackend } = await import('$lib/services/backend');
     void initializeBackend().catch((err) => console.warn('Backend initialization failed:', err));
+
+    if (!import.meta.env.DEV) {
+      void appUpdaterStore.checkForUpdate({
+        userInitiated: false,
+        suppressErrors: true,
+      });
+
+      updaterCheckInterval = setInterval(() => {
+        void appUpdaterStore.checkForUpdate({
+          userInitiated: false,
+          suppressErrors: true,
+        });
+      }, getUpdateCheckIntervalMs());
+    }
 
     // Setup window state
     isMaximized = await appWindow.isMaximized();
@@ -400,6 +444,12 @@
 
     const unlistenUnload = await listen<string>('model_unloaded', (event) => {
       console.log('Model unloaded automatically:', event.payload);
+      const unloadedId = normalizeModelIdentifier(event.payload);
+      if (unloadedId) {
+        loadedModelIds.update((ids) =>
+          ids.filter((id) => normalizeModelIdentifier(id) !== unloadedId),
+        );
+      }
 
       chatState.update((s) => ({
         ...s,
@@ -422,6 +472,8 @@
       timestamp: number;
     }>('scheduler_snapshot', (event) => {
       (window as any).__oxideSchedulerSnapshot = event.payload;
+      const nextLoaded = Array.isArray(event.payload?.loaded_models) ? event.payload.loaded_models : [];
+      loadedModelIds.set(nextLoaded);
     });
 
     const unlistenQueueWait = await listen<{ waited_ms: number; queue_position?: number }>(
@@ -455,6 +507,11 @@
   import { onDestroy } from 'svelte';
   onDestroy(() => {
     if (unlistenFn) unlistenFn();
+    if (unlistenLoadedModels) unlistenLoadedModels();
+    if (updaterCheckInterval) {
+      clearInterval(updaterCheckInterval);
+      updaterCheckInterval = null;
+    }
 
     // Cleanup backend connections
     import('$lib/services/backend').then(({ cleanupBackend }) => {
@@ -574,7 +631,8 @@
                             weight="bold"
                             class={cn(
                               'model-combobox-check',
-                              model.path !== $selectedModelPath && 'model-combobox-check--hidden',
+                              !areModelPathsEqual(model.path, $selectedModelPath) &&
+                                'model-combobox-check--hidden',
                             )}
                           />
                           <div class="model-combobox-item-body">
@@ -585,9 +643,16 @@
                               {model.architecture ?? ($t('common.unknownArch') || 'Unknown')}
                             </span>
                           </div>
-                          {#if model.path === $currentModelPath}
+                          {@const isCurrentModelPath = areModelPathsEqual(model.path, $currentModelPath)}
+                          {@const isCurrentAndLoaded = isCurrentModelPath && $isCurrentModelLoaded}
+                          {@const isLoadedModel = isCurrentAndLoaded || isModelPathLoaded(model.path, $loadedModelIds)}
+                          {#if isCurrentAndLoaded}
                             <span class="model-combobox-item-badge">
                               {$t('common.model.current') || 'Current'}
+                            </span>
+                          {:else if isLoadedModel}
+                            <span class="model-combobox-item-badge">
+                              {$t('common.loader.loaded') || 'Loaded'}
                             </span>
                           {/if}
                         </Command.Item>
@@ -628,21 +693,64 @@
 
           <!-- Page Tabs (for /models) -->
           {#if page.url.pathname === '/models' && $pageTabsList.length > 0}
-            <div class="page-tabs" data-no-drag>
-              <Tabs.Root
-                value={currentHeaderTabValue()}
-                class="page-tabs-root"
-                onValueChange={handleHeaderTabsChange}
-              >
-                <Tabs.List class="page-tabs-list" aria-label="Page tabs">
-                  {#each $pageTabsList as tab}
-                    <Tabs.Trigger class="page-tab" value={tab.id}>
-                      {tab.label}
-                    </Tabs.Trigger>
-                  {/each}
-                </Tabs.List>
-              </Tabs.Root>
-            </div>
+            {#if viewportWidth < 1024}
+              {@const currentModelsTab = getCurrentModelsTab()}
+              <div class="settings-breadcrumbs" data-no-drag>
+                <Breadcrumb.Root>
+                  <Breadcrumb.List>
+                    <Breadcrumb.Item>
+                      <Breadcrumb.Link href="/models" class="text-sm font-semibold text-foreground">
+                        {$t('models.title') || 'Models'}
+                      </Breadcrumb.Link>
+                    </Breadcrumb.Item>
+
+                    {#if currentModelsTab}
+                      {@const CurrentModelsTabIcon =
+                        modelsTabIconMap[currentModelsTab.id] ?? Cube}
+                      <Breadcrumb.Separator />
+                      <Breadcrumb.Item>
+                        <DropdownMenu.Root>
+                          <DropdownMenu.Trigger>
+                            {#snippet child({ props })}
+                              <Button {...props} variant="ghost" size="sm" class="h-7 gap-1 px-2">
+                                <CurrentModelsTabIcon class="size-3.5" />
+                                {currentModelsTab.label}
+                                <CaretDown size={12} />
+                              </Button>
+                            {/snippet}
+                          </DropdownMenu.Trigger>
+                          <DropdownMenu.Content align="start" sideOffset={6} class="w-56 z-[1400]">
+                            {#each $pageTabsList as tab (tab.id)}
+                              {@const ModelsTabIcon = modelsTabIconMap[tab.id] ?? Cube}
+                              <DropdownMenu.Item onSelect={() => handleHeaderTabsChange(tab.id)}>
+                                <ModelsTabIcon class="size-4" />
+                                {tab.label}
+                              </DropdownMenu.Item>
+                            {/each}
+                          </DropdownMenu.Content>
+                        </DropdownMenu.Root>
+                      </Breadcrumb.Item>
+                    {/if}
+                  </Breadcrumb.List>
+                </Breadcrumb.Root>
+              </div>
+            {:else}
+              <div class="page-tabs" data-no-drag>
+                <Tabs.Root
+                  value={currentHeaderTabValue()}
+                  class="page-tabs-root"
+                  onValueChange={handleHeaderTabsChange}
+                >
+                  <Tabs.List class="page-tabs-list" aria-label="Page tabs">
+                    {#each $pageTabsList as tab}
+                      <Tabs.Trigger class="page-tab" value={tab.id}>
+                        {tab.label}
+                      </Tabs.Trigger>
+                    {/each}
+                  </Tabs.List>
+                </Tabs.Root>
+              </div>
+            {/if}
           {/if}
         </div>
 
@@ -754,6 +862,8 @@
   {#if showDownloadManager}
     <DownloadManagerModal onClose={() => (showDownloadManager = false)} />
   {/if}
+
+  <AppUpdaterPrompt />
 
   <Command.Dialog
     bind:open={showCommandPalette}
@@ -1022,6 +1132,7 @@
 
   /* App Body */
   .app-body {
+    position: relative;
     flex: 1;
     min-height: 0;
     min-width: 0;
@@ -1031,6 +1142,7 @@
   }
 
   .app-main {
+    position: relative;
     flex: 1;
     min-width: 0;
     display: flex;

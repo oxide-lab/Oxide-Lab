@@ -13,9 +13,6 @@
   import { Button } from '$lib/components/ui/button';
   import * as Select from '$lib/components/ui/select';
   import { cn } from '../../utils';
-  import Cpu from 'phosphor-svelte/lib/Cpu';
-  import GpuCard from 'phosphor-svelte/lib/GraphicsCard';
-  import Check from 'phosphor-svelte/lib/Check';
   import Sparkle from 'phosphor-svelte/lib/Sparkle';
 
   interface Props {
@@ -24,7 +21,6 @@
     repoId?: string;
     revision?: string;
     hubGgufFilename?: string;
-    mmprojPath?: string;
     ctx_limit_value?: number;
     isLoadingModel?: boolean;
     isUnloadingModel?: boolean;
@@ -35,9 +31,6 @@
     errorText?: string;
     busy?: boolean;
     isLoaded?: boolean;
-    use_gpu?: boolean;
-    cuda_available?: boolean;
-    cuda_build?: boolean;
     avx?: boolean;
     neon?: boolean;
     simd128?: boolean;
@@ -60,7 +53,6 @@
     selectedPresetId?: string | null;
     onPresetSelect?: (presetId: string) => void;
     onPresetApply?: () => void;
-    onDeviceToggle?: (enabled: boolean) => void;
     class?: string;
   }
 
@@ -70,7 +62,6 @@
     repoId = $bindable(''),
     revision = $bindable(''),
     hubGgufFilename = $bindable(''),
-    mmprojPath = $bindable(''),
     ctx_limit_value = $bindable(4096),
     isLoadingModel = $bindable(false),
     isUnloadingModel = $bindable(false),
@@ -81,9 +72,6 @@
     errorText = $bindable(''),
     busy = $bindable(false),
     isLoaded = $bindable(false),
-    use_gpu = $bindable(false),
-    cuda_available = $bindable(false),
-    cuda_build = $bindable(false),
     avx = $bindable(false),
     neon = $bindable(false),
     simd128 = $bindable(false),
@@ -106,17 +94,8 @@
     selectedPresetId = $bindable(null),
     onPresetSelect,
     onPresetApply,
-    onDeviceToggle,
     class: className = '',
   }: Props = $props();
-
-  function setDevice(enabled: boolean) {
-    if (onDeviceToggle) {
-      onDeviceToggle(enabled);
-    } else {
-      use_gpu = enabled;
-    }
-  }
 
   const contextOptions = [2048, 4096, 8192, 16384, 32768];
 
@@ -171,52 +150,6 @@
     </div>
   {/if}
 
-  <!-- Device Selector -->
-  <div class="space-y-3">
-    <Label class="text-sm font-medium">{$t('common.loader.device') || 'Device'}</Label>
-    <div class="flex gap-2">
-      <Button
-        variant="outline"
-        class={cn(
-          'flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border transition-all',
-          !use_gpu
-            ? 'border-primary bg-primary/10 text-primary'
-            : 'border-border hover:border-muted-foreground',
-        )}
-        onclick={() => setDevice(false)}
-      >
-        <Cpu class="size-5" />
-        <span>CPU</span>
-        {#if !use_gpu}
-          <Check class="size-4 ml-auto" />
-        {/if}
-      </Button>
-      <Button
-        variant="outline"
-        class={cn(
-          'flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border transition-all',
-          !cuda_available && !cuda_build && 'opacity-50 cursor-not-allowed',
-          use_gpu
-            ? 'border-primary bg-primary/10 text-primary'
-            : 'border-border hover:border-muted-foreground',
-        )}
-        onclick={() => setDevice(true)}
-        disabled={!cuda_available && !cuda_build}
-      >
-        <GpuCard class="size-5" />
-        <span>GPU</span>
-        {#if use_gpu}
-          <Check class="size-4 ml-auto" />
-        {/if}
-      </Button>
-    </div>
-    {#if !cuda_available && !cuda_build}
-      <p class="text-xs text-muted-foreground">
-        {$t('common.loader.gpuNotAvailable') || 'GPU not available (CUDA not detected)'}
-      </p>
-    {/if}
-  </div>
-
   <!-- Context Length -->
   <div class="space-y-3">
     <Label class="text-sm font-medium"
@@ -241,17 +174,6 @@
         </Button>
       {/each}
     </div>
-  </div>
-
-  <div class="space-y-2">
-    <Label class="text-sm font-medium">MMProj Path (optional)</Label>
-    <Input
-      type="text"
-      placeholder="C:\\models\\mmproj.gguf"
-      bind:value={mmprojPath}
-      disabled={busy || isLoadingModel}
-    />
-    <p class="text-xs text-muted-foreground">Required for most vision GGUF models.</p>
   </div>
 
   <!-- CPU Features -->

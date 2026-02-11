@@ -13,6 +13,8 @@
   import Microphone from 'phosphor-svelte/lib/Microphone';
   import Globe from 'phosphor-svelte/lib/Globe';
   import Command from 'phosphor-svelte/lib/Command';
+  import FileText from 'phosphor-svelte/lib/FileText';
+  import Wrench from 'phosphor-svelte/lib/Wrench';
   import { Button } from '$lib/components/ui/button';
   import {
     PromptInput,
@@ -254,49 +256,35 @@
       <!-- Toolbar -->
       <div class="flex justify-between items-center gap-2 p-2">
         <PromptInputTools class="flex gap-0">
-          <div
-            class="flex items-center gap-1 rounded-full border border-border/80 bg-muted/35 px-1 py-1 mr-1 overflow-x-auto"
+          <PromptInputButton
+            class={cn(retrievalUrlEnabled && 'text-primary')}
+            disabled={busy || !isLoaded}
+            onclick={toggleUrlRetrieval}
+            aria-label="URLs"
+            title="URLs"
           >
-            <button
-              type="button"
-              class={cn(
-                'h-7 rounded-full px-2 text-xs transition-colors',
-                retrievalUrlEnabled
-                  ? 'bg-background text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              disabled={busy || !isLoaded}
-              onclick={toggleUrlRetrieval}
-            >
-              URLs
-            </button>
-            <button
-              type="button"
-              class={cn(
-                'h-7 rounded-full px-2 text-xs transition-colors',
-                retrievalLocalEnabled
-                  ? 'bg-background text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              disabled={busy || !isLoaded}
-              onclick={toggleLocalRetrieval}
-            >
-              Docs
-            </button>
-            <button
-              type="button"
-              class={cn(
-                'h-7 rounded-full px-2 text-xs transition-colors',
-                mcpEnabled
-                  ? 'bg-background text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              disabled={busy || !isLoaded}
-              onclick={toggleMcp}
-            >
-              Tools
-            </button>
-          </div>
+            <Globe size={16} weight="bold" />
+          </PromptInputButton>
+
+          <PromptInputButton
+            class={cn(retrievalLocalEnabled && 'text-primary')}
+            disabled={busy || !isLoaded}
+            onclick={toggleLocalRetrieval}
+            aria-label="Docs"
+            title="Docs"
+          >
+            <FileText size={16} weight="bold" />
+          </PromptInputButton>
+
+          <PromptInputButton
+            class={cn(mcpEnabled && 'text-primary')}
+            disabled={busy || !isLoaded}
+            onclick={toggleMcp}
+            aria-label="Tools"
+            title="Tools"
+          >
+            <Wrench size={16} weight="bold" />
+          </PromptInputButton>
 
           <!-- Attach button -->
           <PromptInputButton

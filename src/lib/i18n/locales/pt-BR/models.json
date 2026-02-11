@@ -16,6 +16,58 @@
     "searchPlaceholder": "Nome, arquitetura, quantização...",
     "selectFolder": "Selecionar Pasta",
     "load": "Carregar",
+    "unload": "Descarregar",
+    "unknownPublisher": "local",
+    "folderActions": "Ações da pasta",
+    "rowMenu": "Ações do modelo",
+    "summary": {
+      "models": "modelos"
+    },
+    "sort": {
+      "recent": "Adicionados recentemente",
+      "name": "Nome",
+      "size": "Tamanho",
+      "architecture": "Arquitetura"
+    },
+    "view": {
+      "list": "Visualização em lista",
+      "grid": "Visualização em grade"
+    },
+    "tabs": {
+      "info": "Info",
+      "load": "Carga",
+      "inference": "Inferência"
+    },
+    "storage": {
+      "label": "Armazenamento de modelos"
+    },
+    "status": {
+      "loaded": "Carregado",
+      "loading": "Carregando",
+      "unloading": "Descarregando",
+      "available": "Disponível"
+    },
+    "actions": {
+      "edit": "Editar",
+      "copyPath": "Copiar caminho",
+      "openFolder": "Abrir pasta"
+    },
+    "empty": {
+      "title": "Ainda não há modelos locais",
+      "subtitle": "Selecione uma pasta ou abra o catálogo para baixar seu primeiro modelo.",
+      "catalogCta": "Abrir catálogo",
+      "noResults": "Nada encontrado",
+      "tryAnotherQuery": "Tente outra consulta de busca."
+    },
+    "deleteDialog": {
+      "title": "Excluir modelo?",
+      "description": "Excluir \"{name}\" e liberar {size}?",
+      "cancel": "Cancelar",
+      "confirm": "Excluir"
+    },
+    "aria": {
+      "modelsList": "Lista de modelos locais"
+    },
     "menu": {
       "selectFolder": "Selecionar pasta",
       "rescan": "Reescanear"
@@ -32,6 +84,11 @@
     "details": {
       "delete": "Excluir",
       "loadToChat": "Carregar no chat",
+      "loadModel": "Carregar modelo",
+      "useInNewChat": "Usar em novo chat",
+      "modelInformation": "Informações do modelo",
+      "placeholderTitle": "Detalhes do modelo",
+      "placeholderSubtitle": "Selecione um modelo na lista para ver os detalhes completos.",
       "path": "Caminho",
       "size": "Tamanho",
       "date": "Data",
@@ -62,6 +119,27 @@
         "alignment": "Alinhamento",
         "tokenCount": "Contagem de tokens"
       }
+    },
+    "loadTab": {
+      "contextAndOffload": "Contexto e Offload",
+      "modelSupports": "O modelo suporta até {value} tokens",
+      "advanced": "Avançado",
+      "splitPrompt": "Split prompt",
+      "verbosePrompt": "Prompt detalhado",
+      "chromeTracing": "Chrome tracing",
+      "apply": "Aplicar configurações de carga"
+    },
+    "inferenceTab": {
+      "systemPrompt": "Prompt do sistema",
+      "systemPromptPlaceholder": "Exemplo: \"Responda apenas em rimas\"",
+      "savePrompt": "Salvar",
+      "useCustom": "Usar parâmetros de sampling personalizados",
+      "temperature": "Temperature",
+      "topP": "Top-P",
+      "topK": "Top-K",
+      "repeatPenalty": "Repeat penalty",
+      "minP": "Min-P",
+      "apply": "Aplicar configurações de inferência"
     },
     "errors": {
       "retry": "Tentar novamente"

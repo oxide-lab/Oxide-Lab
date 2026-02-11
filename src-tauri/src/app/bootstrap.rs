@@ -117,6 +117,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             Builder::default()
                 .add_migrations("sqlite:chat_history.db", migrations)
@@ -137,6 +138,7 @@ pub fn run() {
             crate::api::delete_chat_attachment_files,
             crate::api::set_device,
             crate::api::is_model_loaded,
+            crate::api::get_modality_support,
             crate::api::get_chat_template,
             crate::api::render_prompt,
             crate::api::get_device_info,

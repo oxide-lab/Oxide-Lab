@@ -17,6 +17,7 @@ export * from './page-tabs.svelte';
 export * from './local-models';
 export * from './download-manager';
 export * from './model-cards';
+export * from './app-updater';
 
 // Feature stores
 export { experimentalFeatures } from './experimental-features.svelte';

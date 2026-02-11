@@ -17,6 +17,58 @@
     "searchPlaceholder": "Name, architecture, quantization...",
     "selectFolder": "Select Folder",
     "load": "Load",
+    "unload": "Unload",
+    "unknownPublisher": "local",
+    "folderActions": "Folder actions",
+    "rowMenu": "Model actions",
+    "summary": {
+      "models": "models"
+    },
+    "sort": {
+      "recent": "Recently added",
+      "name": "Name",
+      "size": "Size",
+      "architecture": "Architecture"
+    },
+    "view": {
+      "list": "List view",
+      "grid": "Grid view"
+    },
+    "tabs": {
+      "info": "Info",
+      "load": "Load",
+      "inference": "Inference"
+    },
+    "storage": {
+      "label": "Models storage"
+    },
+    "status": {
+      "loaded": "Loaded",
+      "loading": "Loading",
+      "unloading": "Unloading",
+      "available": "Available"
+    },
+    "actions": {
+      "edit": "Edit",
+      "copyPath": "Copy path",
+      "openFolder": "Open folder"
+    },
+    "empty": {
+      "title": "No local models yet",
+      "subtitle": "Select a folder or open the catalog to download your first model.",
+      "catalogCta": "Open catalog",
+      "noResults": "Nothing found",
+      "tryAnotherQuery": "Try a different search query."
+    },
+    "deleteDialog": {
+      "title": "Delete model?",
+      "description": "Delete \"{name}\" and free {size}?",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "aria": {
+      "modelsList": "Local models list"
+    },
     "menu": {
       "selectFolder": "Select folder",
       "rescan": "Rescan"
@@ -33,6 +85,11 @@
     "details": {
       "delete": "Delete",
       "loadToChat": "Load to chat",
+      "loadModel": "Load model",
+      "useInNewChat": "Use in New Chat",
+      "modelInformation": "Model Information",
+      "placeholderTitle": "Model details",
+      "placeholderSubtitle": "Select a model in the list to see full details.",
       "path": "Path",
       "size": "Size",
       "date": "Date",
@@ -63,6 +120,27 @@
         "alignment": "Alignment",
         "tokenCount": "Token count"
       }
+    },
+    "loadTab": {
+      "contextAndOffload": "Context and Offload",
+      "modelSupports": "Model supports up to {value} tokens",
+      "advanced": "Advanced",
+      "splitPrompt": "Split prompt",
+      "verbosePrompt": "Verbose prompt",
+      "chromeTracing": "Chrome tracing",
+      "apply": "Apply load settings"
+    },
+    "inferenceTab": {
+      "systemPrompt": "System Prompt",
+      "systemPromptPlaceholder": "Example: \"Only answer in rhymes\"",
+      "savePrompt": "Save",
+      "useCustom": "Use custom sampling parameters",
+      "temperature": "Temperature",
+      "topP": "Top-P",
+      "topK": "Top-K",
+      "repeatPenalty": "Repeat penalty",
+      "minP": "Min-P",
+      "apply": "Apply inference settings"
     },
     "errors": {
       "retry": "Retry"

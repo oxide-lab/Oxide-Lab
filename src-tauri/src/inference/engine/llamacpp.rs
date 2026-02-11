@@ -1,10 +1,11 @@
 use super::adapter::EngineAdapter;
 use super::types::{EngineId, EngineSessionInfo, EngineSessionKind, ResolvedModelSource};
-use crate::core::modality::model_id_looks_vision;
+use crate::core::settings_v2::SettingsV2State;
 use crate::core::types::{GenerateRequest, LlamaRuntimeConfig, LlamaSessionKind, LoadRequest};
 use crate::inference::llamacpp::{http_client, state::LlamaCppState};
 use oxide_llamacpp::args::LlamacppConfig;
 use oxide_llamacpp::commands;
+use oxide_llamacpp::gguf::model_planner::{self, ModelMode, ModelPlan};
 use oxide_llamacpp::state::SessionInfo as PluginSessionInfo;
 use std::collections::HashMap;
 use std::env;
@@ -490,10 +491,10 @@ impl LlamaCppAdapter {
             memory_util: String::new(),
             chat_template: String::new(),
             n_gpu_layers: runtime_cfg.n_gpu_layers,
-            offload_mmproj: true,
-            cpu_moe: false,
-            n_cpu_moe: 0,
-            override_tensor_buffer_t: String::new(),
+            offload_mmproj: runtime_cfg.offload_mmproj,
+            cpu_moe: runtime_cfg.cpu_moe,
+            n_cpu_moe: runtime_cfg.n_cpu_moe,
+            override_tensor_buffer_t: runtime_cfg.override_tensor_buffer_t.clone(),
             ctx_size: runtime_cfg.ctx_size,
             threads: runtime_cfg.threads,
             threads_batch: runtime_cfg.threads_batch,
@@ -501,22 +502,90 @@ impl LlamaCppAdapter {
             batch_size: runtime_cfg.batch_size,
             ubatch_size: runtime_cfg.ubatch_size,
             device: String::new(),
-            split_mode: "layer".to_string(),
-            main_gpu: 0,
+            split_mode: runtime_cfg.split_mode.clone(),
+            main_gpu: runtime_cfg.main_gpu,
+            n_parallel: runtime_cfg.n_parallel,
             flash_attn: runtime_cfg.flash_attn.clone(),
-            cont_batching: true,
+            cont_batching: runtime_cfg.cont_batching,
             no_mmap: Self::should_disable_mmap(&runtime_cfg.extra_env),
-            mlock: false,
-            no_kv_offload: false,
-            cache_type_k: "f16".to_string(),
-            cache_type_v: "f16".to_string(),
-            defrag_thold: 0.1,
-            rope_scaling: "none".to_string(),
-            rope_scale: 1.0,
-            rope_freq_base: 0.0,
-            rope_freq_scale: 1.0,
-            ctx_shift: false,
+            mlock: runtime_cfg.mlock,
+            no_kv_offload: runtime_cfg.no_kv_offload,
+            cache_type_k: runtime_cfg.cache_type_k.clone(),
+            cache_type_v: runtime_cfg.cache_type_v.clone(),
+            defrag_thold: runtime_cfg.defrag_thold,
+            rope_scaling: runtime_cfg.rope_scaling.clone(),
+            rope_scale: runtime_cfg.rope_scale,
+            rope_freq_base: runtime_cfg.rope_freq_base,
+            rope_freq_scale: runtime_cfg.rope_freq_scale,
+            ctx_shift: runtime_cfg.ctx_shift,
         }
+    }
+
+    fn current_memory_mode(&self) -> String {
+        if let Some(state) = self.app_handle.try_state::<SettingsV2State>()
+            && let Ok(guard) = state.inner.lock()
+        {
+            return guard.get_ref().performance.memory_mode.clone();
+        }
+        "medium".to_string()
+    }
+
+    fn saturating_u64_to_i32(value: u64) -> i32 {
+        value.min(i32::MAX as u64) as i32
+    }
+
+    fn apply_plan_to_config(config: &mut LlamacppConfig, plan: &ModelPlan, has_mmproj: bool) {
+        config.n_gpu_layers = Self::saturating_u64_to_i32(plan.gpu_layers);
+        if plan.max_context_length > 0 {
+            config.ctx_size = Self::saturating_u64_to_i32(plan.max_context_length).max(512);
+        }
+
+        let planned_batch = Self::saturating_u64_to_i32(plan.batch_size).max(1);
+        config.batch_size = planned_batch;
+        config.ubatch_size = planned_batch;
+        config.no_kv_offload = plan.no_offload_kv_cache;
+        config.offload_mmproj = has_mmproj && plan.offload_mmproj;
+    }
+
+    async fn apply_multimodal_plan(
+        &self,
+        source: &ResolvedModelSource,
+        runtime_cfg: &LlamaRuntimeConfig,
+        config: &mut LlamacppConfig,
+    ) -> Result<(), String> {
+        if source.mmproj_path.is_none() {
+            return Ok(());
+        }
+
+        let requested_ctx = Some(runtime_cfg.ctx_size.max(512) as u64);
+        let memory_mode = self.current_memory_mode();
+        let plan = model_planner::plan_model_load(
+            source.model_path.clone(),
+            memory_mode.clone(),
+            source.mmproj_path.clone(),
+            requested_ctx,
+        )
+        .await
+        .map_err(|e| format!("failed to plan multimodal load: {e}"))?;
+
+        if matches!(plan.mode, ModelMode::Unsupported) || plan.max_context_length == 0 {
+            return Err(format!(
+                "multimodal model cannot fit current hardware budget (mode: {:?}, memory_mode: {})",
+                plan.mode, memory_mode
+            ));
+        }
+
+        Self::apply_plan_to_config(config, &plan, source.mmproj_path.is_some());
+        log::info!(
+            "Applied multimodal load plan: mode={:?}, ngl={}, ctx={}, batch={}, no_kv_offload={}, offload_mmproj={}",
+            plan.mode,
+            config.n_gpu_layers,
+            config.ctx_size,
+            config.batch_size,
+            config.no_kv_offload,
+            config.offload_mmproj
+        );
+        Ok(())
     }
 
     fn should_disable_mmap(extra_env: &HashMap<String, String>) -> bool {
@@ -547,15 +616,130 @@ impl LlamaCppAdapter {
         lower.contains("mmproj") || (lower.contains("vision") && lower.contains("proj"))
     }
 
+    fn is_quant_token(token: &str) -> bool {
+        let lower = token.to_ascii_lowercase();
+        if lower.is_empty() {
+            return false;
+        }
+        if matches!(
+            lower.as_str(),
+            "f16"
+                | "f32"
+                | "bf16"
+                | "fp16"
+                | "fp32"
+                | "int8"
+                | "int4"
+                | "k"
+                | "m"
+                | "s"
+                | "xs"
+                | "xxs"
+                | "xxxs"
+        ) {
+            return true;
+        }
+        if lower.starts_with('q') && lower.len() > 1 {
+            return lower[1..].chars().all(|ch| ch.is_ascii_alphanumeric());
+        }
+        if lower.starts_with("iq") && lower.len() > 2 {
+            return lower[2..].chars().all(|ch| ch.is_ascii_alphanumeric());
+        }
+        false
+    }
+
+    fn normalized_model_family(raw: &str, strip_projector_markers: bool) -> String {
+        let stem = Path::new(raw)
+            .file_stem()
+            .and_then(|v| v.to_str())
+            .unwrap_or(raw)
+            .to_ascii_lowercase();
+
+        let mut tokens: Vec<String> = stem
+            .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '.'))
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(|v| v.to_string())
+            .collect();
+
+        if strip_projector_markers {
+            tokens.retain(|token| {
+                !matches!(
+                    token.as_str(),
+                    "mmproj" | "projector" | "proj" | "vision" | "visual"
+                )
+            });
+        }
+
+        let mut trimmed_quant = false;
+        while let Some(last) = tokens.last() {
+            let numeric = last.chars().all(|ch| ch.is_ascii_digit());
+            if Self::is_quant_token(last) || (trimmed_quant && numeric) {
+                tokens.pop();
+                trimmed_quant = true;
+                continue;
+            }
+            break;
+        }
+
+        tokens.join("-")
+    }
+
+    fn is_subsequence(small: &[&str], large: &[&str]) -> bool {
+        if small.is_empty() {
+            return false;
+        }
+        let mut i = 0usize;
+        for value in large {
+            if i < small.len() && small[i] == *value {
+                i += 1;
+            }
+        }
+        i == small.len()
+    }
+
+    fn mmproj_candidate_rank(model_family: &str, candidate: &str) -> Option<(u8, usize)> {
+        if model_family.is_empty() {
+            return None;
+        }
+        let candidate_family = Self::normalized_model_family(candidate, true);
+        if candidate_family.is_empty() {
+            return None;
+        }
+
+        if candidate_family == model_family {
+            return Some((0, 0));
+        }
+
+        if candidate_family.starts_with(model_family) || model_family.starts_with(&candidate_family)
+        {
+            return Some((1, model_family.len().abs_diff(candidate_family.len())));
+        }
+
+        let model_tokens: Vec<&str> = model_family.split('-').filter(|v| !v.is_empty()).collect();
+        let cand_tokens: Vec<&str> = candidate_family
+            .split('-')
+            .filter(|v| !v.is_empty())
+            .collect();
+        if Self::is_subsequence(&model_tokens, &cand_tokens)
+            || Self::is_subsequence(&cand_tokens, &model_tokens)
+        {
+            return Some((2, model_tokens.len().abs_diff(cand_tokens.len())));
+        }
+
+        None
+    }
+
     fn local_mmproj_candidates(model_path: &str) -> Vec<String> {
         let model = Path::new(model_path);
+        let model_family = Self::normalized_model_family(model_path, false);
         let Some(dir) = model.parent() else {
             return Vec::new();
         };
-        let mut out = Vec::new();
+        let mut candidates = Vec::new();
         let entries = match fs::read_dir(dir) {
             Ok(v) => v,
-            Err(_) => return out,
+            Err(_) => return Vec::new(),
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -565,12 +749,22 @@ impl LlamaCppAdapter {
             let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
                 continue;
             };
+            if path == model {
+                continue;
+            }
             if Self::is_mmproj_filename(name) {
-                out.push(path.to_string_lossy().to_string());
+                candidates.push(path.to_string_lossy().to_string());
             }
         }
-        out.sort_unstable();
-        out
+
+        let mut ranked: Vec<((u8, usize), String)> = candidates
+            .into_iter()
+            .filter_map(|path| {
+                Self::mmproj_candidate_rank(&model_family, &path).map(|rank| (rank, path))
+            })
+            .collect();
+        ranked.sort_by(|(ra, pa), (rb, pb)| ra.cmp(rb).then_with(|| pa.cmp(pb)));
+        ranked.into_iter().map(|(_, path)| path).collect()
     }
 
     fn validate_manual_mmproj_path(path: &str) -> Result<String, String> {
@@ -638,7 +832,7 @@ impl LlamaCppAdapter {
     }
 
     fn resolve_local_mmproj(
-        model_id: &str,
+        _model_id: &str,
         model_path: &str,
         manual_mmproj: Option<&String>,
     ) -> Result<Option<String>, String> {
@@ -648,13 +842,7 @@ impl LlamaCppAdapter {
             return Self::validate_manual_mmproj_path(manual).map(Some);
         }
 
-        let auto = Self::local_mmproj_candidates(model_path).into_iter().next();
-        if model_id_looks_vision(model_id) && auto.is_none() {
-            return Err(
-                "Vision model detected but mmproj is missing. Set mmproj_path.".to_string(),
-            );
-        }
-        Ok(auto)
+        Ok(Self::local_mmproj_candidates(model_path).into_iter().next())
     }
 
     fn resolve_hub_mmproj(
@@ -678,20 +866,17 @@ impl LlamaCppAdapter {
             ));
         }
 
+        let model_family = Self::normalized_model_family(model_path, false);
         for sibling in Self::hf_mmproj_siblings(repo_id, revision)? {
+            if Self::mmproj_candidate_rank(&model_family, &sibling).is_none() {
+                continue;
+            }
             if let Some(downloaded) = Self::maybe_download_hub_file(repo_id, revision, &sibling)? {
                 return Ok(Some(downloaded));
             }
         }
 
-        let auto_local = Self::local_mmproj_candidates(model_path).into_iter().next();
-        if model_id_looks_vision(repo_id) && auto_local.is_none() {
-            return Err(
-                "Vision model detected from repo id, but mmproj was not found. Set mmproj_path."
-                    .to_string(),
-            );
-        }
-        Ok(auto_local)
+        Ok(Self::local_mmproj_candidates(model_path).into_iter().next())
     }
 
     async fn start_new_session(
@@ -701,9 +886,14 @@ impl LlamaCppAdapter {
         runtime_cfg: &LlamaRuntimeConfig,
     ) -> Result<PluginSessionInfo, String> {
         let backend_path = self.resolve_server_binary(runtime_cfg)?;
-        let config = Self::build_config(runtime_cfg);
         let timeout = Duration::from_secs(DEFAULT_START_TIMEOUT_SECS).as_secs();
         let is_embedding = Self::is_embedding(kind);
+        let mut config = Self::build_config(runtime_cfg);
+
+        if !is_embedding {
+            self.apply_multimodal_plan(source, runtime_cfg, &mut config)
+                .await?;
+        }
 
         let mut last_err = String::new();
         for _ in 0..START_RETRIES {
@@ -908,6 +1098,7 @@ impl EngineAdapter for LlamaCppAdapter {
 mod tests {
     use super::LlamaCppAdapter;
     use crate::core::types::LlamaRuntimeConfig;
+    use oxide_llamacpp::gguf::model_planner::{ModelMode, ModelPlan};
     use std::fs;
     use std::path::PathBuf;
 
@@ -946,6 +1137,51 @@ mod tests {
         let cfg = runtime_with_mapping(Some("RAM"));
         let built = LlamaCppAdapter::build_config(&cfg);
         assert!(built.no_mmap);
+    }
+
+    #[test]
+    fn build_config_maps_advanced_runtime_fields() {
+        let mut cfg = LlamaRuntimeConfig::default();
+        cfg.offload_mmproj = false;
+        cfg.cpu_moe = true;
+        cfg.n_cpu_moe = 6;
+        cfg.override_tensor_buffer_t = "blk.0.attn_q=CPU".to_string();
+        cfg.split_mode = "row".to_string();
+        cfg.main_gpu = 2;
+        cfg.n_parallel = 4;
+        cfg.flash_attn = "on".to_string();
+        cfg.cont_batching = false;
+        cfg.mlock = true;
+        cfg.no_kv_offload = true;
+        cfg.cache_type_k = "q8_0".to_string();
+        cfg.cache_type_v = "q4_1".to_string();
+        cfg.defrag_thold = 0.25;
+        cfg.rope_scaling = "linear".to_string();
+        cfg.rope_scale = 1.2;
+        cfg.rope_freq_base = 10000.0;
+        cfg.rope_freq_scale = 0.8;
+        cfg.ctx_shift = true;
+
+        let built = LlamaCppAdapter::build_config(&cfg);
+        assert!(!built.offload_mmproj);
+        assert!(built.cpu_moe);
+        assert_eq!(built.n_cpu_moe, 6);
+        assert_eq!(built.override_tensor_buffer_t, "blk.0.attn_q=CPU");
+        assert_eq!(built.split_mode, "row");
+        assert_eq!(built.main_gpu, 2);
+        assert_eq!(built.n_parallel, 4);
+        assert_eq!(built.flash_attn, "on");
+        assert!(!built.cont_batching);
+        assert!(built.mlock);
+        assert!(built.no_kv_offload);
+        assert_eq!(built.cache_type_k, "q8_0");
+        assert_eq!(built.cache_type_v, "q4_1");
+        assert!((built.defrag_thold - 0.25).abs() < f32::EPSILON);
+        assert_eq!(built.rope_scaling, "linear");
+        assert!((built.rope_scale - 1.2).abs() < f32::EPSILON);
+        assert!((built.rope_freq_base - 10000.0).abs() < f32::EPSILON);
+        assert!((built.rope_freq_scale - 0.8).abs() < f32::EPSILON);
+        assert!(built.ctx_shift);
     }
 
     #[test]
@@ -1045,16 +1281,90 @@ mod tests {
     }
 
     #[test]
-    fn resolve_local_mmproj_errors_for_vision_without_mmproj() {
+    fn resolve_local_mmproj_without_companion_returns_none() {
         let dir = make_temp_dir();
         let model = dir.join("qwen3-vl-8b.gguf");
         fs::write(&model, b"model").expect("model");
 
-        let err =
+        let resolved =
             LlamaCppAdapter::resolve_local_mmproj("qwen3-vl-8b", &model.to_string_lossy(), None)
-                .expect_err("expected vision error");
-        assert!(err.contains("mmproj"));
+                .expect("resolved");
+        assert!(resolved.is_none());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn local_mmproj_candidates_match_human_readable_model_name() {
+        let dir = make_temp_dir();
+        let model = dir.join("GLM-4.6V-Flash-Q4_K_M.gguf");
+        let mmproj = dir.join("mmproj-GLM-4.6V-Flash-F16.gguf");
+        let unrelated = dir.join("mmproj-Qwen2.5-VL-7B-F16.gguf");
+        fs::write(&model, b"model").expect("model");
+        fs::write(&mmproj, b"mmproj").expect("mmproj");
+        fs::write(&unrelated, b"unrelated").expect("unrelated");
+
+        let candidates = LlamaCppAdapter::local_mmproj_candidates(&model.to_string_lossy());
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].ends_with("mmproj-GLM-4.6V-Flash-F16.gguf"));
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn local_mmproj_candidates_do_not_fallback_to_unrelated_neighbor() {
+        let dir = make_temp_dir();
+        let model = dir.join("MyModel-Q4_K_M.gguf");
+        let unrelated = dir.join("OtherModel-Q8_0.gguf");
+        fs::write(&model, b"model").expect("model");
+        fs::write(&unrelated, b"unrelated").expect("unrelated");
+
+        let candidates = LlamaCppAdapter::local_mmproj_candidates(&model.to_string_lossy());
+        assert!(candidates.is_empty());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn apply_plan_to_config_updates_gpu_ctx_and_batch_for_multimodal() {
+        let runtime = LlamaRuntimeConfig::default();
+        let mut config = LlamaCppAdapter::build_config(&runtime);
+        let plan = ModelPlan {
+            gpu_layers: 37,
+            max_context_length: 2048,
+            no_offload_kv_cache: false,
+            offload_mmproj: true,
+            batch_size: 256,
+            mode: ModelMode::GPU,
+        };
+
+        LlamaCppAdapter::apply_plan_to_config(&mut config, &plan, true);
+        assert_eq!(config.n_gpu_layers, 37);
+        assert_eq!(config.ctx_size, 2048);
+        assert_eq!(config.batch_size, 256);
+        assert_eq!(config.ubatch_size, 256);
+        assert!(!config.no_kv_offload);
+        assert!(config.offload_mmproj);
+    }
+
+    #[test]
+    fn apply_plan_to_config_disables_mmproj_offload_when_mmproj_missing() {
+        let runtime = LlamaRuntimeConfig::default();
+        let mut config = LlamaCppAdapter::build_config(&runtime);
+        let plan = ModelPlan {
+            gpu_layers: 10,
+            max_context_length: 1024,
+            no_offload_kv_cache: true,
+            offload_mmproj: true,
+            batch_size: 64,
+            mode: ModelMode::Hybrid,
+        };
+
+        LlamaCppAdapter::apply_plan_to_config(&mut config, &plan, false);
+        assert_eq!(config.n_gpu_layers, 10);
+        assert_eq!(config.ctx_size, 1024);
+        assert_eq!(config.batch_size, 64);
+        assert_eq!(config.ubatch_size, 64);
+        assert!(config.no_kv_offload);
+        assert!(!config.offload_mmproj);
     }
 }
