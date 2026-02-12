@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   resolve-version:
@@ -45,7 +45,7 @@ jobs:
             rust_targets: ''
             cargo_target: ''
             features: 'accelerate,metal'
-            asset_suffix: 'macos-cpu+gpu-arm64'
+            asset_suffix: 'macos-arm64'
             archive_ext: 'tar.gz'
             clear_build_rustflags: 'false'
             clear_target_rustflags_key: ''
@@ -54,7 +54,7 @@ jobs:
             rust_targets: 'x86_64-apple-darwin'
             cargo_target: 'x86_64-apple-darwin'
             features: 'accelerate,metal'
-            asset_suffix: 'macos-cpu+gpu-x64'
+            asset_suffix: 'macos-x64'
             archive_ext: 'tar.gz'
             clear_build_rustflags: 'true'
             clear_target_rustflags_key: 'target.x86_64-apple-darwin.rustflags'
@@ -90,6 +90,7 @@ jobs:
     env:
       MISTRAL_TAG: ${{ needs.resolve-version.outputs.tag }}
       ASSET_NAME: mistral-${{ needs.resolve-version.outputs.tag }}-bin-${{ matrix.asset_suffix }}
+      MISTRAL_SRC_DIR: ./.mistral-rs-src
 
     steps:
       - name: Checkout repository
@@ -103,7 +104,14 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './example/backends/mistral.rs -> target'
+          workspaces: './.mistral-rs-src -> target'
+
+      - name: Clone mistral.rs
+        shell: bash
+        run: |
+          rm -rf "${MISTRAL_SRC_DIR}"
+          git clone --depth 1 --branch "${MISTRAL_TAG}" \
+            https://github.com/EricLBuehler/mistral.rs.git "${MISTRAL_SRC_DIR}"
 
       - name: Build mistralrs binary
         shell: bash
@@ -127,10 +135,10 @@ jobs:
           fi
 
           echo "Building ${ASSET_NAME} from mistral.rs ${MISTRAL_TAG}"
-          cd example/backends/mistral.rs
+          cd "${MISTRAL_SRC_DIR}"
           packages=(mistralrs-server)
           for pkg in "${packages[@]}"; do
-            cargo "${config_args[@]}" build -p "$pkg" --release "${cargo_args[@]}"
+            cargo ${config_args[@]+"${config_args[@]}"} build -p "$pkg" --release ${cargo_args[@]+"${cargo_args[@]}"}
           done
 
       - name: Package archive (macOS/Linux)
@@ -139,9 +147,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          target_dir="example/backends/mistral.rs/target/release"
+          target_dir="${MISTRAL_SRC_DIR}/target/release"
           if [[ -n "${{ matrix.cargo_target }}" ]]; then
-            target_dir="example/backends/mistral.rs/target/${{ matrix.cargo_target }}/release"
+            target_dir="${MISTRAL_SRC_DIR}/target/${{ matrix.cargo_target }}/release"
           fi
 
           mkdir -p "dist/stage/${ASSET_NAME}"
@@ -161,9 +169,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $targetDir = "example/backends/mistral.rs/target/release"
+          $targetDir = "$env:MISTRAL_SRC_DIR/target/release"
           if ("${{ matrix.cargo_target }}" -ne "") {
-            $targetDir = "example/backends/mistral.rs/target/${{ matrix.cargo_target }}/release"
+            $targetDir = "$env:MISTRAL_SRC_DIR/target/${{ matrix.cargo_target }}/release"
           }
 
           $stageDir = Join-Path "dist/stage" $env:ASSET_NAME
@@ -189,3 +197,125 @@ jobs:
           name: ${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
           path: dist/${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
           if-no-files-found: error
+
+  publish-draft:
+    needs: [resolve-version, build]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env:
+      MISTRAL_TAG: ${{ needs.resolve-version.outputs.tag }}
+      RELEASE_TAG: mistral-${{ needs.resolve-version.outputs.tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifact
+          merge-multiple: true
+
+      - name: Move artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for f in artifact/*; do
+            [ -f "$f" ] || continue
+            mv -v "$f" release/
+          done
+          echo "Release contents:"
+          ls -la release/
+
+      - name: Create or update draft release
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="mistral.rs ${MISTRAL_TAG} binaries"
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+
+          body="## mistral.rs ${MISTRAL_TAG} Binaries
+
+          Prebuilt \`mistralrs-server\` binaries for Oxide backend integration.
+
+          ### Platforms
+          | Platform | Arch | Backend | Asset |
+          |----------|------|---------|-------|
+          | macOS | Apple Silicon | accelerate + metal | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-macos-arm64.tar.gz) |
+          | macOS | Intel x64 | accelerate + metal | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-macos-x64.tar.gz) |
+          | Ubuntu | x86_64 | cpu | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-ubuntu-cpu-x64.tar.gz) |
+          | Windows | x86_64 | cpu | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-win-cpu-x64.zip) |
+          | Windows | ARM64 | cpu | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-win-cpu-arm64.zip) |
+          | Windows | x86_64 | cuda | TBD |
+          | Ubuntu | x86_64 | cuda | TBD |
+
+          ### Source
+          Built from upstream [\`EricLBuehler/mistral.rs\`](https://github.com/EricLBuehler/mistral.rs/releases/tag/${MISTRAL_TAG}) @ \`${MISTRAL_TAG}\`"
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} exists, updating..."
+            gh release edit "${RELEASE_TAG}" \
+              --title "${title}" \
+              --notes "${body}" \
+              --draft
+          else
+            echo "Creating draft release ${RELEASE_TAG}..."
+            gh release create "${RELEASE_TAG}" \
+              --title "${title}" \
+              --notes "${body}" \
+              --draft
+          fi
+
+      - name: Upload release assets
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require('path');
+            const fs = require('fs');
+
+            // Get the release
+            const tag = process.env.RELEASE_TAG;
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: tag,
+            });
+
+            // Delete existing assets to avoid duplicates
+            for (const asset of release.assets) {
+              console.log(`Deleting existing asset: ${asset.name}`);
+              await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: asset.id,
+              });
+            }
+
+            // Upload new assets
+            for (const file of fs.readdirSync('./release')) {
+              const ext = path.extname(file);
+              if (ext === '.zip' || file.endsWith('.tar.gz')) {
+                console.log(`Uploading: ${file}`);
+                const data = fs.readFileSync(`./release/${file}`);
+                await github.rest.repos.uploadReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: release.id,
+                  name: file,
+                  data: data,
+                });
+              }
+            }
+            console.log('All assets uploaded successfully');
+
