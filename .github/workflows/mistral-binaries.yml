@@ -276,46 +276,5 @@ jobs:
               --draft
           fi
 
-      - name: Upload release assets
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const path = require('path');
-            const fs = require('fs');
-
-            // Get the release
-            const tag = process.env.RELEASE_TAG;
-            const { data: release } = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: tag,
-            });
-
-            // Delete existing assets to avoid duplicates
-            for (const asset of release.assets) {
-              console.log(`Deleting existing asset: ${asset.name}`);
-              await github.rest.repos.deleteReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: asset.id,
-              });
-            }
-
-            // Upload new assets
-            for (const file of fs.readdirSync('./release')) {
-              const ext = path.extname(file);
-              if (ext === '.zip' || file.endsWith('.tar.gz')) {
-                console.log(`Uploading: ${file}`);
-                const data = fs.readFileSync(`./release/${file}`);
-                await github.rest.repos.uploadReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: release.id,
-                  name: file,
-                  data: data,
-                });
-              }
-            }
-            console.log('All assets uploaded successfully');
-
+          echo "Uploading assets..."
+          gh release upload "${RELEASE_TAG}" release/* --clobber
