@@ -1,0 +1,269 @@
+name: 'Manual Build stable-diffusion.cpp Binaries'
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve latest stable-diffusion.cpp release tag
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = await github.rest.repos.getLatestRelease({
+              owner: 'leejet',
+              repo: 'stable-diffusion.cpp',
+            });
+
+            let tag = (release.data.tag_name || '').trim();
+            if (!tag) {
+              core.setFailed('Latest stable-diffusion.cpp release tag is empty');
+              return;
+            }
+
+            core.info(`Using stable-diffusion.cpp release tag: ${tag}`);
+            core.setOutput('tag', tag);
+
+  build:
+    needs: resolve-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-14'
+            backend: 'metal'
+            asset_suffix: 'macos-arm64'
+            archive_ext: 'tar.gz'
+            cmake_flags: '-DSD_METAL=ON'
+
+          - platform: 'macos-14'
+            backend: 'metal'
+            asset_suffix: 'macos-x64'
+            archive_ext: 'tar.gz'
+            cmake_flags: '-DSD_METAL=ON'
+
+          - platform: 'ubuntu-22.04'
+            backend: 'cpu'
+            asset_suffix: 'ubuntu-cpu-x64'
+            archive_ext: 'tar.gz'
+            cmake_flags: ''
+
+          - platform: 'ubuntu-22.04'
+            backend: 'vulkan'
+            asset_suffix: 'ubuntu-vulkan-x64'
+            archive_ext: 'tar.gz'
+            cmake_flags: '-DSD_VULKAN=ON'
+
+          - platform: 'windows-latest'
+            backend: 'cpu'
+            asset_suffix: 'win-cpu-x64'
+            archive_ext: 'zip'
+            cmake_flags: ''
+
+          - platform: 'ubuntu-22.04'
+            backend: 'cuda'
+            cuda_version: '12.4.1'
+            asset_suffix: 'ubuntu-cuda-12.4-x64'
+            archive_ext: 'tar.gz'
+            cmake_flags: '-DSD_CUDA=ON'
+
+          - platform: 'ubuntu-22.04'
+            backend: 'cuda'
+            cuda_version: '13.1.0'
+            asset_suffix: 'ubuntu-cuda-13.1-x64'
+            archive_ext: 'tar.gz'
+            cmake_flags: '-DSD_CUDA=ON'
+
+          - platform: 'windows-latest'
+            backend: 'cuda'
+            cuda_version: '12.4.1'
+            asset_suffix: 'win-cuda-12.4-x64'
+            archive_ext: 'zip'
+            cmake_flags: '-DSD_CUDA=ON'
+
+          - platform: 'windows-latest'
+            backend: 'cuda'
+            cuda_version: '13.1.0'
+            asset_suffix: 'win-cuda-13.1-x64'
+            archive_ext: 'zip'
+            cmake_flags: '-DSD_CUDA=ON'
+
+          - platform: 'windows-latest'
+            backend: 'vulkan'
+            asset_suffix: 'win-vulkan-x64'
+            archive_ext: 'zip'
+            cmake_flags: '-DSD_VULKAN=ON'
+
+    runs-on: ${{ matrix.platform }}
+    env:
+      SD_TAG: ${{ needs.resolve-version.outputs.tag }}
+      ASSET_NAME: sd-${{ needs.resolve-version.outputs.tag }}-bin-${{ matrix.asset_suffix }}
+      SD_SRC_DIR: ./.sd-cpp-src
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone stable-diffusion.cpp
+        shell: bash
+        run: |
+          rm -rf "${SD_SRC_DIR}"
+          git clone --depth 1 --branch "${SD_TAG}" \
+            https://github.com/leejet/stable-diffusion.cpp.git "${SD_SRC_DIR}"
+          cd "${SD_SRC_DIR}"
+          git submodule update --init --recursive
+
+      - name: Install dependencies (Linux Vulkan)
+        if: runner.os == 'Linux' && matrix.backend == 'vulkan'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential libssl-dev vulkan-sdk
+
+      - name: Install Vulkan SDK (Windows Vulkan)
+        if: runner.os == 'Windows' && matrix.backend == 'vulkan'
+        run: |
+          $vulkanVersion = "1.3.268.0"
+          $vulkanUrl = "https://sdk.lunarg.com/sdk/download/$vulkanVersion/windows/VulkanSDK-$vulkanVersion-Installer.exe"
+          $installerPath = Join-Path $env:RUNNER_TEMP "VulkanSDK-Installer.exe"
+          Invoke-WebRequest -Uri $vulkanUrl -OutFile $installerPath
+          Start-Process -FilePath $installerPath -ArgumentList "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait
+          echo "VULKAN_SDK=C:\VulkanSDK\$vulkanVersion" >> $env:GITHUB_ENV
+          echo "C:\VulkanSDK\$vulkanVersion\Bin" >> $env:GITHUB_PATH
+
+      - name: Setup CUDA
+        if: matrix.backend == 'cuda'
+        uses: jimver/cuda-toolkit@v0.2.20
+        with:
+          cuda: ${{ matrix.cuda_version }}
+          method: 'network'
+
+      - name: Build stable-diffusion.cpp (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${SD_SRC_DIR}"
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSD_BUILD_EXAMPLES=ON \
+            ${{ matrix.cmake_flags }}
+          cmake --build build --config Release -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
+
+      - name: Build stable-diffusion.cpp (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd "$env:SD_SRC_DIR"
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DSD_BUILD_EXAMPLES=ON `
+            ${{ matrix.cmake_flags }}
+          cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Package archive (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/stage/${ASSET_NAME}
+          # Binaries location handling
+          find "${SD_SRC_DIR}/build/bin" -maxdepth 1 -type f -executable -exec cp {} "dist/stage/${ASSET_NAME}/" \;
+          cp "${SD_SRC_DIR}/LICENSE" "dist/stage/${ASSET_NAME}/"
+          tar -czf "dist/${ASSET_NAME}.tar.gz" -C dist/stage "${ASSET_NAME}"
+
+      - name: Package archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stageDir = New-Item -ItemType Directory -Path "dist/stage/$env:ASSET_NAME" -Force
+          # Binaries location handling for multi-config (MSVC)
+          if (Test-Path "$env:SD_SRC_DIR/build/bin/Release") {
+            $binSource = "$env:SD_SRC_DIR/build/bin/Release/*"
+          } else {
+            $binSource = "$env:SD_SRC_DIR/build/bin/*"
+          }
+          Copy-Item $binSource $stageDir.FullName -Force -ErrorAction SilentlyContinue
+          Copy-Item "$env:SD_SRC_DIR/LICENSE" $stageDir.FullName -Force
+          Compress-Archive -Path "$($stageDir.FullName)/*" -DestinationPath "dist/$env:ASSET_NAME.zip"
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
+          path: dist/${{ env.ASSET_NAME }}.${{ matrix.archive_ext }}
+
+  publish-draft:
+    needs: [resolve-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SD_TAG: ${{ needs.resolve-version.outputs.tag }}
+      RELEASE_TAG: sd-${{ needs.resolve-version.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifact
+          merge-multiple: true
+
+      - name: Move artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for f in artifact/*; do
+            [ -f "$f" ] || continue
+            mv -v "$f" release/
+          done
+
+      - name: Create or update draft release
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="stable-diffusion.cpp ${SD_TAG} binaries"
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+
+          body="## stable-diffusion.cpp ${SD_TAG} Binaries
+
+          Prebuilt binaries for Oxide backend integration.
+
+          ### Platforms
+          | Platform | Arch | Backend | Asset |
+          |----------|------|---------|-------|
+          | macOS | Apple Silicon | Metal | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-macos-arm64.tar.gz) |
+          | macOS | Intel x64 | Metal | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-macos-x64.tar.gz) |
+          | Ubuntu | x86_64 | CPU | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-ubuntu-cpu-x64.tar.gz) |
+          | Ubuntu | x86_64 | CUDA 12.4 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-ubuntu-cuda-12.4-x64.tar.gz) |
+          | Ubuntu | x86_64 | CUDA 13.1 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-ubuntu-cuda-13.1-x64.tar.gz) |
+          | Ubuntu | x86_64 | Vulkan | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-ubuntu-vulkan-x64.tar.gz) |
+          | Windows | x86_64 | CPU | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-win-cpu-x64.zip) |
+          | Windows | x86_64 | CUDA 12.4 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-win-cuda-12.4-x64.zip) |
+          | Windows | x86_64 | CUDA 13.1 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-win-cuda-13.1-x64.zip) |
+          | Windows | x86_64 | Vulkan | [Download](${repo_url}/releases/download/${RELEASE_TAG}/sd-${SD_TAG}-bin-win-vulkan-x64.zip) |
+
+          ### Source
+          Built from upstream [\`leejet/stable-diffusion.cpp\`](https://github.com/leejet/stable-diffusion.cpp/releases/tag/${SD_TAG}) @ \`${SD_TAG}\`"
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${title}" --notes "${body}" --draft
+          else
+            gh release create "${RELEASE_TAG}" --title "${title}" --notes "${body}" --draft
+          fi
+
+          gh release upload "${RELEASE_TAG}" release/* --clobber
