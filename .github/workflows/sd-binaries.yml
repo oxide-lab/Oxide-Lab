@@ -122,15 +122,15 @@ jobs:
 
       - name: Setup Vulkan SDK
         if: matrix.backend == 'vulkan'
-        uses: humbletim/setup-vulkan-sdk@v1.2.0
+        uses: humbletim/setup-vulkan-sdk@v1
         with:
           vulkan-query-version: latest
           vulkan-components: 'Vulkan-Headers, Vulkan-Loader'
-          vulkan-use-cache: true
+          vulkan-use-cache: false
 
       - name: Setup CUDA
         if: matrix.backend == 'cuda'
-        uses: jimver/cuda-toolkit@v0.2.20
+        uses: jimver/cuda-toolkit@v0.2.30
         with:
           cuda: ${{ matrix.cuda_version }}
           method: 'network'

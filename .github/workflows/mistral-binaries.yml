@@ -138,7 +138,7 @@ jobs:
 
       - name: Setup CUDA
         if: contains(matrix.features, 'cuda')
-        uses: jimver/cuda-toolkit@v0.2.20
+        uses: jimver/cuda-toolkit@v0.2.30
         with:
           cuda: ${{ matrix.cuda_version }}
           method: 'network'
