@@ -120,24 +120,13 @@ jobs:
           cd "${SD_SRC_DIR}"
           git submodule update --init --recursive
 
-      - name: Install dependencies (Linux Vulkan)
-        if: runner.os == 'Linux' && matrix.backend == 'vulkan'
-        run: |
-          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
-          sudo apt-get update -y
-          sudo apt-get install -y build-essential libssl-dev vulkan-sdk
-
-      - name: Install Vulkan SDK (Windows Vulkan)
-        if: runner.os == 'Windows' && matrix.backend == 'vulkan'
-        run: |
-          $vulkanVersion = "1.3.268.0"
-          $vulkanUrl = "https://sdk.lunarg.com/sdk/download/$vulkanVersion/windows/VulkanSDK-$vulkanVersion-Installer.exe"
-          $installerPath = Join-Path $env:RUNNER_TEMP "VulkanSDK-Installer.exe"
-          Invoke-WebRequest -Uri $vulkanUrl -OutFile $installerPath
-          Start-Process -FilePath $installerPath -ArgumentList "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait
-          echo "VULKAN_SDK=C:\VulkanSDK\$vulkanVersion" >> $env:GITHUB_ENV
-          echo "C:\VulkanSDK\$vulkanVersion\Bin" >> $env:GITHUB_PATH
+      - name: Setup Vulkan SDK
+        if: matrix.backend == 'vulkan'
+        uses: humbletim/setup-vulkan-sdk@v1.2.0
+        with:
+          vulkan-query-version: latest
+          vulkan-components: 'Vulkan-Headers, Vulkan-Loader'
+          vulkan-use-cache: true
 
       - name: Setup CUDA
         if: matrix.backend == 'cuda'
