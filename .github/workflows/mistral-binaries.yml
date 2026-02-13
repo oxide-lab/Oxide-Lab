@@ -81,7 +81,7 @@ jobs:
             rust_targets: ''
             cargo_target: ''
             features: 'cuda'
-            cuda_version: '12.4'
+            cuda_version: '12.4.1'
             asset_suffix: 'ubuntu-cuda-12.4-x64'
             archive_ext: 'tar.gz'
             clear_build_rustflags: 'false'
@@ -91,8 +91,8 @@ jobs:
             rust_targets: ''
             cargo_target: ''
             features: 'cuda'
-            cuda_version: '13.1'
-            asset_suffix: 'ubuntu-cuda-13.1-x64'
+            cuda_version: '12.1.1'
+            asset_suffix: 'ubuntu-cuda-12.1-x64'
             archive_ext: 'tar.gz'
             clear_build_rustflags: 'false'
             clear_target_rustflags_key: ''
@@ -101,7 +101,7 @@ jobs:
             rust_targets: ''
             cargo_target: ''
             features: 'cuda'
-            cuda_version: '12.4'
+            cuda_version: '12.4.1'
             asset_suffix: 'win-cuda-12.4-x64'
             archive_ext: 'zip'
             clear_build_rustflags: 'false'
@@ -111,8 +111,8 @@ jobs:
             rust_targets: ''
             cargo_target: ''
             features: 'cuda'
-            cuda_version: '13.1'
-            asset_suffix: 'win-cuda-13.1-x64'
+            cuda_version: '12.1.1'
+            asset_suffix: 'win-cuda-12.1-x64'
             archive_ext: 'zip'
             clear_build_rustflags: 'false'
             clear_target_rustflags_key: ''
@@ -302,10 +302,10 @@ jobs:
           | macOS | Intel x64 | accelerate + metal | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-macos-x64.tar.gz) |
           | Ubuntu | x86_64 | cpu | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-ubuntu-cpu-x64.tar.gz) |
           | Ubuntu | x86_64 | cuda 12.4 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-ubuntu-cuda-12.4-x64.tar.gz) |
-          | Ubuntu | x86_64 | cuda 13.1 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-ubuntu-cuda-13.1-x64.tar.gz) |
+          | Ubuntu | x86_64 | cuda 12.1 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-ubuntu-cuda-12.1-x64.tar.gz) |
           | Windows | x86_64 | cpu | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-win-cpu-x64.zip) |
           | Windows | x86_64 | cuda 12.4 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-win-cuda-12.4-x64.zip) |
-          | Windows | x86_64 | cuda 13.1 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-win-cuda-13.1-x64.zip) |
+          | Windows | x86_64 | cuda 12.1 | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-win-cuda-12.1-x64.zip) |
           | Windows | ARM64 | cpu | [Download](${repo_url}/releases/download/${RELEASE_TAG}/mistral-${MISTRAL_TAG}-bin-win-cpu-arm64.zip) |
 
           ### Source
