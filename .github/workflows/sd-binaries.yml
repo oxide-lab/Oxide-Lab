@@ -120,13 +120,31 @@ jobs:
           cd "${SD_SRC_DIR}"
           git submodule update --init --recursive
 
-      - name: Setup Vulkan SDK
-        if: matrix.backend == 'vulkan'
-        uses: humbletim/setup-vulkan-sdk@v1
-        with:
-          vulkan-query-version: latest
-          vulkan-components: 'Vulkan-Headers, Vulkan-Loader'
-          vulkan-use-cache: false
+      - name: Install dependencies (Linux Vulkan)
+        if: runner.os == 'Linux' && matrix.backend == 'vulkan'
+        run: |
+          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential libssl-dev vulkan-sdk
+
+      - name: Install Vulkan SDK (Windows Vulkan)
+        if: runner.os == 'Windows' && matrix.backend == 'vulkan'
+        shell: pwsh
+        run: |
+          $vulkanVersion = "1.3.290.0"
+          $vulkanUrl = "https://sdk.lunarg.com/sdk/download/$vulkanVersion/windows/VulkanSDK-$vulkanVersion-Installer.exe"
+          $installerPath = Join-Path $env:RUNNER_TEMP "VulkanSDK-Installer.exe"
+          Invoke-WebRequest -Uri $vulkanUrl -OutFile $installerPath
+          Start-Process -FilePath $installerPath -ArgumentList "--accept-licenses", "--default-answer", "--confirm-command", "install" -Wait
+          
+          $vulkanPath = "C:\VulkanSDK\$vulkanVersion"
+          if (Test-Path $vulkanPath) {
+            echo "VULKAN_SDK=$vulkanPath" >> $env:GITHUB_ENV
+            echo "$vulkanPath\Bin" >> $env:GITHUB_PATH
+          } else {
+            throw "Vulkan SDK not found at $vulkanPath"
+          }
 
       - name: Setup CUDA
         if: matrix.backend == 'cuda'
@@ -164,13 +182,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/stage/${ASSET_NAME}
-          # Portable way to copy binaries (macOS 'find' doesn't support -executable)
-          for f in "${SD_SRC_DIR}/build/bin/"*; do
-            if [ -x "$f" ] && [ -f "$f" ]; then
-              cp -v "$f" "dist/stage/${ASSET_NAME}/"
-            fi
-          done
-          cp "${SD_SRC_DIR}/LICENSE" "dist/stage/${ASSET_NAME}/"
+          
+          # Stable-diffusion.cpp binaries location
+          BIN_DIR="${SD_SRC_DIR}/build/bin"
+          if [ -d "$BIN_DIR" ]; then
+            # Portable way to copy executables: -perm -u+x works on both GNU/BSD find
+            find "$BIN_DIR" -maxdepth 1 -type f -perm -u+x -exec cp -v {} "dist/stage/${ASSET_NAME}/" \;
+          fi
+          
+          [ -f "${SD_SRC_DIR}/LICENSE" ] && cp "${SD_SRC_DIR}/LICENSE" "dist/stage/${ASSET_NAME}/"
           tar -czf "dist/${ASSET_NAME}.tar.gz" -C dist/stage "${ASSET_NAME}"
 
       - name: Package archive (Windows)
