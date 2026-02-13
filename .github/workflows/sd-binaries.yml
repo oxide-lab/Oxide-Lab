@@ -175,8 +175,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/stage/${ASSET_NAME}
-          # Binaries location handling
-          find "${SD_SRC_DIR}/build/bin" -maxdepth 1 -type f -executable -exec cp {} "dist/stage/${ASSET_NAME}/" \;
+          # Portable way to copy binaries (macOS 'find' doesn't support -executable)
+          for f in "${SD_SRC_DIR}/build/bin/"*; do
+            if [ -x "$f" ] && [ -f "$f" ]; then
+              cp -v "$f" "dist/stage/${ASSET_NAME}/"
+            fi
+          done
           cp "${SD_SRC_DIR}/LICENSE" "dist/stage/${ASSET_NAME}/"
           tar -czf "dist/${ASSET_NAME}.tar.gz" -C dist/stage "${ASSET_NAME}"
 
